@@ -23,6 +23,7 @@ import { MessageList } from "@/components/chat/MessageList";
 import { ChatInput } from "@/components/chat/ChatInput";
 import { SourcePicker } from "@/components/chat/SourcePicker";
 import { useDatasourceList } from "@/components/chat/datasources/useDatasources";
+import { useMethodologyPresets } from "@/components/chat/useMethodologyPresets";
 import { SettingsModal } from "@/components/chat/SettingsModal";
 import { DevToolsPanel } from "@/components/chat/DevToolsPanel";
 import { MethodologyModal } from "@/components/chat/MethodologyModal";
@@ -81,6 +82,16 @@ export default function ChatDashboard() {
   // 发起请求时的会话 id：流式期间用户可能切换会话，onFinish 须写回发起会话
   const streamingSessionIdRef = useRef<string | null>(null);
 
+  // 数据源列表提前：会话管理生成欢迎语时要按当前启用源与特性开关过滤能力宣称
+  const { sources: allDatasources, features: datasourceFeatures } =
+    useDatasourceList();
+  const welcomeSourcesRef = useRef(allDatasources);
+  const welcomeFeaturesRef = useRef(datasourceFeatures);
+  useEffect(() => {
+    welcomeSourcesRef.current = allDatasources;
+    welcomeFeaturesRef.current = datasourceFeatures;
+  }, [allDatasources, datasourceFeatures]);
+
   const {
     sessions,
     currentSessionId,
@@ -105,7 +116,14 @@ export default function ChatDashboard() {
     rewindSession,
     planMode,
     setPlanMode,
-  } = useSessionManager();
+  } = useSessionManager({
+    getWelcomeContext: () => ({
+      sources: welcomeSourcesRef.current
+        .filter((s) => s.enabled !== false)
+        .map((s) => ({ id: s.id, name: s.name })),
+      features: welcomeFeaturesRef.current,
+    }),
+  });
 
   const handleChatError = useCallback((err: Error) => {
     console.error("Chat error:", err);
@@ -138,8 +156,7 @@ export default function ChatDashboard() {
     [favoriteDashboard, currentSessionId]
   );
 
-  // 会话级数据源：列表来自 /api/datasources，勾选集写入当前会话并随请求体透传
-  const { sources: allDatasources } = useDatasourceList();
+  // 会话级数据源：列表来自 /api/datasources（上方已取），勾选集写入当前会话并随请求体透传
   const enabledPickerSources = useMemo(
     () => allDatasources.filter((s) => s.enabled !== false),
     [allDatasources]
@@ -276,13 +293,16 @@ export default function ChatDashboard() {
     [rewindSession, setInput]
   );
 
-  // 预设场景方向已明确，始终直出看板：不进规划模式，也不受待确认规划影响
+  // 推荐列表：方法卡 presetQuery（内置兜底 + 挂载后拉合并卡集覆盖）
+  const presetQueries = useMethodologyPresets();
+
+  // 推荐项只填入输入框不直接发送：用户可修改后自行提交
+  // （提交时走常规 plan-first/execute 判定，与手输一致）
   const handlePresetSelect = useCallback(
     (msg: string) => {
-      streamingSessionIdRef.current = currentSessionId;
-      append({ role: "user", content: msg });
+      setInput(msg);
     },
-    [append, currentSessionId]
+    [setInput]
   );
 
   // ===== 看板收藏库交互（依赖 useChat 的 append/setInput，须在 useChat 之后定义）=====
@@ -439,6 +459,7 @@ export default function ChatDashboard() {
         onEditTitleChange={setEditingTitleText}
         onClearAllSessions={handleClearAllSessions}
         onPresetSelect={handlePresetSelect}
+        presetQueries={presetQueries}
         onToggleRawLang={handleToggleRawLang}
         onOpenMethodology={() => setShowMethodology(true)}
         onCancelEdit={handleCancelRename}

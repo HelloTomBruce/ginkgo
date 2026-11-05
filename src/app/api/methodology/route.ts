@@ -17,12 +17,13 @@ export async function GET() {
     }
     return Response.json({
       cards: library.cards.map(
-        ({ id, name, when, steps, chartPairing }) => ({
+        ({ id, name, when, steps, chartPairing, presetQuery }) => ({
           id,
           name,
           when,
           steps,
           chartPairing,
+          presetQuery,
           source: userIds.has(id) ? ("user" as const) : ("builtin" as const),
         })
       ),

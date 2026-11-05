@@ -1,14 +1,8 @@
 /**
- * 预设分析场景与 DevTools 沙盒默认代码。
- * 单独成模块以便组件与测试复用。
+ * DevTools 沙盒默认代码（单独成模块以便组件与测试复用）。
+ * 侧栏「推荐」列表已由方法卡 presetQuery 生成（useMethodologyPresets），
+ * 不再维护硬编码场景列表。
  */
-export const PRESET_QUERIES = [
-  "本迭代各项目的 Bug 收敛情况如何？请按严重度分析并给出收敛漏斗",
-  "统计各团队成员的任务分配、工时消耗与负载饱和度雷达图",
-  "从 GitLab 分析核心仓库的代码提交轨迹与时段活跃度热力图",
-  "当前进行中项目的进度达成度、延期风险与干预建议",
-];
-
 export const DEFAULT_SANDBOX_CODE = `root = Root([gauge, grid, funnel, radar, action_plan])
 gauge = GaugeProgress("Sprint 24 迭代进度达成度", "目标交付 38 个任务", 31, 38, "个", "达成率 81.6%")
 c1 = MetricCard("未关闭 Bug", "23", "-34.3%", "down", "严重 Bug 仅剩 2 个")

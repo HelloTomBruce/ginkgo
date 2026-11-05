@@ -26,7 +26,7 @@ import {
 import type { SessionSummary } from "@/lib/sessionStore";
 // 仅取类型（编译期擦除）
 import type { DashboardSummary } from "@/lib/dashboardStore";
-import { PRESET_QUERIES } from "@/lib/presetQueries";
+import type { PresetQuery } from "./useMethodologyPresets";
 import { SessionListItem, formatSessionTime } from "./SessionListItem";
 
 interface ChatSidebarProps {
@@ -57,6 +57,8 @@ interface ChatSidebarProps {
   onCancelEdit: () => void;
   onClearAllSessions: () => void;
   onPresetSelect: (preset: string) => void;
+  /** 推荐列表：方法卡 presetQuery 生成（内置兜底 + /api/methodology 合并卡集） */
+  presetQueries: PresetQuery[];
   onToggleRawLang: () => void;
   /** 打开分析方法论查看弹窗 */
   onOpenMethodology: () => void;
@@ -86,6 +88,7 @@ export function ChatSidebar({
   onCancelEdit,
   onClearAllSessions,
   onPresetSelect,
+  presetQueries,
   onToggleRawLang,
   onOpenMethodology,
 }: ChatSidebarProps) {
@@ -276,16 +279,19 @@ export function ChatSidebar({
       {sidebarTab === "presets" && (
         <div className="flex-1 overflow-y-auto px-3 py-2 space-y-1.5">
           <div className="text-[11px] font-semibold text-foreground-faint uppercase tracking-wider px-1 pb-1">
-            一键带入预设分析模板
+            一键带入分析模板（按方法卡生成）
           </div>
-          {PRESET_QUERIES.map((preset) => (
+          {presetQueries.map((preset) => (
             <button
-              key={preset}
-              onClick={() => onPresetSelect(preset)}
+              key={preset.id}
+              onClick={() => onPresetSelect(preset.query)}
               className="w-full text-left text-xs p-2.5 rounded-lg hover:bg-muted text-foreground-subtle transition-colors flex items-start gap-2"
             >
               <Sparkles className="w-3.5 h-3.5 text-info-fg shrink-0 mt-0.5" />
-              <span className="line-clamp-2 leading-relaxed">{preset}</span>
+              <span className="line-clamp-2 leading-relaxed">
+                <span className="text-foreground-faint">[{preset.name}]</span>{" "}
+                {preset.query}
+              </span>
             </button>
           ))}
         </div>

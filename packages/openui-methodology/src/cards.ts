@@ -9,6 +9,7 @@ export const builtinMethodCards: MethodCard[] = [
   {
     id: "trend",
     name: "趋势与同比环比",
+    presetQuery: "核心指标近半年逐月走势如何？环比、同比是升是降，拐点出现在哪？",
     when: "指标随时间如何变化？相比上期/去年同期是升是降？",
     steps: [
       "按时间粒度（日/周/月）聚合目标指标",
@@ -22,6 +23,7 @@ export const builtinMethodCards: MethodCard[] = [
   {
     id: "pareto",
     name: "构成与帕累托",
+    presetQuery: "各分类对总量的贡献占比如何？头部少数项贡献了多少，哪些是关键少数？",
     when: "头部因素贡献了多少？哪些是关键的少数（80/20）？",
     steps: [
       "按维度聚合贡献值并降序排列",
@@ -35,6 +37,7 @@ export const builtinMethodCards: MethodCard[] = [
   {
     id: "funnel",
     name: "漏斗转化",
+    presetQuery: "从起始环节到最终转化的各阶段转化率是多少？哪一步流失最严重？",
     when: "多阶段流程中用户/需求在哪一步流失最多？",
     steps: [
       "定义阶段序列与各阶段计量口径",
@@ -48,6 +51,7 @@ export const builtinMethodCards: MethodCard[] = [
   {
     id: "rfm",
     name: "RFM 分层",
+    presetQuery: "把用户/客户按最近行为、频次、金额做 RFM 分层，各层规模多大、运营策略有何差异？",
     when: "如何把用户/客户按价值与行为分层运营？",
     steps: [
       "计算每个对象的最近一次行为(R)、频次(F)、金额(M)",
@@ -61,6 +65,7 @@ export const builtinMethodCards: MethodCard[] = [
   {
     id: "cohort",
     name: "同期群留存",
+    presetQuery: "按首次行为月份划分同期群，各批次的留存曲线有什么差异？",
     when: "不同批次（注册月/首个购买月）的留存曲线有何差异？",
     steps: [
       "按起始事件周期划分同期群",
@@ -74,6 +79,7 @@ export const builtinMethodCards: MethodCard[] = [
   {
     id: "anomaly",
     name: "异常检测",
+    presetQuery: "核心指标近期有没有异常点？偏离正常范围多少，出现在什么时间？",
     when: "指标是否有异常点/异常时段？偏离正常范围多少？",
     steps: [
       "建立基线（移动均值或同期分布）",
@@ -87,6 +93,7 @@ export const builtinMethodCards: MethodCard[] = [
   {
     id: "attribution",
     name: "维度拆解归因",
+    presetQuery: "本期总量指标为什么变化？按维度拆解，哪个维度的贡献最大？",
     when: "指标为什么涨/跌？哪个维度的变化贡献最大？",
     steps: [
       "把总变化按维度拆解（加法：各部分变化之和；乘法：因子贡献率）",
@@ -100,6 +107,7 @@ export const builtinMethodCards: MethodCard[] = [
   {
     id: "goal-gap",
     name: "目标达成与差距",
+    presetQuery: "当前各项目标的达成度如何？缺口多大，是否落后于时间进度？",
     when: "对照目标/预算/SLA 的达成度如何？缺口多大？",
     steps: [
       "明确目标值与当前值（含时间进度基准）",
@@ -113,6 +121,7 @@ export const builtinMethodCards: MethodCard[] = [
   {
     id: "ranking",
     name: "排名与头尾分析",
+    presetQuery: "各对象按核心指标排名如何？头部和尾部的差距有多大？",
     when: "谁/哪个表现最好最差？头尾差距有多大？",
     steps: [
       "选定排序指标与范围（全量或 TopN）",
@@ -126,6 +135,7 @@ export const builtinMethodCards: MethodCard[] = [
   {
     id: "distribution",
     name: "分布与离群",
+    presetQuery: "关键数值的分布形态如何？是否存在离群值拉高或拉低均值？",
     when: "数值分布形态如何？是否存在离群值拉高/拉低均值？",
     steps: [
       "选定分箱粒度并统计频次分布",

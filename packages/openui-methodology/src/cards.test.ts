@@ -20,6 +20,14 @@ describe("内置方法卡", () => {
     }
   });
 
+  it("每张内置卡都带 presetQuery（推荐列表由它生成），且不含具体数据源名", () => {
+    for (const c of builtinMethodCards) {
+      expect(c.presetQuery?.trim().length).toBeGreaterThan(0);
+      // 数据源全部由用户配置，预设提问不得绑定具体产品名
+      expect(c.presetQuery).not.toMatch(/禅道|zentao|gitlab|jira/i);
+    }
+  });
+
   it("chartPairing 组件名均为 PascalCase（组件库键形态）", () => {
     for (const c of builtinMethodCards) {
       for (const name of c.chartPairing) {

@@ -10,6 +10,12 @@ export interface MethodCard {
   name: string;
   /** 适用信号：一句话描述何时选这个方法 */
   when: string;
+  /**
+   * 一键带入的示例提问（面向最终用户的领域中立措辞）：
+   * 侧栏「推荐」列表从该字段生成——新增方法卡即新增推荐项，
+   * 不再维护独立的硬编码预设列表。缺省表示该卡不出现在推荐列表。
+   */
+  presetQuery?: string;
   /** 分析流程步骤（有序） */
   steps: string[];
   /** 图表配对：意图映射到组件库组件名（validateCards 校验存在性） */

@@ -230,6 +230,7 @@ describe("ChatDashboard 守护测试（重构行为锁定）", () => {
       e?.preventDefault?.()
     );
     const append = vi.fn();
+    const setInput = vi.fn();
     const messages = [
       DEFAULT_WELCOME_MESSAGE,
       { id: "u1", role: "user" as const, content: "分析各渠道 CAC" },
@@ -246,6 +247,7 @@ describe("ChatDashboard 守护测试（重构行为锁定）", () => {
           ...buildUseChatResult(messages),
           handleSubmit,
           append,
+          setInput,
         }) as never
     );
 
@@ -260,16 +262,16 @@ describe("ChatDashboard 守护测试（重构行为锁定）", () => {
       body: { mode: "execute" },
     });
 
-    // 预设场景：不带 mode（直出），也不受待确认规划影响
-    // （侧栏三 tab 改版后文案为「历史 / 看板 / 推荐」）
+    // 预设场景：只填入输入框不直接发送（提交时与手输一致走常规判定）
+    // （侧栏三 tab 改版后文案为「历史 / 看板 / 推荐」；推荐项由方法卡 presetQuery 生成）
     fireEvent.click(screen.getByText("推荐"));
     fireEvent.click(
-      screen.getByText(/本迭代各项目的 Bug 收敛情况/, { exact: false })
+      screen.getByText(/核心指标近半年逐月走势如何/, { exact: false })
     );
-    // 预设场景：append 单参调用（无 body/mode，直出），也不受待确认规划影响
-    const lastCall = vi.mocked(append).mock.calls.at(-1);
-    expect(lastCall).toHaveLength(1);
-    expect(lastCall?.[0]).toMatchObject({ role: "user" });
-    expect(String(lastCall?.[0]?.content)).toContain("Bug 收敛");
+    // 点击推荐：setInput 填入文本，不调用 append
+    expect(setInput).toHaveBeenCalledWith(
+      expect.stringContaining("核心指标近半年逐月走势如何")
+    );
+    expect(append).not.toHaveBeenCalled();
   });
 });

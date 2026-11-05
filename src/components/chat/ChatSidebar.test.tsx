@@ -27,6 +27,9 @@ const baseProps = {
   onCancelEdit: vi.fn(),
   onClearAllSessions: vi.fn(),
   onPresetSelect: vi.fn(),
+  presetQueries: [
+    { id: "trend", name: "趋势与同比环比", query: "核心指标走势如何？" },
+  ],
   onToggleRawLang: vi.fn(),
   onOpenMethodology: vi.fn(),
 };
