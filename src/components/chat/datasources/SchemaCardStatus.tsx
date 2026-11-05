@@ -138,7 +138,7 @@ export function SchemaCardStatus({ sourceId }: { sourceId: string }) {
         : `结构卡 · 生成于 ${formatSessionTime(state.generatedAt)}${state.stale ? "（重建中）" : ""}`;
 
   return (
-    <div className="flex items-center gap-2 text-[10px] text-slate-400">
+    <div className="flex items-center gap-2 text-[10px] text-foreground-faint">
       <Table2 className="w-3 h-3 shrink-0" />
       <span className="flex-1 truncate">{label}</span>
       <Hint label="重新扫描表结构并重建结构卡">
@@ -146,7 +146,7 @@ export function SchemaCardStatus({ sourceId }: { sourceId: string }) {
           onClick={() => void refresh()}
           disabled={refreshing}
           aria-label={`刷新结构卡 ${sourceId}`}
-          className="p-1 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/50 disabled:opacity-50 transition-colors"
+          className="p-1 rounded text-foreground-faint hover:text-info-fg hover:bg-info-soft disabled:opacity-50 transition-colors"
         >
           {refreshing ? (
             <Loader2 className="w-3 h-3 animate-spin" />

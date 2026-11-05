@@ -47,7 +47,7 @@ export class ErrorBoundary extends React.Component<
     if (this.state.hasError) {
       return (
         this.props.fallback ?? (
-          <div className="p-3 bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200/60 dark:border-amber-900/40 rounded-xl text-xs text-amber-700 dark:text-amber-400">
+          <div className="p-3 bg-warning-soft/50 border border-warning-border/60 rounded-xl text-xs text-warning-fg-strong">
             ⚠️ {this.props.name ? `组件「${this.props.name}」` : "内容"}渲染失败（数据格式异常），将在新内容到达时自动重试。
           </div>
         )

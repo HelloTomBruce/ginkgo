@@ -49,7 +49,7 @@ export function SourcePicker({ sources, selected, onChange, disabled }: SourcePi
             ? "会话已开始，数据源选择已锁定"
             : "选择当前会话可用的数据源"
         }
-        className="text-[11px] text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+        className="text-[11px] text-muted-foreground hover:text-foreground-strong flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-border hover:bg-muted transition-colors"
       >
         {disabled ? (
           <Lock className="w-3.5 h-3.5" />
@@ -64,23 +64,23 @@ export function SourcePicker({ sources, selected, onChange, disabled }: SourcePi
         <div
           role="group"
           aria-label="数据源选择"
-          className="absolute right-4 bottom-full mb-1 z-40 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-lg p-2 w-72 space-y-0.5"
+          className="absolute right-4 bottom-full mb-1 z-40 bg-card border border-border rounded-xl shadow-lg p-2 w-72 space-y-0.5"
         >
           {disabled && (
-            <div className="text-[10px] text-slate-400 flex items-center gap-1 px-2 py-1.5 border-b border-slate-100 dark:border-slate-800 mb-1">
+            <div className="text-[10px] text-foreground-faint flex items-center gap-1 px-2 py-1.5 border-b border-border-subtle mb-1">
               <Lock className="w-3 h-3" />
               <span>会话已开始，数据源选择已锁定</span>
             </div>
           )}
           {enabled.length === 0 && (
-            <div className="text-[11px] text-slate-400 px-2 py-1.5">
+            <div className="text-[11px] text-foreground-faint px-2 py-1.5">
               暂无可用数据源，请在「设置 → 数据源」中启用
             </div>
           )}
           {enabled.map((s) => (
             <label
               key={s.id}
-              className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300 cursor-pointer px-2 py-1.5 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800/60"
+              className="flex items-center gap-2 text-xs text-foreground-subtle cursor-pointer px-2 py-1.5 rounded-lg hover:bg-surface-sunken"
             >
               {/* button 属于 labelable 元素：点击行文本由 label 激活行为转发一次 click，
                   点击 checkbox 本体浏览器不再转发（target 已是控件）——两条路径均恰好 toggle 一次。
@@ -93,7 +93,7 @@ export function SourcePicker({ sources, selected, onChange, disabled }: SourcePi
               />
               <span
                 className={`truncate flex-1 ${
-                  disabled ? "cursor-not-allowed text-slate-400" : ""
+                  disabled ? "cursor-not-allowed text-foreground-faint" : ""
                 }`}
               >
                 {s.name}

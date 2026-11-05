@@ -51,14 +51,14 @@ export function SessionListItem({
       onClick={() => onSelect(session.id)}
       className={`group relative flex items-center justify-between p-2.5 rounded-xl text-xs cursor-pointer transition-all border ${
         isActive
-          ? "bg-blue-50/90 dark:bg-blue-950/50 border-blue-200 dark:border-blue-900 text-blue-900 dark:text-blue-200 font-medium"
-          : "border-transparent hover:bg-slate-100/80 dark:hover:bg-slate-800/60 text-slate-600 dark:text-slate-300"
+          ? "bg-info-soft/90 border-info-border text-info-fg-strong font-medium"
+          : "border-transparent hover:bg-muted/80 text-foreground-subtle"
       }`}
     >
       <div className="flex items-center gap-2 min-w-0 flex-1 pr-1">
         <MessageSquare
           className={`w-3.5 h-3.5 shrink-0 ${
-            isActive ? "text-blue-600 dark:text-blue-400" : "text-slate-400"
+            isActive ? "text-info-fg" : "text-foreground-faint"
           }`}
         />
         {isEditing ? (
@@ -72,12 +72,12 @@ export function SessionListItem({
             }}
             onClick={(e) => e.stopPropagation()}
             autoFocus
-            className="flex-1 px-1.5 py-0.5 bg-white dark:bg-slate-900 border border-blue-400 rounded text-xs focus:outline-none"
+            className="flex-1 px-1.5 py-0.5 bg-card border border-info-border-strong rounded text-xs focus:outline-none"
           />
         ) : (
           <div className="min-w-0 flex-1">
             <div className="truncate text-xs">{session.title}</div>
-            <div className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-1.5">
+            <div className="text-[10px] text-foreground-faint mt-0.5 flex items-center gap-1.5">
               <span>{formatSessionTime(session.updatedAt)}</span>
               <span>•</span>
               <span>{session.messageCount ?? 1} 条消息</span>
@@ -96,7 +96,7 @@ export function SessionListItem({
                 onSaveRename(session.id);
               }}
               aria-label="保存标题"
-              className="p-1 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 rounded"
+              className="p-1 text-success-fg hover:bg-success-soft rounded"
             >
               <Check className="w-3.5 h-3.5" />
             </button>
@@ -107,7 +107,7 @@ export function SessionListItem({
               <button
                 onClick={(e) => onStartRename(e, session)}
                 aria-label="重命名会话"
-                className="p-1 opacity-0 group-hover:opacity-100 hover:bg-slate-200 dark:hover:bg-slate-700 rounded text-slate-400 hover:text-slate-600 transition-opacity"
+                className="p-1 opacity-0 group-hover:opacity-100 hover:bg-surface-raised rounded text-foreground-faint hover:text-foreground-subtle transition-opacity"
               >
                 <Edit3 className="w-3 h-3" />
               </button>
@@ -116,7 +116,7 @@ export function SessionListItem({
               <button
                 onClick={(e) => onDelete(e, session.id)}
                 aria-label="删除会话"
-                className="p-1 opacity-0 group-hover:opacity-100 hover:bg-rose-50 dark:hover:bg-rose-950/60 rounded text-slate-400 hover:text-rose-600 transition-opacity"
+                className="p-1 opacity-0 group-hover:opacity-100 hover:bg-danger-soft rounded text-foreground-faint hover:text-danger-fg transition-opacity"
               >
                 <Trash2 className="w-3 h-3" />
               </button>

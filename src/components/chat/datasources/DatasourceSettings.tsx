@@ -48,12 +48,12 @@ function kindBadge(source: DataSourceDescriptor): string {
 
 function badgeClass(source: DataSourceDescriptor): string {
   if (source.kind === "db") {
-    return "bg-sky-100 dark:bg-sky-950 text-sky-700 dark:text-sky-300";
+    return "bg-sky-soft-strong text-sky-fg-strong";
   }
   if (source.kind === "file") {
-    return "bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300";
+    return "bg-warning-soft-strong text-warning-fg-strong";
   }
-  return "bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300";
+  return "bg-indigo-soft-strong text-indigo-fg-strong";
 }
 
 export function DatasourceSettings() {
@@ -173,18 +173,18 @@ export function DatasourceSettings() {
   };
 
   const inputClass =
-    "w-full p-2.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 font-mono";
-  const labelClass = "block text-slate-500 mb-1 font-medium";
+    "w-full p-2.5 rounded-lg border border-border bg-surface-sunken font-mono";
+  const labelClass = "block text-muted-foreground mb-1 font-medium";
 
   return (
     <div className="space-y-4 text-xs">
       {/* 源列表 */}
       <div className="space-y-2">
         {loading && sources.length === 0 && (
-          <div className="text-[11px] text-slate-400">加载中...</div>
+          <div className="text-[11px] text-foreground-faint">加载中...</div>
         )}
         {refreshing && sources.length > 0 && (
-          <div className="text-[10px] text-slate-400 flex items-center gap-1">
+          <div className="text-[10px] text-foreground-faint flex items-center gap-1">
             <Loader2 className="w-3 h-3 animate-spin" />
             <span>正在检查数据源健康状态…</span>
           </div>
@@ -198,20 +198,20 @@ export function DatasourceSettings() {
           return (
             <div
               key={s.id}
-              className="border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 space-y-2"
+              className="border border-border rounded-lg px-3 py-2 space-y-2"
             >
               <div className="flex items-center gap-2">
                 <span
                   className={`w-2 h-2 rounded-full shrink-0 ${
                     h === undefined
-                      ? "bg-slate-300 dark:bg-slate-600"
+                      ? "bg-surface-raised"
                       : h.ok
-                        ? "bg-emerald-500"
-                        : "bg-rose-500"
+                        ? "bg-success-solid"
+                        : "bg-danger-solid"
                   }`}
                   title={h?.error || ""}
                 />
-                <span className="flex-1 truncate text-slate-600 dark:text-slate-300">
+                <span className="flex-1 truncate text-foreground-subtle">
                   {s.name}
                 </span>
                 <span
@@ -219,7 +219,7 @@ export function DatasourceSettings() {
                 >
                   {kindBadge(s)}
                 </span>
-                <span className="text-slate-400 font-mono text-[10px] shrink-0">
+                <span className="text-foreground-faint font-mono text-[10px] shrink-0">
                   {h === undefined ? "..." : h.ok ? `${h.latencyMs}ms` : "异常"}
                 </span>
                 <button
@@ -230,8 +230,8 @@ export function DatasourceSettings() {
                   title={enabled ? "点击停用" : "点击启用"}
                   className={`p-1 rounded transition-colors ${
                     enabled
-                      ? "text-emerald-600 hover:bg-slate-100 dark:hover:bg-slate-800"
-                      : "text-slate-300 dark:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800"
+                      ? "text-success-fg hover:bg-muted"
+                      : "text-foreground-faint hover:bg-muted"
                   }`}
                 >
                   {busyToggle ? (
@@ -247,7 +247,7 @@ export function DatasourceSettings() {
                         onClick={() => openEdit(s)}
                         disabled={busy}
                         aria-label={`编辑 ${s.id}`}
-                        className="p-1 rounded text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50"
+                        className="p-1 rounded text-foreground-faint hover:text-foreground-subtle hover:bg-muted disabled:opacity-50"
                       >
                         <Pencil className="w-3.5 h-3.5" />
                       </button>
@@ -258,7 +258,7 @@ export function DatasourceSettings() {
                         disabled={busy}
                         aria-busy={busyDelete}
                         aria-label={`删除 ${s.id}`}
-                        className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50"
+                        className="p-1 rounded text-foreground-faint hover:text-danger-fg hover:bg-muted disabled:opacity-50"
                       >
                         {busyDelete ? (
                           <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -282,7 +282,7 @@ export function DatasourceSettings() {
       {!form && (
         <button
           onClick={openCreate}
-          className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg border border-dashed border-slate-300 dark:border-slate-700 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
+          className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg border border-dashed border-border-strong text-muted-foreground hover:bg-surface-sunken transition-colors"
         >
           <Plus className="w-3.5 h-3.5" />
           <span>添加数据源</span>
@@ -290,8 +290,8 @@ export function DatasourceSettings() {
       )}
 
       {form && (
-        <div className="space-y-3 border border-slate-200 dark:border-slate-800 rounded-lg p-3">
-          <div className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+        <div className="space-y-3 border border-border rounded-lg p-3">
+          <div className="text-[11px] font-semibold text-foreground-subtle">
             {form.mode === "create" ? "添加数据源" : `编辑 ${form.id}`}
           </div>
 
@@ -432,7 +432,7 @@ export function DatasourceSettings() {
                 >
                   <SelectTrigger
                     id="ds-dbtype"
-                    className="w-full h-auto py-2.5 text-xs bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800"
+                    className="w-full h-auto py-2.5 text-xs bg-surface-sunken border-border"
                   >
                     <SelectValue />
                   </SelectTrigger>
@@ -463,7 +463,7 @@ export function DatasourceSettings() {
                   className={inputClass}
                 />
               </div>
-              <div className="text-[10px] text-slate-400 flex items-center gap-1">
+              <div className="text-[10px] text-foreground-faint flex items-center gap-1">
                 <Database className="w-3 h-3" />
                 <span>数据库源仅允许只读 SELECT，自动行数封顶与超时保护</span>
               </div>
@@ -471,7 +471,7 @@ export function DatasourceSettings() {
           )}
 
           {form.kind === "file" && (
-            <div className="text-[10px] text-slate-400 flex items-center gap-1">
+            <div className="text-[10px] text-foreground-faint flex items-center gap-1">
               <Database className="w-3 h-3" />
               <span>
                 {form.mode === "create"
@@ -513,7 +513,7 @@ export function DatasourceSettings() {
           )}
 
           {errors.length > 0 && (
-            <div className="text-[11px] text-rose-600 dark:text-rose-400 space-y-1">
+            <div className="text-[11px] text-danger-fg space-y-1">
               {errors.map((e) => (
                 <div key={e}>· {e}</div>
               ))}
@@ -523,13 +523,13 @@ export function DatasourceSettings() {
           <div className="flex justify-end gap-2 pt-1">
             <button
               onClick={closeForm}
-              className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 text-xs hover:bg-slate-100"
+              className="px-3 py-1.5 rounded-lg border border-border text-xs hover:bg-muted"
             >
               取消
             </button>
             <button
               onClick={() => void submit()}
-              className="px-4 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-medium hover:bg-blue-700 shadow-xs"
+              className="px-4 py-1.5 rounded-lg bg-info-solid text-white text-xs font-medium hover:bg-info-solid-hover shadow-xs"
             >
               保存
             </button>

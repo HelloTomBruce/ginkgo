@@ -75,7 +75,7 @@ function EndpointFields({
   return (
     <>
       <fieldset>
-        <legend className="block text-slate-500 mb-1 font-medium flex items-center gap-1">
+        <legend className="block text-muted-foreground mb-1 font-medium flex items-center gap-1">
           <Sliders className="w-3.5 h-3.5" />
           <span>接口协议</span>
         </legend>
@@ -97,7 +97,7 @@ function EndpointFields({
       </fieldset>
 
       <div>
-        <label htmlFor="settings-base-url" className="block text-slate-500 mb-1 font-medium flex items-center gap-1">
+        <label htmlFor="settings-base-url" className="block text-muted-foreground mb-1 font-medium flex items-center gap-1">
           <Globe className="w-3.5 h-3.5" />
           <span>Base URL</span>
         </label>
@@ -111,7 +111,7 @@ function EndpointFields({
               ? "https://api.kimi.com/coding"
               : "https://api.openai.com/v1"
           }
-          className="w-full p-2.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 font-mono"
+          className="w-full p-2.5 rounded-lg border border-border bg-surface-sunken font-mono"
         />
       </div>
     </>
@@ -148,17 +148,17 @@ export function SettingsModal({
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent
         showCloseButton={false}
-        className="max-w-[calc(100%-2rem)] sm:max-w-2xl rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 gap-4 text-xs"
+        className="max-w-[calc(100%-2rem)] sm:max-w-2xl rounded-2xl bg-card border border-border p-6 gap-4 text-xs"
       >
-        <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+        <div className="flex items-center justify-between border-b border-border-subtle pb-3">
           <div className="flex items-center gap-2">
-            <Sliders className="w-5 h-5 text-blue-500" />
+            <Sliders className="w-5 h-5 text-info-fg" />
             <DialogTitle className="font-bold text-sm">设置</DialogTitle>
           </div>
           <button
             onClick={onClose}
             aria-label="关闭设置"
-            className="text-slate-400 hover:text-slate-600"
+            className="text-foreground-faint hover:text-foreground-subtle"
           >
             <X className="w-4 h-4" />
           </button>
@@ -169,12 +169,12 @@ export function SettingsModal({
           onValueChange={(v) => setActiveTab(v as SettingsTab)}
           className="gap-4"
         >
-          <TabsList className="w-full h-auto p-1 text-xs font-medium bg-slate-100 dark:bg-slate-800/70">
+          <TabsList className="w-full h-auto p-1 text-xs font-medium bg-muted">
             {SETTINGS_TABS.map(({ id, label, Icon }) => (
               <TabsTrigger
                 key={id}
                 value={id}
-                className="flex-1 h-auto py-1.5 gap-1.5 text-xs data-active:font-semibold data-active:text-blue-600 dark:data-active:text-blue-400 data-active:bg-white dark:data-active:bg-slate-900 data-active:shadow-xs"
+                className="flex-1 h-auto py-1.5 gap-1.5 text-xs data-active:font-semibold data-active:text-info-fg dark:data-active:text-info-fg data-active:bg-card dark:data-active:bg-surface-inverse data-active:shadow-xs"
               >
                 <Icon className="w-3.5 h-3.5" />
                 <span>{label}</span>
@@ -184,9 +184,9 @@ export function SettingsModal({
 
           <TabsContent value="model" className="space-y-3 text-xs mt-0">
             <div>
-              <label htmlFor="settings-provider" className="block text-slate-500 mb-1 font-medium flex items-center gap-1">
+              <label htmlFor="settings-provider" className="block text-muted-foreground mb-1 font-medium flex items-center gap-1">
                 <Bot className="w-3.5 h-3.5" />
-                <span>Provider{loading && <span className="text-slate-400 font-normal">（目录同步中…）</span>}</span>
+                <span>Provider{loading && <span className="text-foreground-faint font-normal">（目录同步中…）</span>}</span>
               </label>
               <Select
                 value={providerId}
@@ -195,7 +195,7 @@ export function SettingsModal({
               >
                 <SelectTrigger
                   id="settings-provider"
-                  className="w-full h-auto py-2.5 text-xs font-medium bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800"
+                  className="w-full h-auto py-2.5 text-xs font-medium bg-surface-sunken border-border"
                 >
                   <SelectValue />
                 </SelectTrigger>
@@ -231,7 +231,7 @@ export function SettingsModal({
             </div>
 
             <div>
-              <label htmlFor="settings-api-key" className="block text-slate-500 mb-1 font-medium flex items-center gap-1">
+              <label htmlFor="settings-api-key" className="block text-muted-foreground mb-1 font-medium flex items-center gap-1">
                 <Key className="w-3.5 h-3.5" />
                 <span>API Key</span>
               </label>
@@ -241,12 +241,12 @@ export function SettingsModal({
                 value={apiKey}
                 onChange={(e) => onApiKeyChange(e.target.value)}
                 placeholder={preset?.keyHint ?? "sk-..."}
-                className="w-full p-2.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 font-mono"
+                className="w-full p-2.5 rounded-lg border border-border bg-surface-sunken font-mono"
               />
             </div>
 
             <div>
-              <label htmlFor="settings-model" className="block text-slate-500 mb-1 font-medium flex items-center gap-1">
+              <label htmlFor="settings-model" className="block text-muted-foreground mb-1 font-medium flex items-center gap-1">
                 <Bot className="w-3.5 h-3.5" />
                 <span>Model（手动输入，可从建议中选择）</span>
               </label>
@@ -257,7 +257,7 @@ export function SettingsModal({
                 value={model}
                 onChange={(e) => onModelChange(e.target.value)}
                 placeholder={preset?.defaultModel ?? "gpt-4o-mini / deepseek-chat"}
-                className="w-full p-2.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 font-mono"
+                className="w-full p-2.5 rounded-lg border border-border bg-surface-sunken font-mono"
               />
               {preset && (
                 <datalist id="settings-model-options">
@@ -269,8 +269,8 @@ export function SettingsModal({
             </div>
 
             {preset ? (
-              <Collapsible className="rounded-lg border border-slate-100 dark:border-slate-800">
-                <CollapsibleTrigger className="group w-full cursor-pointer select-none px-2.5 py-2 text-slate-500 font-medium flex items-center gap-1">
+              <Collapsible className="rounded-lg border border-border-subtle">
+                <CollapsibleTrigger className="group w-full cursor-pointer select-none px-2.5 py-2 text-muted-foreground font-medium flex items-center gap-1">
                   <Globe className="w-3.5 h-3.5" />
                   <span>高级：协议与接口地址</span>
                   <ChevronDown className="w-3.5 h-3.5 ml-auto transition-transform group-data-open:rotate-180" />
@@ -297,9 +297,9 @@ export function SettingsModal({
             )}
 
             <div>
-              <label htmlFor="settings-temperature" className="block text-slate-500 mb-1 font-medium flex items-center justify-between">
+              <label htmlFor="settings-temperature" className="block text-muted-foreground mb-1 font-medium flex items-center justify-between">
                 <span>Temperature（0–2，数据分析建议 0.2）</span>
-                <span className="font-mono text-slate-400">{temperature}</span>
+                <span className="font-mono text-foreground-faint">{temperature}</span>
               </label>
               <Slider
                 id="settings-temperature"
@@ -313,9 +313,9 @@ export function SettingsModal({
             </div>
 
             <div>
-              <label htmlFor="settings-max-tokens" className="block text-slate-500 mb-1 font-medium flex items-center justify-between">
+              <label htmlFor="settings-max-tokens" className="block text-muted-foreground mb-1 font-medium flex items-center justify-between">
                 <span>最大输出 Tokens（Anthropic 协议必填，推理模型建议 32768+）</span>
-                <span className="font-mono text-slate-400">{maxTokens || "16384（默认）"}</span>
+                <span className="font-mono text-foreground-faint">{maxTokens || "16384（默认）"}</span>
               </label>
               <input
                 id="settings-max-tokens"
@@ -326,12 +326,12 @@ export function SettingsModal({
                 value={maxTokens}
                 onChange={(e) => onMaxTokensChange(e.target.value)}
                 placeholder="留空使用服务端默认 16384"
-                className="w-full p-2.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 font-mono"
+                className="w-full p-2.5 rounded-lg border border-border bg-surface-sunken font-mono"
               />
             </div>
 
-            <div className="pt-3 border-t border-slate-100 dark:border-slate-800">
-              <label htmlFor="settings-access-token" className="block text-slate-500 mb-1 font-medium flex items-center gap-1">
+            <div className="pt-3 border-t border-border-subtle">
+              <label htmlFor="settings-access-token" className="block text-muted-foreground mb-1 font-medium flex items-center gap-1">
                 <Key className="w-3.5 h-3.5" />
                 <span>访问令牌（部署鉴权，可选）</span>
               </label>
@@ -341,7 +341,7 @@ export function SettingsModal({
                 value={accessToken}
                 onChange={(e) => onAccessTokenChange(e.target.value)}
                 placeholder="服务端配置 OPENUI_API_AUTH_TOKEN 时必填"
-                className="w-full p-2.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 font-mono"
+                className="w-full p-2.5 rounded-lg border border-border bg-surface-sunken font-mono"
               />
             </div>
           </TabsContent>
@@ -354,16 +354,16 @@ export function SettingsModal({
           </TabsContent>
         </Tabs>
 
-        <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+        <div className="flex justify-end gap-2 pt-2 border-t border-border-subtle">
           <button
             onClick={onClose}
-            className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 text-xs hover:bg-slate-100"
+            className="px-3 py-1.5 rounded-lg border border-border text-xs hover:bg-muted"
           >
             取消
           </button>
           <button
             onClick={onSave}
-            className="px-4 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-medium hover:bg-blue-700 shadow-xs"
+            className="px-4 py-1.5 rounded-lg bg-info-solid text-white text-xs font-medium hover:bg-info-solid-hover shadow-xs"
           >
             保存配置
           </button>

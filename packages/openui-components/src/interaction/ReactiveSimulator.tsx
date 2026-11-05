@@ -89,28 +89,28 @@ export const ReactiveSimulator: React.FC<ReactiveSimulatorProps> = ({
   };
 
   return (
-    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 shadow-xs space-y-4">
+    <div className="bg-card border border-border rounded-xl p-5 shadow-xs space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
-            <Calculator className="w-4 h-4 text-blue-500" />
+          <h3 className="text-sm font-semibold text-foreground flex items-center gap-1.5">
+            <Calculator className="w-4 h-4 text-info-fg" />
             <span>{title}</span>
           </h3>
-          <p className="text-xs text-slate-400 mt-0.5">
+          <p className="text-xs text-foreground-faint mt-0.5">
             OpenUI 响应式状态（Reactive State）+ 校验约束（Validation）+ 客户端工具（Client Tools）
           </p>
         </div>
-        <span className="text-[10px] bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 px-2.5 py-1 rounded-full font-semibold border border-indigo-200 dark:border-indigo-800">
+        <span className="text-[10px] bg-indigo-soft text-indigo-fg px-2.5 py-1 rounded-full font-semibold border border-indigo-border">
           ⚡ 客户端毫秒响应
         </span>
       </div>
 
       {/* 参数滑块与输入 */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs bg-slate-50 dark:bg-slate-950/50 p-4 rounded-xl border border-slate-100 dark:border-slate-800">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs bg-surface-sunken dark:bg-surface-inverse/50 p-4 rounded-xl border border-border-subtle">
         <div>
           <div className="flex justify-between font-medium mb-1">
-            <span className="text-slate-600 dark:text-slate-400">模拟投放预算</span>
-            <span className="font-mono text-blue-600 dark:text-blue-400 font-bold">
+            <span className="text-foreground-subtle">模拟投放预算</span>
+            <span className="font-mono text-info-fg font-bold">
               ${budget.toLocaleString()}
             </span>
           </div>
@@ -121,14 +121,14 @@ export const ReactiveSimulator: React.FC<ReactiveSimulatorProps> = ({
             step="10000"
             value={budget}
             onChange={(e) => handleBudgetChange(Number(e.target.value))}
-            className="w-full h-1.5 bg-slate-200 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer accent-blue-600"
+            className="w-full h-1.5 bg-surface-raised rounded-lg appearance-none cursor-pointer accent-info-solid"
           />
         </div>
 
         <div>
           <div className="flex justify-between font-medium mb-1">
-            <span className="text-slate-600 dark:text-slate-400">目标获客成本 (CAC)</span>
-            <span className="font-mono text-emerald-600 dark:text-emerald-400 font-bold">
+            <span className="text-foreground-subtle">目标获客成本 (CAC)</span>
+            <span className="font-mono text-success-fg font-bold">
               ${targetCac.toFixed(2)}
             </span>
           </div>
@@ -139,14 +139,14 @@ export const ReactiveSimulator: React.FC<ReactiveSimulatorProps> = ({
             step="1"
             value={targetCac}
             onChange={(e) => setTargetCac(Math.max(0, Number(e.target.value)))}
-            className="w-full h-1.5 bg-slate-200 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-600"
+            className="w-full h-1.5 bg-surface-raised rounded-lg appearance-none cursor-pointer accent-success-solid"
           />
         </div>
 
         <div>
           <div className="flex justify-between font-medium mb-1">
-            <span className="text-slate-600 dark:text-slate-400">预估成交转化率 (CVR)</span>
-            <span className="font-mono text-violet-600 dark:text-violet-400 font-bold">
+            <span className="text-foreground-subtle">预估成交转化率 (CVR)</span>
+            <span className="font-mono text-violet-fg font-bold">
               {customCvr}%
             </span>
           </div>
@@ -157,14 +157,14 @@ export const ReactiveSimulator: React.FC<ReactiveSimulatorProps> = ({
             step="1"
             value={customCvr}
             onChange={(e) => setCustomCvr(Math.min(100, Math.max(0, Number(e.target.value))))}
-            className="w-full h-1.5 bg-slate-200 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer accent-violet-600"
+            className="w-full h-1.5 bg-surface-raised rounded-lg appearance-none cursor-pointer accent-violet-fg"
           />
         </div>
       </div>
 
       {/* 校验错误提示 */}
       {validationError && (
-        <div className="flex items-center gap-1.5 text-xs text-rose-600 bg-rose-50 dark:bg-rose-950/40 p-2.5 rounded-lg border border-rose-200 dark:border-rose-900">
+        <div className="flex items-center gap-1.5 text-xs text-danger-fg bg-danger-soft p-2.5 rounded-lg border border-danger-border">
           <AlertTriangle className="w-4 h-4 shrink-0" />
           <span>{validationError}</span>
         </div>
@@ -172,49 +172,49 @@ export const ReactiveSimulator: React.FC<ReactiveSimulatorProps> = ({
 
       {/* 实时响应式联动计算结果卡片 */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div className="bg-slate-50 dark:bg-slate-800/40 p-3 rounded-lg border border-slate-200/60 dark:border-slate-800">
-          <div className="text-[11px] text-slate-400">预期线索获取</div>
-          <div className="text-lg font-bold text-slate-800 dark:text-slate-100 font-mono mt-0.5">
+        <div className="bg-surface-sunken p-3 rounded-lg border border-border/60">
+          <div className="text-[11px] text-foreground-faint">预期线索获取</div>
+          <div className="text-lg font-bold text-foreground-strong font-mono mt-0.5">
             {estimatedLeads.toLocaleString()} <span className="text-xs font-normal">条</span>
           </div>
         </div>
 
-        <div className="bg-slate-50 dark:bg-slate-800/40 p-3 rounded-lg border border-slate-200/60 dark:border-slate-800">
-          <div className="text-[11px] text-slate-400">预期签约成单</div>
-          <div className="text-lg font-bold text-emerald-600 dark:text-emerald-400 font-mono mt-0.5">
+        <div className="bg-surface-sunken p-3 rounded-lg border border-border/60">
+          <div className="text-[11px] text-foreground-faint">预期签约成单</div>
+          <div className="text-lg font-bold text-success-fg font-mono mt-0.5">
             {estimatedDeals.toLocaleString()} <span className="text-xs font-normal">单</span>
           </div>
         </div>
 
-        <div className="bg-slate-50 dark:bg-slate-800/40 p-3 rounded-lg border border-slate-200/60 dark:border-slate-800">
-          <div className="text-[11px] text-slate-400">预估贡献营收</div>
-          <div className="text-lg font-bold text-blue-600 dark:text-blue-400 font-mono mt-0.5">
+        <div className="bg-surface-sunken p-3 rounded-lg border border-border/60">
+          <div className="text-[11px] text-foreground-faint">预估贡献营收</div>
+          <div className="text-lg font-bold text-info-fg font-mono mt-0.5">
             ${estimatedRevenue.toLocaleString()}
           </div>
         </div>
 
-        <div className="bg-slate-50 dark:bg-slate-800/40 p-3 rounded-lg border border-slate-200/60 dark:border-slate-800">
-          <div className="text-[11px] text-slate-400">预估投产比 (ROI)</div>
-          <div className="text-lg font-bold text-violet-600 dark:text-violet-400 font-mono mt-0.5">
+        <div className="bg-surface-sunken p-3 rounded-lg border border-border/60">
+          <div className="text-[11px] text-foreground-faint">预估投产比 (ROI)</div>
+          <div className="text-lg font-bold text-violet-fg font-mono mt-0.5">
             {estimatedRoi}x
           </div>
         </div>
       </div>
 
       {/* 底部多步操作栏 */}
-      <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800 flex-wrap gap-2">
+      <div className="flex items-center justify-between pt-2 border-t border-border-subtle flex-wrap gap-2">
         <button
           onClick={handleExportSimulation}
-          className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-medium text-slate-700 dark:text-slate-300 flex items-center gap-1.5 transition-colors cursor-pointer"
+          className="px-3 py-1.5 rounded-lg border border-border hover:bg-muted text-xs font-medium text-foreground-subtle flex items-center gap-1.5 transition-colors cursor-pointer"
         >
-          <Download className="w-3.5 h-3.5 text-slate-500" />
+          <Download className="w-3.5 h-3.5 text-muted-foreground" />
           <span>客户端一键导出测算表 (Client Tool)</span>
         </button>
 
         <button
           onClick={handleAskAIToAudit}
           disabled={!!validationError}
-          className="px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium flex items-center gap-1.5 shadow-xs transition-colors disabled:opacity-50 cursor-pointer"
+          className="px-3.5 py-1.5 rounded-lg bg-info-solid hover:bg-info-solid-hover text-white text-xs font-medium flex items-center gap-1.5 shadow-xs transition-colors disabled:opacity-50 cursor-pointer"
         >
           <Sparkles className="w-3.5 h-3.5" />
           <span>将此测算案交由 Agent 深度归因 (ToAssistant)</span>

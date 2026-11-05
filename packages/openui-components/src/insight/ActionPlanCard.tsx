@@ -45,9 +45,9 @@ export const ActionPlanCard: React.FC<ActionPlanCardProps> = ({
   };
 
   const priorityStyles = {
-    high: "bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400 border-rose-200 dark:border-rose-800",
-    medium: "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400 border-amber-200 dark:border-amber-800",
-    low: "bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-400 border-blue-200 dark:border-blue-800",
+    high: "bg-danger-soft text-danger-fg-strong border-danger-border",
+    medium: "bg-warning-soft text-warning-fg-strong border-warning-border",
+    low: "bg-info-soft text-info-fg-strong border-info-border",
   };
 
   const priorityLabels = {
@@ -57,27 +57,27 @@ export const ActionPlanCard: React.FC<ActionPlanCardProps> = ({
   };
 
   return (
-    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 shadow-xs">
+    <div className="bg-card border border-border rounded-xl p-5 shadow-xs">
       <div className="mb-4 flex items-center justify-between">
         <div>
-          <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
-            <Zap className="w-4 h-4 text-amber-500" />
+          <h3 className="text-sm font-semibold text-foreground flex items-center gap-1.5">
+            <Zap className="w-4 h-4 text-warning-fg" />
             <span>{title}</span>
           </h3>
           {description && (
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+            <p className="text-xs text-muted-foreground mt-0.5">
               {description}
             </p>
           )}
         </div>
-        <span className="text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 px-2 py-0.5 rounded-full font-medium">
+        <span className="text-[10px] bg-muted text-foreground-subtle px-2 py-0.5 rounded-full font-medium">
           共 {safeActions.length} 项措施
         </span>
       </div>
 
       <div className="space-y-2.5">
         {safeActions.length === 0 ? (
-          <div className="text-xs text-slate-400 text-center py-4">
+          <div className="text-xs text-foreground-faint text-center py-4">
             暂无行动项建议
           </div>
         ) : (
@@ -86,7 +86,7 @@ export const ActionPlanCard: React.FC<ActionPlanCardProps> = ({
             return (
               <div
                 key={`action-${idx}`}
-                className="group p-3 rounded-lg border border-slate-200/80 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/50 hover:bg-slate-100/70 dark:hover:bg-slate-800/60 transition-colors flex items-start gap-3 justify-between"
+                className="group p-3 rounded-lg border border-border/80 bg-surface-sunken/50 dark:bg-surface-inverse/50 hover:bg-muted/70 transition-colors flex items-start gap-3 justify-between"
               >
                 <div className="space-y-1 flex-1">
                   <div className="flex items-center gap-2">
@@ -95,24 +95,24 @@ export const ActionPlanCard: React.FC<ActionPlanCardProps> = ({
                     >
                       {priorityLabels[priority]}
                     </span>
-                    <h4 className="text-xs font-semibold text-slate-800 dark:text-slate-200">
+                    <h4 className="text-xs font-semibold text-foreground-strong">
                       {action.title}
                     </h4>
                   </div>
                   {action.impact && (
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1">
-                      <span className="font-medium text-emerald-600 dark:text-emerald-400">预期成效:</span>
+                    <p className="text-[11px] text-muted-foreground flex items-center gap-1">
+                      <span className="font-medium text-success-fg">预期成效:</span>
                       <span>{action.impact}</span>
                     </p>
                   )}
                   {action.owner && (
-                    <span className="text-[10px] text-slate-400">责任人: {action.owner}</span>
+                    <span className="text-[10px] text-foreground-faint">责任人: {action.owner}</span>
                   )}
                 </div>
 
                 <button
                   onClick={() => handleExecuteAction(action)}
-                  className="shrink-0 opacity-80 group-hover:opacity-100 p-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-md text-slate-600 dark:text-slate-300 hover:text-blue-600 hover:border-blue-300 text-xs flex items-center gap-1 shadow-2xs transition-all"
+                  className="shrink-0 opacity-80 group-hover:opacity-100 p-1.5 bg-card border border-border rounded-md text-foreground-subtle hover:text-info-fg hover:border-info-border-strong text-xs flex items-center gap-1 shadow-2xs transition-all"
                   title="触发深入分析"
                 >
                   <span className="text-[11px]">拆解</span>

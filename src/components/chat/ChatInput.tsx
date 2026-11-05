@@ -54,10 +54,10 @@ export function ChatInput({
   };
 
   return (
-    <div className="no-print p-4 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800">
+    <div className="no-print p-4 bg-card border-t border-border">
       <form onSubmit={onSubmit} className="max-w-4xl mx-auto">
         {/* 输入框容器：边框/聚焦环在容器上，内部为 textarea + 底部工具行 */}
-        <div className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500 transition-all">
+        <div className="bg-surface-sunken border border-border rounded-2xl focus-within:ring-2 focus-within:ring-ring focus-within:border-ring transition-all">
           <textarea
             ref={textareaRef}
             rows={1}
@@ -72,7 +72,7 @@ export function ChatInput({
                   : "例如：从数据库分析各渠道 CAC，输出响应式预算试算器与落地行动建议...（Enter 发送，Shift+Enter 换行）"
             }
             disabled={isLoading}
-            className="w-full bg-transparent px-4 pt-3.5 pb-1 text-sm leading-6 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none resize-none disabled:opacity-50 overflow-y-auto"
+            className="w-full bg-transparent px-4 pt-3.5 pb-1 text-sm leading-6 placeholder:text-foreground-faint focus:outline-none resize-none disabled:opacity-50 overflow-y-auto"
             style={{ maxHeight: TEXTAREA_MAX_HEIGHT }}
           />
           {/* 底部工具行：左「先出思路」无边框开关，右发送按钮 */}
@@ -84,8 +84,8 @@ export function ChatInput({
                 onClick={() => onPlanModeChange(!planMode)}
                 className={`flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium transition-colors select-none cursor-pointer ${
                   planMode
-                    ? "bg-blue-100 dark:bg-blue-950/70 text-blue-700 dark:text-blue-300"
-                    : "text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300"
+                    ? "bg-info-soft-strong text-info-fg-strong"
+                    : "text-foreground-faint hover:text-foreground-subtle"
                 }`}
               >
                 <ClipboardList className="w-3.5 h-3.5" />
@@ -95,7 +95,7 @@ export function ChatInput({
             <button
               type="submit"
               disabled={isLoading || !input.trim()}
-              className="bg-blue-600 hover:bg-blue-700 text-white rounded-xl px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 shadow-xs"
+              className="bg-info-solid hover:bg-info-solid-hover text-white rounded-xl px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 shadow-xs"
             >
               {isLoading ? (
                 <Loader2 className="w-4 h-4 animate-spin" />

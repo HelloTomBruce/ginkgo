@@ -104,23 +104,23 @@ export function ChatSidebar({
   }, [sessions, sessionSearch]);
 
   return (
-    <aside className="w-72 border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex flex-col shrink-0">
+    <aside className="w-72 border-r border-border bg-card flex flex-col shrink-0">
       {/* Logo 区域 */}
-      <div className="flex items-center gap-2.5 p-4 border-b border-slate-100 dark:border-slate-800">
-        <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-white shadow-xs">
+      <div className="flex items-center gap-2.5 p-4 border-b border-border-subtle">
+        <div className="w-8 h-8 rounded-lg bg-info-solid flex items-center justify-center text-white shadow-xs">
           <BarChart3 className="w-5 h-5" />
         </div>
         <div className="flex-1 min-w-0">
           <h1 className="font-bold text-sm leading-tight truncate">OpenUI Analytics</h1>
-          <p className="text-[11px] text-slate-400">Generative UI & MCP</p>
+          <p className="text-[11px] text-foreground-faint">Generative UI & MCP</p>
         </div>
       </div>
 
       {/* 顶部操作：新建会话按钮 */}
-      <div className="p-3 border-b border-slate-100 dark:border-slate-800">
+      <div className="p-3 border-b border-border-subtle">
         <button
           onClick={onCreateNewChat}
-          className="w-full flex items-center justify-center gap-2 px-3.5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs transition-colors"
+          className="w-full flex items-center justify-center gap-2 px-3.5 py-2.5 rounded-xl bg-info-solid hover:bg-info-solid-hover text-white text-xs font-semibold shadow-xs transition-colors"
         >
           <Plus className="w-4 h-4" />
           <span>新建对话会话</span>
@@ -129,13 +129,13 @@ export function ChatSidebar({
 
       {/* 侧边栏导航 Tab 切换 */}
       <div className="px-3 pt-2">
-        <div className="flex bg-slate-100 dark:bg-slate-800/70 p-1 rounded-lg text-xs font-medium">
+        <div className="flex bg-muted p-1 rounded-lg text-xs font-medium">
           <button
             onClick={() => setSidebarTab("history")}
             className={`flex-1 flex items-center justify-center gap-1 py-1.5 rounded-md transition-all ${
               sidebarTab === "history"
-                ? "bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-xs font-semibold"
-                : "text-slate-500 hover:text-slate-900 dark:hover:text-slate-200"
+                ? "bg-card text-info-fg shadow-xs font-semibold"
+                : "text-muted-foreground hover:text-foreground"
             }`}
           >
             <History className="w-3.5 h-3.5" />
@@ -145,8 +145,8 @@ export function ChatSidebar({
             onClick={() => setSidebarTab("dashboards")}
             className={`flex-1 flex items-center justify-center gap-1 py-1.5 rounded-md transition-all ${
               sidebarTab === "dashboards"
-                ? "bg-white dark:bg-slate-900 text-amber-600 dark:text-amber-400 shadow-xs font-semibold"
-                : "text-slate-500 hover:text-slate-900 dark:hover:text-slate-200"
+                ? "bg-card text-info-fg shadow-xs font-semibold"
+                : "text-muted-foreground hover:text-foreground"
             }`}
           >
             <LayoutGrid className="w-3.5 h-3.5" />
@@ -156,8 +156,8 @@ export function ChatSidebar({
             onClick={() => setSidebarTab("presets")}
             className={`flex-1 flex items-center justify-center gap-1 py-1.5 rounded-md transition-all ${
               sidebarTab === "presets"
-                ? "bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-xs font-semibold"
-                : "text-slate-500 hover:text-slate-900 dark:hover:text-slate-200"
+                ? "bg-card text-info-fg shadow-xs font-semibold"
+                : "text-muted-foreground hover:text-foreground"
             }`}
           >
             <Compass className="w-3.5 h-3.5" />
@@ -171,20 +171,20 @@ export function ChatSidebar({
         <div className="flex-1 flex flex-col min-h-0 px-3 py-2 space-y-2">
           {/* 搜索框 */}
           <div className="relative">
-            <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-slate-400" />
+            <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-foreground-faint" />
             <input
               type="text"
               value={sessionSearch}
               onChange={(e) => setSessionSearch(e.target.value)}
               placeholder="搜索历史会话..."
-              className="w-full pl-8 pr-2.5 py-1.5 bg-slate-50 dark:bg-slate-950 border border-slate-200/80 dark:border-slate-800 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="w-full pl-8 pr-2.5 py-1.5 bg-surface-sunken border border-border/80 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-ring"
             />
           </div>
 
           {/* 会话列表项 */}
           <div className="flex-1 overflow-y-auto space-y-1 pr-1">
             {filteredSessions.length === 0 ? (
-              <div className="text-center py-8 text-xs text-slate-400">
+              <div className="text-center py-8 text-xs text-foreground-faint">
                 无匹配的会话记录
               </div>
             ) : (
@@ -207,10 +207,10 @@ export function ChatSidebar({
           </div>
 
           {/* 清空历史按钮 */}
-          <div className="pt-1 border-t border-slate-100 dark:border-slate-800 flex justify-end">
+          <div className="pt-1 border-t border-border-subtle flex justify-end">
             <button
               onClick={onClearAllSessions}
-              className="text-[11px] text-slate-400 hover:text-rose-600 py-1 transition-colors flex items-center gap-1"
+              className="text-[11px] text-foreground-faint hover:text-danger-fg py-1 transition-colors flex items-center gap-1"
             >
               <Trash2 className="w-3 h-3" />
               <span>清空所有记录</span>
@@ -223,14 +223,14 @@ export function ChatSidebar({
       {sidebarTab === "dashboards" && (
         <div className="flex-1 overflow-y-auto px-3 py-2 space-y-1">
           <div className="flex items-center justify-between gap-2 px-1 pb-1">
-            <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider truncate">
+            <div className="text-[11px] font-semibold text-foreground-faint uppercase tracking-wider truncate">
               收藏的看板（服务端存储）
             </div>
             <Hint label="导入 .openui.json 快照文件">
               <button
                 onClick={() => importFileRef.current?.click()}
                 aria-label="导入看板快照"
-                className="shrink-0 flex items-center gap-1 text-[11px] text-slate-500 hover:text-blue-600 dark:hover:text-blue-400 px-1.5 py-1 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-950/50 transition-colors"
+                className="shrink-0 flex items-center gap-1 text-[11px] text-muted-foreground hover:text-info-fg px-1.5 py-1 rounded-lg hover:bg-info-soft transition-colors"
               >
                 <Upload className="w-3.5 h-3.5" />
                 <span>导入</span>
@@ -250,11 +250,11 @@ export function ChatSidebar({
             />
           </div>
           {dashboards.length === 0 ? (
-            <div className="text-center py-10 px-3 text-xs text-slate-400 leading-relaxed">
-              <Star className="w-5 h-5 mx-auto mb-2 text-slate-300 dark:text-slate-600" />
+            <div className="text-center py-10 px-3 text-xs text-foreground-faint leading-relaxed">
+              <Star className="w-5 h-5 mx-auto mb-2 text-foreground-faint" />
               还没有收藏的看板
               <br />
-              对话生成看板后，点击看板右上角 <span className="text-amber-500">★ 收藏</span> 保存到这里
+              对话生成看板后，点击看板右上角 <span className="text-warning-fg">★ 收藏</span> 保存到这里
             </div>
           ) : (
             dashboards.map((d) => (
@@ -275,16 +275,16 @@ export function ChatSidebar({
       {/* 预设推荐场景视图 */}
       {sidebarTab === "presets" && (
         <div className="flex-1 overflow-y-auto px-3 py-2 space-y-1.5">
-          <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider px-1 pb-1">
+          <div className="text-[11px] font-semibold text-foreground-faint uppercase tracking-wider px-1 pb-1">
             一键带入预设分析模板
           </div>
           {PRESET_QUERIES.map((preset) => (
             <button
               key={preset}
               onClick={() => onPresetSelect(preset)}
-              className="w-full text-left text-xs p-2.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition-colors flex items-start gap-2"
+              className="w-full text-left text-xs p-2.5 rounded-lg hover:bg-muted text-foreground-subtle transition-colors flex items-start gap-2"
             >
-              <Sparkles className="w-3.5 h-3.5 text-blue-500 shrink-0 mt-0.5" />
+              <Sparkles className="w-3.5 h-3.5 text-info-fg shrink-0 mt-0.5" />
               <span className="line-clamp-2 leading-relaxed">{preset}</span>
             </button>
           ))}
@@ -292,10 +292,10 @@ export function ChatSidebar({
       )}
 
       {/* 底部功能栏与运行状态 */}
-      <div className="p-3 border-t border-slate-100 dark:border-slate-800 space-y-2 bg-slate-50/50 dark:bg-slate-900/50">
-        <div className="flex items-center justify-between text-[11px] px-1 text-slate-500">
+      <div className="p-3 border-t border-border-subtle space-y-2 bg-surface-sunken/50 dark:bg-surface-inverse/50">
+        <div className="flex items-center justify-between text-[11px] px-1 text-muted-foreground">
           <div className="flex items-center gap-1.5 font-medium">
-            <Bot className="w-3.5 h-3.5 text-blue-500" />
+            <Bot className="w-3.5 h-3.5 text-info-fg" />
             <span>{apiKey ? model : "未配置 Key"}</span>
           </div>
         </div>
@@ -305,8 +305,8 @@ export function ChatSidebar({
             onClick={onToggleRawLang}
             className={`w-full text-xs p-2 rounded-lg border transition-colors flex items-center gap-2 ${
               showRawLang
-                ? "bg-blue-50 dark:bg-blue-950/40 border-blue-200 dark:border-blue-800 text-blue-600 dark:text-blue-400 font-medium"
-                : "border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+                ? "bg-info-soft border-info-border text-info-fg font-medium"
+                : "border-border text-foreground-subtle hover:bg-muted"
             }`}
           >
             <FileCode className="w-3.5 h-3.5" />
@@ -314,7 +314,7 @@ export function ChatSidebar({
           </button>
           <button
             onClick={onOpenMethodology}
-            className="w-full text-xs p-2 rounded-lg border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors flex items-center gap-2"
+            className="w-full text-xs p-2 rounded-lg border border-border text-foreground-subtle hover:bg-muted transition-colors flex items-center gap-2"
           >
             <BookOpen className="w-3.5 h-3.5" />
             <span>分析方法论</span>
@@ -379,12 +379,12 @@ function DashboardListItem({
   };
 
   const menuItemClass =
-    "w-full flex items-center gap-2 px-3 py-2 text-left text-xs hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors disabled:opacity-40 disabled:pointer-events-none";
+    "w-full flex items-center gap-2 px-3 py-2 text-left text-xs hover:bg-muted transition-colors disabled:opacity-40 disabled:pointer-events-none";
 
   return (
     <div
       onClick={() => !editing && onPreview(dashboard.id)}
-      className="group relative flex items-center justify-between p-2.5 rounded-xl text-xs cursor-pointer transition-all border border-transparent hover:bg-slate-100/80 dark:hover:bg-slate-800/60 text-slate-600 dark:text-slate-300"
+      className="group relative flex items-center justify-between p-2.5 rounded-xl text-xs cursor-pointer transition-all border border-transparent hover:bg-muted/80 text-foreground-subtle"
     >
       <div className="min-w-0 flex-1 pr-1">
         {editing ? (
@@ -398,12 +398,12 @@ function DashboardListItem({
                 if (e.key === "Escape") setEditing(false);
               }}
               aria-label={`重命名看板 ${dashboard.title}`}
-              className="flex-1 min-w-0 px-2 py-1 bg-slate-50 dark:bg-slate-950 border border-blue-300 dark:border-blue-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="flex-1 min-w-0 px-2 py-1 bg-surface-sunken border border-info-border-strong rounded-lg focus:outline-none focus:ring-1 focus:ring-ring"
             />
             <button
               onClick={saveRename}
               aria-label="保存标题"
-              className="p-1 rounded text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/50"
+              className="p-1 rounded text-success-fg hover:bg-success-soft"
             >
               <Check className="w-3.5 h-3.5" />
             </button>
@@ -411,22 +411,22 @@ function DashboardListItem({
         ) : (
           <>
             <div className="flex items-center gap-1.5">
-              <Star className="w-3 h-3 text-amber-500 fill-current shrink-0" />
+              <Star className="w-3 h-3 text-warning-fg fill-current shrink-0" />
               <span className="font-medium truncate">{dashboard.title}</span>
             </div>
-            <div className="mt-0.5 text-[11px] text-slate-400 truncate">
+            <div className="mt-0.5 text-[11px] text-foreground-faint truncate">
               {dashboard.prompt ? dashboard.prompt : "（未记录原始提问）"}
             </div>
             {/* 第 3 行：时间信息（收藏时间 + 数据时间，中点分隔） */}
-            <div className="mt-0.5 flex items-center gap-1.5 text-[10px] text-slate-400">
+            <div className="mt-0.5 flex items-center gap-1.5 text-[10px] text-foreground-faint">
               <span className="shrink-0" title={`收藏于 ${new Date(dashboard.updatedAt).toLocaleString()}`}>
                 {formatSessionTime(dashboard.updatedAt)}
               </span>
               {dashboard.dataUpdatedAt !== undefined && (
                 <>
-                  <span className="text-slate-300 dark:text-slate-600">·</span>
+                  <span className="text-foreground-faint">·</span>
                   <span
-                    className="shrink-0 text-emerald-600/80 dark:text-emerald-400/80"
+                    className="shrink-0 text-success-fg/80"
                     title={`数据确认于 ${new Date(dashboard.dataUpdatedAt).toLocaleString()}`}
                   >
                     数据 {formatSessionTime(dashboard.dataUpdatedAt)}
@@ -437,12 +437,12 @@ function DashboardListItem({
             {/* 第 4 行：数据源徽章（多源只显首个 +「+N」，全量悬停可见） */}
             {dashboard.sourceNames && dashboard.sourceNames.length > 0 && (
               <div className="mt-1 flex items-center gap-1 min-w-0">
-                <span className="px-1 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-[10px] text-slate-400 truncate">
+                <span className="px-1 py-0.5 rounded bg-muted text-[10px] text-foreground-faint truncate">
                   {dashboard.sourceNames[0]}
                 </span>
                 {dashboard.sourceNames.length > 1 && (
                   <span
-                    className="shrink-0 text-[10px] text-slate-400 cursor-default"
+                    className="shrink-0 text-[10px] text-foreground-faint cursor-default"
                     title={dashboard.sourceNames.join(" / ")}
                   >
                     +{dashboard.sourceNames.length - 1}
@@ -466,7 +466,7 @@ function DashboardListItem({
             <button
               onClick={() => onPreview(dashboard.id)}
               aria-label={`查看看板 ${dashboard.title}`}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/50"
+              className="p-1.5 rounded-lg text-foreground-faint hover:text-info-fg hover:bg-info-soft"
             >
               <Eye className="w-3.5 h-3.5" />
             </button>
@@ -479,7 +479,7 @@ function DashboardListItem({
                 aria-label={`看板 ${dashboard.title} 更多操作`}
                 aria-expanded={menuOpen}
                 aria-haspopup="menu"
-                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+                className="p-1.5 rounded-lg text-foreground-faint hover:text-foreground-subtle hover:bg-muted"
               >
                 <MoreHorizontal className="w-3.5 h-3.5" />
               </button>
@@ -489,7 +489,7 @@ function DashboardListItem({
               <div
                 role="menu"
                 aria-label={`看板 ${dashboard.title} 操作菜单`}
-                className="absolute right-0 top-full mt-1 z-30 w-40 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-lg py-1"
+                className="absolute right-0 top-full mt-1 z-30 w-40 rounded-xl border border-border bg-card shadow-lg py-1"
               >
                 <button
                   role="menuitem"
@@ -502,7 +502,7 @@ function DashboardListItem({
                   title={dashboard.prompt ? "用原始提问重新分析" : "未记录原始提问"}
                   className={menuItemClass}
                 >
-                  <RefreshCw className="w-3.5 h-3.5 text-slate-400" />
+                  <RefreshCw className="w-3.5 h-3.5 text-foreground-faint" />
                   <span>重新分析</span>
                 </button>
                 <button
@@ -514,7 +514,7 @@ function DashboardListItem({
                   aria-label={`导出看板 ${dashboard.title}`}
                   className={menuItemClass}
                 >
-                  <Download className="w-3.5 h-3.5 text-slate-400" />
+                  <Download className="w-3.5 h-3.5 text-foreground-faint" />
                   <span>导出快照</span>
                 </button>
                 <button
@@ -527,10 +527,10 @@ function DashboardListItem({
                   aria-label={`重命名看板 ${dashboard.title}`}
                   className={menuItemClass}
                 >
-                  <Edit3 className="w-3.5 h-3.5 text-slate-400" />
+                  <Edit3 className="w-3.5 h-3.5 text-foreground-faint" />
                   <span>重命名</span>
                 </button>
-                <div className="my-1 border-t border-slate-100 dark:border-slate-800" />
+                <div className="my-1 border-t border-border-subtle" />
                 {confirmDelete ? (
                   <button
                     role="menuitem"
@@ -539,7 +539,7 @@ function DashboardListItem({
                       onDelete(dashboard.id);
                     }}
                     aria-label={`确认删除看板 ${dashboard.title}`}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-950/70 transition-colors"
+                    className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-danger-fg bg-danger-soft hover:bg-danger-soft-hover transition-colors"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                     <span>确认删除</span>
@@ -549,7 +549,7 @@ function DashboardListItem({
                     role="menuitem"
                     onClick={() => setConfirmDelete(true)}
                     aria-label={`删除看板 ${dashboard.title}`}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-rose-500 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors"
+                    className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-danger-fg hover:bg-danger-soft transition-colors"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                     <span>删除收藏</span>

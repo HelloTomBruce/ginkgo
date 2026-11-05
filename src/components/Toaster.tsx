@@ -13,10 +13,10 @@ import {
 
 const KIND_STYLE: Record<ToastItem["kind"], string> = {
   success:
-    "bg-emerald-50 dark:bg-emerald-950/90 border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200",
+    "bg-success-soft border-success-border text-success-fg-strong",
   error:
-    "bg-rose-50 dark:bg-rose-950/90 border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-200",
-  info: "bg-blue-50 dark:bg-blue-950/90 border-blue-200 dark:border-blue-800 text-blue-800 dark:text-blue-200",
+    "bg-danger-soft border-danger-border text-danger-fg-strong",
+  info: "bg-info-soft border-info-border text-info-fg-strong",
 };
 
 const KIND_ICON: Record<ToastItem["kind"], React.ReactNode> = {

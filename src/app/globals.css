@@ -9,46 +9,185 @@
 /* workspace 组件包在应用根之外，Tailwind v4 需显式声明扫描源 */
 @source "../../packages/openui-components/src";
 
+/* ============================================================================
+ * 主题 token 层（本文件是全项目唯一的颜色事实来源）
+ *
+ * 分层约定：
+ *   1. 中性阶梯 —— 对齐 Tailwind slate 色阶（业务组件历史用色），亮暗两套；
+ *   2. 语义表面 —— surface-page / card / sunken / subtle / raised / inverse；
+ *   3. 墨色阶梯 —— foreground > -strong > -subtle > muted-foreground > -faint；
+ *   4. 边框阶梯 —— border > border-strong，border-subtle 更弱；
+ *   5. 状态/强调色 —— info/success/warning/danger/brand/indigo/sky/violet，
+ *      每色相提供 soft（浅底）/ soft-hover / soft-strong / border / border-strong
+ *      / fg / fg-strong / solid / solid-hover / on-solid 十档；
+ *   6. 图表色板 —— chart-1..6（亮暗同值，数据可视化品牌色）。
+ *
+ * 暗色值统一在文件底部 @media (prefers-color-scheme: dark) 块内覆写；
+ * 打印时由 @media print 内的 :root 重置回亮色 token。
+ * 新增颜色需求时只改这里，业务代码禁止出现具体色板类（由 eslint 护栏约束）。
+ * 旧硬编码类 → token 类映射表见 docs/theme-tokens.md。
+ * ========================================================================== */
 :root {
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
   --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+
+  /* ---- 中性阶梯（= Tailwind slate） ---- */
+  --background: oklch(1 0 0);
+  --foreground: oklch(20.8% 0.042 265.755);        /* slate-900 */
+  --foreground-strong: oklch(27.9% 0.041 260.031);  /* slate-800 */
+  --foreground-subtle: oklch(44.6% 0.043 257.281);  /* slate-600 */
+  --foreground-faint: oklch(70.4% 0.04 256.788);    /* slate-400 */
+
+  /* ---- 语义表面 ---- */
+  --card: oklch(1 0 0);                           /* 白卡片 */
+  --card-foreground: var(--foreground);
+  --popover: oklch(1 0 0);
+  --popover-foreground: var(--foreground);
+  --surface-page: oklch(98.4% 0.003 247.858);     /* slate-50  应用画布 */
+  --surface-sunken: oklch(98.4% 0.003 247.858);   /* slate-50  凹陷井/输入框 */
+  --surface-subtle: oklch(96.8% 0.007 247.896);   /* slate-100 hover/标签底 */
+  --surface-raised: oklch(92.9% 0.013 255.508);   /* slate-200 进度槽/分隔块 */
+  --surface-inverse: oklch(12.9% 0.042 264.695);  /* slate-950 常暗面板 */
+  --surface-inverse-foreground: oklch(96.8% 0.007 247.896); /* slate-100 */
+
+  /* ---- shadcn 语义槽位（校准到 slate） ---- */
+  --primary: oklch(54.6% 0.245 262.881);          /* blue-600 品牌主色 */
+  --primary-foreground: oklch(1 0 0);
+  --secondary: var(--surface-subtle);
+  --secondary-foreground: var(--foreground);
+  --muted: var(--surface-subtle);
+  --muted-foreground: oklch(55.4% 0.046 257.417); /* slate-500 */
+  --accent: var(--surface-subtle);
+  --accent-foreground: var(--foreground);
+  --destructive: oklch(0.577 0.245 27.325);
+
+  /* ---- 边框阶梯 ---- */
+  --border: oklch(92.9% 0.013 255.508);           /* slate-200 */
+  --border-subtle: oklch(96.8% 0.007 247.896);    /* slate-100 */
+  --border-strong: oklch(86.9% 0.022 252.894);    /* slate-300 */
+  --input: oklch(92.9% 0.013 255.508);
+  --ring: oklch(62.3% 0.214 259.815);             /* blue-500 焦点环 */
+
+  /* ---- 侧栏（随主表面） ---- */
+  --sidebar: oklch(1 0 0);
+  --sidebar-foreground: var(--foreground);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: var(--surface-subtle);
+  --sidebar-accent-foreground: var(--foreground);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--ring);
+
+  /* ---- 图表色板（= 组件包 DEFAULT_COLORS） ---- */
+  --chart-1: oklch(62.3% 0.214 259.815);          /* blue-500   #3b82f6 */
+  --chart-2: oklch(69.6% 0.17 162.48);            /* emerald-500 #10b981 */
+  --chart-3: oklch(60.6% 0.25 292.717);           /* violet-500 #8b5cf6 */
+  --chart-4: oklch(76.9% 0.188 70.08);            /* amber-500  #f59e0b */
+  --chart-5: oklch(65.6% 0.241 354.308);          /* pink-500   #ec4899 */
+  --chart-6: oklch(71.5% 0.143 215.221);          /* cyan-500   #06b6d4 */
+
+  /* ---- 状态/强调色（soft 浅底 + fg 文字 + border + solid 实心） ---- */
+  /* info = blue */
+  --info-soft: oklch(97% 0.014 254.604);
+  --info-soft-hover: oklch(93.2% 0.032 255.585);
+  --info-soft-strong: oklch(93.2% 0.032 255.585);
+  --info-border: oklch(88.2% 0.059 254.128);
+  --info-border-strong: oklch(70.7% 0.165 254.624);
+  --info-fg: oklch(54.6% 0.245 262.881);
+  --info-fg-strong: oklch(48.8% 0.243 264.376);
+  --info-solid: oklch(54.6% 0.245 262.881);
+  --info-solid-hover: oklch(48.8% 0.243 264.376);
+  --info-on-solid: oklch(1 0 0);
+  /* success = emerald */
+  --success-soft: oklch(97.9% 0.021 166.113);
+  --success-soft-hover: oklch(95% 0.052 163.051);
+  --success-soft-strong: oklch(95% 0.052 163.051);
+  --success-border: oklch(90.5% 0.093 164.15);
+  --success-border-strong: oklch(76.5% 0.177 163.223);
+  --success-fg: oklch(59.6% 0.145 163.225);
+  --success-fg-strong: oklch(50.8% 0.118 165.612);
+  --success-solid: oklch(59.6% 0.145 163.225);
+  --success-solid-hover: oklch(50.8% 0.118 165.612);
+  --success-on-solid: oklch(1 0 0);
+  /* warning = amber */
+  --warning-soft: oklch(98.7% 0.022 95.277);
+  --warning-soft-hover: oklch(96.2% 0.059 95.617);
+  --warning-soft-strong: oklch(96.2% 0.059 95.617);
+  --warning-border: oklch(92.4% 0.12 95.746);
+  --warning-border-strong: oklch(82.8% 0.189 84.429);
+  --warning-fg: oklch(66.6% 0.179 58.318);
+  --warning-fg-strong: oklch(55.5% 0.163 48.998);
+  --warning-solid: oklch(66.6% 0.179 58.318);
+  --warning-solid-hover: oklch(55.5% 0.163 48.998);
+  --warning-on-solid: oklch(1 0 0);
+  /* danger = rose */
+  --danger-soft: oklch(96.9% 0.015 12.422);
+  --danger-soft-hover: oklch(94.1% 0.03 12.58);
+  --danger-soft-strong: oklch(94.1% 0.03 12.58);
+  --danger-border: oklch(89.2% 0.058 10.001);
+  --danger-border-strong: oklch(71.2% 0.194 13.428);
+  --danger-fg: oklch(58.6% 0.253 17.585);
+  --danger-fg-strong: oklch(51.4% 0.222 16.935);
+  --danger-solid: oklch(58.6% 0.253 17.585);
+  --danger-solid-hover: oklch(51.4% 0.222 16.935);
+  --danger-on-solid: oklch(1 0 0);
+  /* brand = purple */
+  --brand-soft: oklch(97.7% 0.014 308.299);
+  --brand-soft-hover: oklch(94.6% 0.033 307.174);
+  --brand-soft-strong: oklch(94.6% 0.033 307.174);
+  --brand-border: oklch(90.2% 0.063 306.703);
+  --brand-border-strong: oklch(71.4% 0.203 305.504);
+  --brand-fg: oklch(55.8% 0.288 302.321);
+  --brand-fg-strong: oklch(49.6% 0.265 301.924);
+  --brand-solid: oklch(55.8% 0.288 302.321);
+  --brand-solid-hover: oklch(49.6% 0.265 301.924);
+  --brand-on-solid: oklch(1 0 0);
+  /* indigo */
+  --indigo-soft: oklch(96.2% 0.018 272.314);
+  --indigo-soft-hover: oklch(93% 0.034 272.788);
+  --indigo-soft-strong: oklch(93% 0.034 272.788);
+  --indigo-border: oklch(87% 0.065 274.039);
+  --indigo-border-strong: oklch(67.3% 0.182 276.935);
+  --indigo-fg: oklch(51.1% 0.262 276.966);
+  --indigo-fg-strong: oklch(45.7% 0.24 277.023);
+  /* sky */
+  --sky-soft: oklch(97.7% 0.013 236.62);
+  --sky-soft-hover: oklch(95.1% 0.026 236.824);
+  --sky-soft-strong: oklch(95.1% 0.026 236.824);
+  --sky-border: oklch(90.1% 0.058 230.902);
+  --sky-border-strong: oklch(74.6% 0.16 232.661);
+  --sky-fg: oklch(58.8% 0.158 241.966);
+  --sky-fg-strong: oklch(50% 0.134 242.749);
+  /* ---- 热力图等连续强度刻度（level 1→4 递增） ---- */
+  --success-scale-1: oklch(90.5% 0.093 164.15);   /* emerald-200 */
+  --success-scale-2: oklch(76.5% 0.177 163.223);  /* emerald-400 */
+  --success-scale-3: oklch(69.6% 0.17 162.48);    /* emerald-500 */
+  --success-scale-4: oklch(59.6% 0.145 163.225);  /* emerald-600 */
+  --info-scale-1: oklch(88.2% 0.059 254.128);     /* blue-200 */
+  --info-scale-2: oklch(70.7% 0.165 254.624);     /* blue-400 */
+  --info-scale-3: oklch(62.3% 0.214 259.815);     /* blue-500 */
+  --info-scale-4: oklch(54.6% 0.245 262.881);     /* blue-600 */
+  --brand-scale-1: oklch(90.2% 0.063 306.703);    /* purple-200 */
+  --brand-scale-2: oklch(71.4% 0.203 305.504);    /* purple-400 */
+  --brand-scale-3: oklch(62.7% 0.265 303.9);      /* purple-500 */
+  --brand-scale-4: oklch(55.8% 0.288 302.321);    /* purple-600 */
+  /* violet */
+  --violet-soft: oklch(96.9% 0.016 293.756);
+  --violet-soft-hover: oklch(94.3% 0.029 294.588);
+  --violet-soft-strong: oklch(94.3% 0.029 294.588);
+  --violet-border: oklch(89.4% 0.057 293.283);
+  --violet-border-strong: oklch(70.2% 0.183 293.541);
+  --violet-fg: oklch(54.1% 0.281 293.009);
+  --violet-fg-strong: oklch(49.1% 0.27 292.581);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-foreground-strong: var(--foreground-strong);
+  --color-foreground-subtle: var(--foreground-subtle);
+  --color-foreground-faint: var(--foreground-faint);
   --font-sans: var(--font-sans);
   --font-mono: var(--font-mono);
   --font-heading: var(--font-sans);
@@ -60,6 +199,13 @@
   --color-sidebar-primary: var(--sidebar-primary);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar: var(--sidebar);
+  --color-surface-page: var(--surface-page);
+  --color-surface-sunken: var(--surface-sunken);
+  --color-surface-subtle: var(--surface-subtle);
+  --color-surface-raised: var(--surface-raised);
+  --color-surface-inverse: var(--surface-inverse);
+  --color-surface-inverse-foreground: var(--surface-inverse-foreground);
+  --color-chart-6: var(--chart-6);
   --color-chart-5: var(--chart-5);
   --color-chart-4: var(--chart-4);
   --color-chart-3: var(--chart-3);
@@ -68,6 +214,8 @@
   --color-ring: var(--ring);
   --color-input: var(--input);
   --color-border: var(--border);
+  --color-border-subtle: var(--border-subtle);
+  --color-border-strong: var(--border-strong);
   --color-destructive: var(--destructive);
   --color-accent-foreground: var(--accent-foreground);
   --color-accent: var(--accent);
@@ -81,6 +229,91 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
+  /* 状态/强调色桥接 */
+  --color-info-soft: var(--info-soft);
+  --color-info-soft-hover: var(--info-soft-hover);
+  --color-info-soft-strong: var(--info-soft-strong);
+  --color-info-border: var(--info-border);
+  --color-info-border-strong: var(--info-border-strong);
+  --color-info-fg: var(--info-fg);
+  --color-info-fg-strong: var(--info-fg-strong);
+  --color-info-solid: var(--info-solid);
+  --color-info-solid-hover: var(--info-solid-hover);
+  --color-info-on-solid: var(--info-on-solid);
+  --color-success-soft: var(--success-soft);
+  --color-success-soft-hover: var(--success-soft-hover);
+  --color-success-soft-strong: var(--success-soft-strong);
+  --color-success-border: var(--success-border);
+  --color-success-border-strong: var(--success-border-strong);
+  --color-success-fg: var(--success-fg);
+  --color-success-fg-strong: var(--success-fg-strong);
+  --color-success-solid: var(--success-solid);
+  --color-success-solid-hover: var(--success-solid-hover);
+  --color-success-on-solid: var(--success-on-solid);
+  --color-warning-soft: var(--warning-soft);
+  --color-warning-soft-hover: var(--warning-soft-hover);
+  --color-warning-soft-strong: var(--warning-soft-strong);
+  --color-warning-border: var(--warning-border);
+  --color-warning-border-strong: var(--warning-border-strong);
+  --color-warning-fg: var(--warning-fg);
+  --color-warning-fg-strong: var(--warning-fg-strong);
+  --color-warning-solid: var(--warning-solid);
+  --color-warning-solid-hover: var(--warning-solid-hover);
+  --color-warning-on-solid: var(--warning-on-solid);
+  --color-danger-soft: var(--danger-soft);
+  --color-danger-soft-hover: var(--danger-soft-hover);
+  --color-danger-soft-strong: var(--danger-soft-strong);
+  --color-danger-border: var(--danger-border);
+  --color-danger-border-strong: var(--danger-border-strong);
+  --color-danger-fg: var(--danger-fg);
+  --color-danger-fg-strong: var(--danger-fg-strong);
+  --color-danger-solid: var(--danger-solid);
+  --color-danger-solid-hover: var(--danger-solid-hover);
+  --color-danger-on-solid: var(--danger-on-solid);
+  --color-brand-soft: var(--brand-soft);
+  --color-brand-soft-hover: var(--brand-soft-hover);
+  --color-brand-soft-strong: var(--brand-soft-strong);
+  --color-brand-border: var(--brand-border);
+  --color-brand-border-strong: var(--brand-border-strong);
+  --color-brand-fg: var(--brand-fg);
+  --color-brand-fg-strong: var(--brand-fg-strong);
+  --color-brand-solid: var(--brand-solid);
+  --color-brand-solid-hover: var(--brand-solid-hover);
+  --color-brand-on-solid: var(--brand-on-solid);
+  --color-indigo-soft: var(--indigo-soft);
+  --color-indigo-soft-hover: var(--indigo-soft-hover);
+  --color-indigo-soft-strong: var(--indigo-soft-strong);
+  --color-indigo-border: var(--indigo-border);
+  --color-indigo-border-strong: var(--indigo-border-strong);
+  --color-indigo-fg: var(--indigo-fg);
+  --color-indigo-fg-strong: var(--indigo-fg-strong);
+  --color-sky-soft: var(--sky-soft);
+  --color-sky-soft-hover: var(--sky-soft-hover);
+  --color-sky-soft-strong: var(--sky-soft-strong);
+  --color-sky-border: var(--sky-border);
+  --color-sky-border-strong: var(--sky-border-strong);
+  --color-sky-fg: var(--sky-fg);
+  --color-sky-fg-strong: var(--sky-fg-strong);
+  --color-violet-soft: var(--violet-soft);
+  --color-violet-soft-hover: var(--violet-soft-hover);
+  --color-violet-soft-strong: var(--violet-soft-strong);
+  --color-violet-border: var(--violet-border);
+  --color-violet-border-strong: var(--violet-border-strong);
+  --color-violet-fg: var(--violet-fg);
+  --color-violet-fg-strong: var(--violet-fg-strong);
+  /* 连续强度刻度桥接 */
+  --color-success-scale-1: var(--success-scale-1);
+  --color-success-scale-2: var(--success-scale-2);
+  --color-success-scale-3: var(--success-scale-3);
+  --color-success-scale-4: var(--success-scale-4);
+  --color-info-scale-1: var(--info-scale-1);
+  --color-info-scale-2: var(--info-scale-2);
+  --color-info-scale-3: var(--info-scale-3);
+  --color-info-scale-4: var(--info-scale-4);
+  --color-brand-scale-1: var(--brand-scale-1);
+  --color-brand-scale-2: var(--brand-scale-2);
+  --color-brand-scale-3: var(--brand-scale-3);
+  --color-brand-scale-4: var(--brand-scale-4);
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -125,7 +358,33 @@ body {
     display: block !important;
   }
 
-  /* 纸张化：白底深字 */
+  /* 纸张化：token 整体重置回亮色值。
+     暗色 token 由 prefers-color-scheme 驱动，打印时仍命中；
+     本块在源码顺序上位于暗色覆写之后，打印时一律回到亮色纸面。 */
+  :root {
+    --background: oklch(1 0 0);
+    --foreground: oklch(20.8% 0.042 265.755);
+    --foreground-strong: oklch(27.9% 0.041 260.031);
+    --foreground-subtle: oklch(44.6% 0.043 257.281);
+    --foreground-faint: oklch(70.4% 0.04 256.788);
+    --card: oklch(1 0 0);
+    --card-foreground: oklch(20.8% 0.042 265.755);
+    --popover: oklch(1 0 0);
+    --popover-foreground: oklch(20.8% 0.042 265.755);
+    --surface-page: oklch(1 0 0);
+    --surface-sunken: oklch(1 0 0);
+    --surface-subtle: oklch(96.8% 0.007 247.896);
+    --surface-raised: oklch(92.9% 0.013 255.508);
+    --muted: oklch(96.8% 0.007 247.896);
+    --muted-foreground: oklch(55.4% 0.046 257.417);
+    --secondary: oklch(96.8% 0.007 247.896);
+    --accent: oklch(96.8% 0.007 247.896);
+    --border: oklch(92.9% 0.013 255.508);
+    --border-subtle: oklch(96.8% 0.007 247.896);
+    --border-strong: oklch(86.9% 0.022 252.894);
+    --input: oklch(92.9% 0.013 255.508);
+  }
+
   body.print-mode {
     background: #ffffff !important;
     color: #0f172a !important;
@@ -140,25 +399,6 @@ body {
     width: 100% !important;
   }
 
-  /* Tailwind dark: 由 prefers-color-scheme 触发，打印时仍命中——常见表面类强制转浅 */
-  body.print-mode .print-target .dark\:bg-slate-900,
-  body.print-mode .print-target .dark\:bg-slate-950,
-  body.print-mode .print-target .dark\:bg-slate-800,
-  body.print-mode .print-target .dark\:bg-slate-950\/40,
-  body.print-mode .print-target .dark\:bg-blue-950\/50 {
-    background-color: #ffffff !important;
-  }
-  body.print-mode .print-target .dark\:text-slate-100,
-  body.print-mode .print-target .dark\:text-slate-200,
-  body.print-mode .print-target .dark\:text-slate-300,
-  body.print-mode .print-target .dark\:text-slate-400 {
-    color: #0f172a !important;
-  }
-  body.print-mode .print-target .dark\:border-slate-800,
-  body.print-mode .print-target .dark\:border-slate-700 {
-    border-color: #e2e8f0 !important;
-  }
-
   /* 卡片/图表面板尽量不跨页断裂 */
   body.print-mode .print-target [class*="rounded-xl"],
   body.print-mode .print-target [class*="rounded-lg"] {
@@ -171,40 +411,120 @@ body {
   }
 }
 
-/* 暗色 token 跟随系统（与项目 prefers-color-scheme 策略一致） */
+/* ===== 暗色 token：跟随系统（与项目 prefers-color-scheme 策略一致） ===== */
 @media (prefers-color-scheme: dark) {
   :root {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+    /* ---- 中性阶梯（暗） ---- */
+    --background: oklch(20.8% 0.042 265.755);       /* slate-900 */
+    --foreground: oklch(96.8% 0.007 247.896);       /* slate-100 */
+    --foreground-strong: oklch(92.9% 0.013 255.508); /* slate-200 */
+    --foreground-subtle: oklch(86.9% 0.022 252.894); /* slate-300 */
+    --foreground-faint: oklch(55.4% 0.046 257.417);  /* slate-500 */
+
+    /* ---- 语义表面（暗） ---- */
+    --card: oklch(20.8% 0.042 265.755);             /* slate-900 */
+    --card-foreground: oklch(96.8% 0.007 247.896);
+    --popover: oklch(20.8% 0.042 265.755);
+    --popover-foreground: oklch(96.8% 0.007 247.896);
+    --surface-page: oklch(12.9% 0.042 264.695);     /* slate-950 */
+    --surface-sunken: oklch(12.9% 0.042 264.695);   /* slate-950 */
+    --surface-subtle: oklch(27.9% 0.041 260.031);   /* slate-800 */
+    --surface-raised: oklch(37.2% 0.044 257.287);   /* slate-700 */
+    /* surface-inverse 为常暗面板，亮暗同值，不覆写 */
+
+    /* ---- shadcn 语义槽位（暗） ---- */
+    --primary: oklch(62.3% 0.214 259.815);          /* blue-500 */
+    --primary-foreground: oklch(1 0 0);
+    --muted-foreground: oklch(70.4% 0.04 256.788);  /* slate-400 */
+    --destructive: oklch(0.704 0.191 22.216);
+
+    /* ---- 边框阶梯（暗） ---- */
+    --border: oklch(27.9% 0.041 260.031);           /* slate-800 */
+    --border-subtle: oklch(27.9% 0.041 260.031);    /* slate-800 */
+    --border-strong: oklch(37.2% 0.044 257.287);    /* slate-700 */
+    --input: oklch(27.9% 0.041 260.031);
+    --ring: oklch(70.7% 0.165 254.624);             /* blue-400 */
+
+    /* ---- 状态/强调色（暗）：soft 用 950 加透明度，fg 升亮 ---- */
+    --info-soft: oklch(28.2% 0.091 267.935 / 40%);
+    --info-soft-hover: oklch(28.2% 0.091 267.935 / 60%);
+    --info-soft-strong: oklch(28.2% 0.091 267.935 / 90%);
+    --info-border: oklch(42.4% 0.199 265.638);
+    --info-border-strong: oklch(48.8% 0.243 264.376);
+    --info-fg: oklch(70.7% 0.165 254.624);
+    --info-fg-strong: oklch(80.9% 0.105 251.813);
+    --info-solid: oklch(62.3% 0.214 259.815);
+    --info-solid-hover: oklch(54.6% 0.245 262.881);
+    --success-soft: oklch(26.2% 0.051 172.552 / 40%);
+    --success-soft-hover: oklch(26.2% 0.051 172.552 / 60%);
+    --success-soft-strong: oklch(26.2% 0.051 172.552 / 90%);
+    --success-border: oklch(43.2% 0.095 166.913);
+    --success-border-strong: oklch(50.8% 0.118 165.612);
+    --success-fg: oklch(76.5% 0.177 163.223);
+    --success-fg-strong: oklch(84.5% 0.143 164.978);
+    --success-solid: oklch(69.6% 0.17 162.48);
+    --success-solid-hover: oklch(59.6% 0.145 163.225);
+    --warning-soft: oklch(27.9% 0.077 45.635 / 40%);
+    --warning-soft-hover: oklch(27.9% 0.077 45.635 / 60%);
+    --warning-soft-strong: oklch(27.9% 0.077 45.635 / 90%);
+    --warning-border: oklch(47.3% 0.137 46.201);
+    --warning-border-strong: oklch(55.5% 0.163 48.998);
+    --warning-fg: oklch(82.8% 0.189 84.429);
+    --warning-fg-strong: oklch(87.9% 0.169 91.605);
+    --warning-solid: oklch(76.9% 0.188 70.08);
+    --warning-solid-hover: oklch(66.6% 0.179 58.318);
+    --danger-soft: oklch(27.1% 0.105 12.094 / 40%);
+    --danger-soft-hover: oklch(27.1% 0.105 12.094 / 60%);
+    --danger-soft-strong: oklch(27.1% 0.105 12.094 / 90%);
+    --danger-border: oklch(45.5% 0.188 13.697);
+    --danger-border-strong: oklch(51.4% 0.222 16.935);
+    --danger-fg: oklch(71.2% 0.194 13.428);
+    --danger-fg-strong: oklch(81% 0.117 11.638);
+    --danger-solid: oklch(64.5% 0.246 16.439);
+    --danger-solid-hover: oklch(58.6% 0.253 17.585);
+    --brand-soft: oklch(29.1% 0.149 302.717 / 40%);
+    --brand-soft-hover: oklch(29.1% 0.149 302.717 / 60%);
+    --brand-soft-strong: oklch(29.1% 0.149 302.717 / 90%);
+    --brand-border: oklch(43.8% 0.218 303.724);
+    --brand-border-strong: oklch(49.6% 0.265 301.924);
+    --brand-fg: oklch(71.4% 0.203 305.504);
+    --brand-fg-strong: oklch(82.7% 0.119 306.383);
+    --brand-solid: oklch(62.7% 0.265 303.9);
+    --brand-solid-hover: oklch(55.8% 0.288 302.321);
+    --indigo-soft: oklch(25.7% 0.09 281.288 / 40%);
+    --indigo-soft-hover: oklch(25.7% 0.09 281.288 / 60%);
+    --indigo-soft-strong: oklch(25.7% 0.09 281.288 / 90%);
+    --indigo-border: oklch(39.8% 0.195 277.366);
+    --indigo-border-strong: oklch(45.7% 0.24 277.023);
+    --indigo-fg: oklch(67.3% 0.182 276.935);
+    --indigo-fg-strong: oklch(78.5% 0.115 274.713);
+    --sky-soft: oklch(29.3% 0.066 243.157 / 40%);
+    --sky-soft-hover: oklch(29.3% 0.066 243.157 / 60%);
+    --sky-soft-strong: oklch(29.3% 0.066 243.157 / 90%);
+    --sky-border: oklch(44.3% 0.11 240.79);
+    --sky-border-strong: oklch(50% 0.134 242.749);
+    --sky-fg: oklch(74.6% 0.16 232.661);
+    --sky-fg-strong: oklch(82.8% 0.111 230.318);
+    --violet-soft: oklch(28.3% 0.141 291.089 / 40%);
+    --violet-soft-hover: oklch(28.3% 0.141 291.089 / 60%);
+    --violet-soft-strong: oklch(28.3% 0.141 291.089 / 90%);
+    --violet-border: oklch(43.2% 0.232 292.759);
+    --violet-border-strong: oklch(49.1% 0.27 292.581);
+    --violet-fg: oklch(70.2% 0.183 293.541);
+    --violet-fg-strong: oklch(81.1% 0.111 293.571);
+    /* ---- 连续强度刻度（暗） ---- */
+    --success-scale-1: oklch(37.8% 0.077 168.94 / 60%);  /* emerald-900/60 */
+    --success-scale-2: oklch(50.8% 0.118 165.612);       /* emerald-700 */
+    --success-scale-3: oklch(59.6% 0.145 163.225);       /* emerald-600 */
+    --success-scale-4: oklch(69.6% 0.17 162.48);         /* emerald-500 */
+    --info-scale-1: oklch(37.9% 0.146 265.522 / 60%);    /* blue-900/60 */
+    --info-scale-2: oklch(48.8% 0.243 264.376);          /* blue-700 */
+    --info-scale-3: oklch(54.6% 0.245 262.881);          /* blue-600 */
+    --info-scale-4: oklch(62.3% 0.214 259.815);          /* blue-500 */
+    --brand-scale-1: oklch(38.1% 0.176 304.987 / 60%);   /* purple-900/60 */
+    --brand-scale-2: oklch(49.6% 0.265 301.924);         /* purple-700 */
+    --brand-scale-3: oklch(55.8% 0.288 302.321);         /* purple-600 */
+    --brand-scale-4: oklch(62.7% 0.265 303.9);           /* purple-500 */
   }
 }
 

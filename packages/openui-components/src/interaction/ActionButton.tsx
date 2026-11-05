@@ -49,11 +49,11 @@ export const ActionButton: React.FC<ActionButtonProps> = ({
   };
 
   const variantStyles = {
-    primary: "bg-blue-600 hover:bg-blue-700 text-white shadow-xs",
-    secondary: "bg-slate-100 hover:bg-slate-200 text-slate-800 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-200",
-    outline: "border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300",
-    success: "bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs",
-    danger: "bg-rose-600 hover:bg-rose-700 text-white shadow-xs",
+    primary: "bg-info-solid hover:bg-info-solid-hover text-white shadow-xs",
+    secondary: "bg-muted hover:bg-surface-raised text-foreground-strong",
+    outline: "border border-border hover:bg-surface-sunken text-foreground-subtle",
+    success: "bg-success-solid hover:bg-success-solid-hover text-white shadow-xs",
+    danger: "bg-danger-solid hover:bg-danger-solid-hover text-white shadow-xs",
   };
 
   return (

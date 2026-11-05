@@ -108,15 +108,15 @@ export const PlanReviewCard: React.FC<PlanReviewCardProps> = ({
   };
 
   return (
-    <div className="bg-white dark:bg-slate-900 border border-blue-200 dark:border-blue-900/60 rounded-xl p-5 shadow-xs">
+    <div className="bg-card border border-info-border rounded-xl p-5 shadow-xs">
         {/* 头部：标题 + 原问题复述 */}
         <div className="mb-4">
-          <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
-            <ClipboardList className="w-4 h-4 text-blue-500" />
+          <h3 className="text-sm font-semibold text-foreground flex items-center gap-1.5">
+            <ClipboardList className="w-4 h-4 text-info-fg" />
             <span>{title}</span>
           </h3>
           {question && (
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+            <p className="text-xs text-muted-foreground mt-1">
               你的问题：{question}
             </p>
           )}
@@ -125,11 +125,11 @@ export const PlanReviewCard: React.FC<PlanReviewCardProps> = ({
         {/* 数据基础徽标 */}
         {safeSources.length > 0 && (
           <div className="mb-4 flex flex-wrap items-center gap-1.5">
-            <Database className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+            <Database className="w-3.5 h-3.5 text-foreground-faint shrink-0" />
             {safeSources.map((s, i) => (
               <span
                 key={`src-${i}`}
-                className="text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 px-2 py-0.5 rounded-full font-medium"
+                className="text-[10px] bg-muted text-foreground-subtle border border-border px-2 py-0.5 rounded-full font-medium"
               >
                 {s}
               </span>
@@ -139,26 +139,26 @@ export const PlanReviewCard: React.FC<PlanReviewCardProps> = ({
 
         {/* 分步思路 */}
         <div className="mb-4">
-          <div className="text-xs font-semibold text-slate-700 dark:text-slate-200 mb-2 flex items-center gap-1.5">
-            <ListChecks className="w-3.5 h-3.5 text-blue-500" />
+          <div className="text-xs font-semibold text-foreground-subtle mb-2 flex items-center gap-1.5">
+            <ListChecks className="w-3.5 h-3.5 text-info-fg" />
             分析思路（{safeSteps.length} 步）
           </div>
           <ol className="space-y-2">
             {safeSteps.map((s, i) => (
               <li
                 key={`step-${i}`}
-                className="flex gap-2.5 items-start bg-slate-50 dark:bg-slate-950/40 border border-slate-100 dark:border-slate-800 rounded-lg px-3 py-2"
+                className="flex gap-2.5 items-start bg-surface-sunken dark:bg-surface-inverse/40 border border-border-subtle rounded-lg px-3 py-2"
               >
-                <span className="shrink-0 w-5 h-5 rounded-full bg-blue-600 text-white text-[10px] font-bold flex items-center justify-center mt-0.5">
+                <span className="shrink-0 w-5 h-5 rounded-full bg-info-solid text-white text-[10px] font-bold flex items-center justify-center mt-0.5">
                   {i + 1}
                 </span>
                 <div className="min-w-0 flex-1">
-                  <div className="text-xs font-medium text-slate-800 dark:text-slate-200">{s.title}</div>
+                  <div className="text-xs font-medium text-foreground-strong">{s.title}</div>
                   {s.detail && (
-                    <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">{s.detail}</div>
+                    <div className="text-[11px] text-muted-foreground mt-0.5">{s.detail}</div>
                   )}
                   {s.chart && (
-                    <div className="text-[10px] text-blue-600 dark:text-blue-400 font-mono mt-1 truncate">
+                    <div className="text-[10px] text-info-fg font-mono mt-1 truncate">
                       📊 {s.chart}
                     </div>
                   )}
@@ -171,17 +171,17 @@ export const PlanReviewCard: React.FC<PlanReviewCardProps> = ({
         {/* 澄清问题：选项 chips 可点选；未选按默认假设 */}
         {safeClarifications.length > 0 && (
           <div className="mb-4">
-            <div className="text-xs font-semibold text-slate-700 dark:text-slate-200 mb-2 flex items-center gap-1.5">
-              <HelpCircle className="w-3.5 h-3.5 text-amber-500" />
+            <div className="text-xs font-semibold text-foreground-subtle mb-2 flex items-center gap-1.5">
+              <HelpCircle className="w-3.5 h-3.5 text-warning-fg" />
               需要确认的点（不选则按默认假设执行）
             </div>
             <div className="space-y-2.5">
               {safeClarifications.map((c, i) => (
                 <div
                   key={`clar-${i}`}
-                  className="bg-amber-50/60 dark:bg-amber-950/20 border border-amber-100 dark:border-amber-900/40 rounded-lg px-3 py-2"
+                  className="bg-warning-soft/60 border border-warning-border rounded-lg px-3 py-2"
                 >
-                  <div className="text-xs font-medium text-slate-800 dark:text-slate-200">
+                  <div className="text-xs font-medium text-foreground-strong">
                     {i + 1}. {c.question}
                   </div>
                   {c.options && c.options.length > 0 && (
@@ -197,8 +197,8 @@ export const PlanReviewCard: React.FC<PlanReviewCardProps> = ({
                             }
                             className={`text-[11px] px-2.5 py-1 rounded-full border transition-colors cursor-pointer ${
                               selected
-                                ? "bg-blue-600 border-blue-600 text-white font-medium"
-                                : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-blue-300 dark:hover:border-blue-700"
+                                ? "bg-info-solid border-info-border-strong text-white font-medium"
+                                : "bg-card border-border text-foreground-subtle hover:border-info-border-strong"
                             }`}
                           >
                             {opt}
@@ -208,7 +208,7 @@ export const PlanReviewCard: React.FC<PlanReviewCardProps> = ({
                     </div>
                   )}
                   {c.default && (
-                    <div className="text-[10px] text-slate-400 mt-1.5">
+                    <div className="text-[10px] text-foreground-faint mt-1.5">
                       默认假设：{c.default}
                     </div>
                   )}
@@ -223,7 +223,7 @@ export const PlanReviewCard: React.FC<PlanReviewCardProps> = ({
           type="button"
           onClick={handleConfirm}
           disabled={!triggerAction || confirming}
-          className="no-print w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg px-4 py-2.5 text-sm font-medium transition-colors flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
+          className="no-print w-full bg-info-solid hover:bg-info-solid-hover disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg px-4 py-2.5 text-sm font-medium transition-colors flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
         >
           <Play className="w-3.5 h-3.5" />
           <span>{confirmLabel}</span>

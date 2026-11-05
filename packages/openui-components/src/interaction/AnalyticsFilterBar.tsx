@@ -92,13 +92,13 @@ export const AnalyticsFilterBar: React.FC<AnalyticsFilterBarProps> = ({
   };
 
   return (
-    <div className="bg-slate-50 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-xs">
+    <div className="bg-surface-sunken dark:bg-surface-inverse/80 border border-border rounded-xl p-4 shadow-xs">
       <div className="flex items-center gap-2 mb-3">
-        <Filter className="w-4 h-4 text-blue-500" />
-        <h4 className="text-xs font-semibold text-slate-800 dark:text-slate-200">
+        <Filter className="w-4 h-4 text-info-fg" />
+        <h4 className="text-xs font-semibold text-foreground-strong">
           {title}
         </h4>
-        <span className="text-[10px] bg-blue-100 dark:bg-blue-950 text-blue-600 dark:text-blue-400 px-2 py-0.5 rounded-full font-medium ms-auto">
+        <span className="text-[10px] bg-info-soft-strong text-info-fg px-2 py-0.5 rounded-full font-medium ms-auto">
           Interactive Form
         </span>
       </div>
@@ -106,13 +106,13 @@ export const AnalyticsFilterBar: React.FC<AnalyticsFilterBarProps> = ({
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
         {/* 渠道筛选 */}
         <div>
-          <label className="block text-slate-500 dark:text-slate-400 mb-1 font-medium">
+          <label className="block text-muted-foreground mb-1 font-medium">
             聚焦推广渠道
           </label>
           <select
             value={selectedChannel}
             onChange={(e) => handleChannelChange(e.target.value)}
-            className="w-full p-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className="w-full p-2 rounded-lg border border-border bg-card text-foreground-strong focus:outline-none focus:ring-1 focus:ring-ring"
           >
             {safeChannelOptions.map((opt) => (
               <option key={opt.value} value={opt.value}>
@@ -124,13 +124,13 @@ export const AnalyticsFilterBar: React.FC<AnalyticsFilterBarProps> = ({
 
         {/* 核心指标筛选 */}
         <div>
-          <label className="block text-slate-500 dark:text-slate-400 mb-1 font-medium">
+          <label className="block text-muted-foreground mb-1 font-medium">
             主分析维度
           </label>
           <select
             value={selectedMetric}
             onChange={(e) => handleMetricChange(e.target.value)}
-            className="w-full p-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className="w-full p-2 rounded-lg border border-border bg-card text-foreground-strong focus:outline-none focus:ring-1 focus:ring-ring"
           >
             {safeMetricOptions.map((opt) => (
               <option key={opt.value} value={opt.value}>
@@ -142,7 +142,7 @@ export const AnalyticsFilterBar: React.FC<AnalyticsFilterBarProps> = ({
 
         {/* 预算调整模拟 */}
         <div>
-          <label className="block text-slate-500 dark:text-slate-400 mb-1 font-medium">
+          <label className="block text-muted-foreground mb-1 font-medium">
             模拟总预算 ($)
           </label>
           <input
@@ -150,18 +150,18 @@ export const AnalyticsFilterBar: React.FC<AnalyticsFilterBarProps> = ({
             value={targetBudget}
             onChange={(e) => handleBudgetChange(e.target.value)}
             placeholder="例如: 50000"
-            className="w-full p-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono"
+            className="w-full p-2 rounded-lg border border-border bg-card text-foreground-strong focus:outline-none focus:ring-1 focus:ring-ring font-mono"
           />
         </div>
       </div>
 
-      <div className="mt-3 flex items-center justify-between pt-2 border-t border-slate-200/60 dark:border-slate-800">
-        <span className="text-[11px] text-slate-400">
+      <div className="mt-3 flex items-center justify-between pt-2 border-t border-border/60">
+        <span className="text-[11px] text-foreground-faint">
           点击提交后，AI 将根据表单参数实时重新计算并生成对应图表看板
         </span>
         <button
           onClick={handleSubmit}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-medium transition-colors shadow-xs"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-info-solid hover:bg-info-solid-hover text-white rounded-lg text-xs font-medium transition-colors shadow-xs"
         >
           <Play className="w-3 h-3 fill-current" />
           <span>应用筛选并钻取</span>

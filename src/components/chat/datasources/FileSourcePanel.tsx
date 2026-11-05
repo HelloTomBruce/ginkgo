@@ -89,7 +89,7 @@ export function FileSourcePanel({ sourceId }: { sourceId: string }) {
     <div className="space-y-2">
       {/* 已灌表清单 */}
       {loading ? (
-        <div className="text-[10px] text-slate-400 flex items-center gap-1">
+        <div className="text-[10px] text-foreground-faint flex items-center gap-1">
           <Loader2 className="w-3 h-3 animate-spin" />
           <span>读取文件清单…</span>
         </div>
@@ -98,10 +98,10 @@ export function FileSourcePanel({ sourceId }: { sourceId: string }) {
           {manifest.tables.map((t) => (
             <div
               key={t.table}
-              className="flex items-center gap-1.5 text-[10px] text-slate-500 dark:text-slate-400"
+              className="flex items-center gap-1.5 text-[10px] text-muted-foreground"
             >
-              <FileSpreadsheet className="w-3 h-3 shrink-0 text-emerald-600" />
-              <span className="font-mono font-medium text-slate-600 dark:text-slate-300">
+              <FileSpreadsheet className="w-3 h-3 shrink-0 text-success-fg" />
+              <span className="font-mono font-medium text-foreground-subtle">
                 {t.table}
               </span>
               <span>
@@ -110,13 +110,13 @@ export function FileSourcePanel({ sourceId }: { sourceId: string }) {
               </span>
             </div>
           ))}
-          <div className="text-[10px] text-slate-400">
+          <div className="text-[10px] text-foreground-faint">
             {manifest.files.map((f) => f.name).join("、")} ·{" "}
             {new Date(manifest.ingestedAt).toLocaleString()}
           </div>
         </div>
       ) : (
-        <div className="text-[10px] text-slate-400">尚未上传文件</div>
+        <div className="text-[10px] text-foreground-faint">尚未上传文件</div>
       )}
 
       {/* 上传区（点击选择或拖入） */}
@@ -140,8 +140,8 @@ export function FileSourcePanel({ sourceId }: { sourceId: string }) {
         }}
         className={`flex items-center justify-center gap-1.5 py-2 rounded-lg border border-dashed text-[10px] transition-colors cursor-pointer ${
           dragOver
-            ? "border-blue-400 bg-blue-50 dark:bg-blue-950/40 text-blue-600"
-            : "border-slate-300 dark:border-slate-700 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800/50"
+            ? "border-info-border-strong bg-info-soft text-info-fg"
+            : "border-border-strong text-muted-foreground hover:bg-surface-sunken"
         }`}
       >
         {uploading ? (
@@ -170,7 +170,7 @@ export function FileSourcePanel({ sourceId }: { sourceId: string }) {
       </div>
 
       {error && (
-        <div className="text-[10px] text-rose-600 dark:text-rose-400">
+        <div className="text-[10px] text-danger-fg">
           · {error}
         </div>
       )}

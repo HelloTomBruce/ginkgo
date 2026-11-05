@@ -22,13 +22,15 @@ export interface FunnelChartProps {
   unit?: string;
 }
 
+/* 阶段色读取主题 token --chart-1..6（见应用层 globals.css），
+ * 用 color-mix 提亮渐变终点，保持原 600→500 的层次观感 */
 const STAGE_COLORS = [
-  "from-blue-600 to-blue-500",
-  "from-indigo-600 to-indigo-500",
-  "from-violet-600 to-violet-500",
-  "from-purple-600 to-purple-500",
-  "from-pink-600 to-pink-500",
-  "from-rose-600 to-rose-500",
+  "var(--chart-1)",
+  "var(--chart-2)",
+  "var(--chart-3)",
+  "var(--chart-4)",
+  "var(--chart-5)",
+  "var(--chart-6)",
 ];
 
 export const FunnelChart: React.FC<FunnelChartProps> = ({
@@ -47,7 +49,7 @@ export const FunnelChart: React.FC<FunnelChartProps> = ({
 
   if (safeStages.length === 0) {
     return (
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 shadow-xs text-xs text-slate-400 text-center">
+      <div className="bg-card border border-border rounded-xl p-5 shadow-xs text-xs text-foreground-faint text-center">
         暂无漏斗转化数据
       </div>
     );
@@ -56,17 +58,17 @@ export const FunnelChart: React.FC<FunnelChartProps> = ({
   const maxValue = Math.max(...safeStages.map((s) => s.value), 1);
 
   return (
-    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 shadow-xs">
+    <div className="bg-card border border-border rounded-xl p-5 shadow-xs">
       {(title || description) && (
         <div className="mb-4">
           {title && (
-            <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
-              <Filter className="w-4 h-4 text-blue-500" />
+            <h3 className="text-sm font-semibold text-foreground flex items-center gap-1.5">
+              <Filter className="w-4 h-4 text-info-fg" />
               <span>{title}</span>
             </h3>
           )}
           {description && (
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+            <p className="text-xs text-muted-foreground mt-0.5">
               {description}
             </p>
           )}
@@ -76,7 +78,7 @@ export const FunnelChart: React.FC<FunnelChartProps> = ({
       <div className="space-y-2.5">
         {safeStages.map((stage, idx) => {
           const widthPercent = Math.max(Math.round((stage.value / maxValue) * 100), 12);
-          const colorGradient = STAGE_COLORS[idx % STAGE_COLORS.length];
+          const stageColor = STAGE_COLORS[idx % STAGE_COLORS.length];
           // 连接线渲染在当前阶段下方，流失率应对应「当前阶段 → 下一阶段」
           const nextValue = idx < safeStages.length - 1 ? safeStages[idx + 1].value : null;
           const dropOffRate =
@@ -88,19 +90,19 @@ export const FunnelChart: React.FC<FunnelChartProps> = ({
             <div key={`stage-${idx}`} className="space-y-1">
               <div className="flex items-center justify-between text-xs">
                 <div className="flex items-center gap-2">
-                  <span className="w-5 h-5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 flex items-center justify-center font-mono font-semibold text-[10px]">
+                  <span className="w-5 h-5 rounded-full bg-muted text-foreground-subtle flex items-center justify-center font-mono font-semibold text-[10px]">
                     {idx + 1}
                   </span>
-                  <span className="font-medium text-slate-800 dark:text-slate-200">
+                  <span className="font-medium text-foreground-strong">
                     {stage.name}
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="font-semibold text-slate-900 dark:text-slate-100 font-mono">
+                  <span className="font-semibold text-foreground font-mono">
                     {stage.value.toLocaleString()} {unit}
                   </span>
                   {stage.conversion && (
-                    <span className="text-[10px] bg-emerald-50 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400 px-1.5 py-0.5 rounded font-medium">
+                    <span className="text-[10px] bg-success-soft text-success-fg px-1.5 py-0.5 rounded font-medium">
                       转化: {stage.conversion}
                     </span>
                   )}
@@ -108,10 +110,13 @@ export const FunnelChart: React.FC<FunnelChartProps> = ({
               </div>
 
               {/* 进度条与梯级 */}
-              <div className="h-7 w-full bg-slate-100 dark:bg-slate-800 rounded-lg p-0.5 overflow-hidden flex items-center">
+              <div className="h-7 w-full bg-muted rounded-lg p-0.5 overflow-hidden flex items-center">
                 <div
-                  className={`h-full rounded-md bg-gradient-to-r ${colorGradient} transition-all duration-500 flex items-center justify-end px-2`}
-                  style={{ width: `${widthPercent}%` }}
+                  className="h-full rounded-md transition-all duration-500 flex items-center justify-end px-2"
+                  style={{
+                    width: `${widthPercent}%`,
+                    background: `linear-gradient(to right, ${stageColor}, color-mix(in oklch, ${stageColor}, white 18%))`,
+                  }}
                 >
                   <span className="text-[10px] text-white/90 font-medium">
                     {widthPercent}%
@@ -121,8 +126,8 @@ export const FunnelChart: React.FC<FunnelChartProps> = ({
 
               {/* 阶段间转化率/流失提示 */}
               {idx < safeStages.length - 1 && (
-                <div className="flex items-center gap-1.5 text-[10px] text-slate-400 px-7">
-                  <ArrowDown className="w-3 h-3 text-slate-300 dark:text-slate-600" />
+                <div className="flex items-center gap-1.5 text-[10px] text-foreground-faint px-7">
+                  <ArrowDown className="w-3 h-3 text-foreground-faint" />
                   <span>流失率: ~{dropOffRate}%</span>
                   {stage.subtext && <span>• {stage.subtext}</span>}
                 </div>

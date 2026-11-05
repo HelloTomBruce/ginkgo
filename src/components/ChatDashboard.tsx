@@ -415,7 +415,7 @@ export default function ChatDashboard() {
   const handleCancelRename = useCallback(() => setEditingSessionId(null), [setEditingSessionId]);
 
   return (
-    <div className="flex h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-sans overflow-hidden">
+    <div className="flex h-screen bg-surface-sunken text-foreground font-sans overflow-hidden">
       <ChatSidebar
         sessions={sessions}
         currentSessionId={currentSessionId}
@@ -447,14 +447,14 @@ export default function ChatDashboard() {
       {/* 主对话工作区 */}
       <main className="flex-1 flex flex-col h-full overflow-hidden">
         {/* 顶部标题栏 */}
-        <header className="h-14 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-6 flex items-center justify-between shrink-0">
+        <header className="h-14 border-b border-border bg-card px-6 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3 text-sm font-medium min-w-0">
-            <TrendingUp className="w-4 h-4 text-blue-500 shrink-0" />
+            <TrendingUp className="w-4 h-4 text-info-fg shrink-0" />
             <span className="font-semibold truncate max-w-md">
               {activeSession?.title || "OpenUI 对话式数据分析看板"}
             </span>
             {apiKey && (
-              <span className="text-[10px] bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 px-2 py-0.5 rounded-full font-semibold border border-emerald-200 dark:border-emerald-800 shrink-0">
+              <span className="text-[10px] bg-success-soft text-success-fg-strong px-2 py-0.5 rounded-full font-semibold border border-success-border shrink-0">
                 AI: {model}
               </span>
             )}
@@ -462,7 +462,7 @@ export default function ChatDashboard() {
           <div className="flex items-center gap-2">
             <button
               onClick={handleCreateNewChat}
-              className="text-xs text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/50 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-blue-200 dark:border-blue-800"
+              className="text-xs text-info-fg hover:bg-info-soft flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-info-border"
             >
               <Plus className="w-3.5 h-3.5" />
               <span>新对话</span>
@@ -470,7 +470,7 @@ export default function ChatDashboard() {
             {IS_DEV && (
               <button
                 onClick={handleOpenDevTools}
-                className="text-xs text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-950/50 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-purple-200 dark:border-purple-800"
+                className="text-xs text-brand-fg hover:bg-brand-soft flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-brand-border"
               >
                 <Code2 className="w-3.5 h-3.5" />
                 <span>AST 沙箱</span>
@@ -478,7 +478,7 @@ export default function ChatDashboard() {
             )}
             <button
               onClick={handleOpenSettings}
-              className="text-xs text-slate-600 dark:text-slate-300 hover:text-slate-900 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800"
+              className="text-xs text-foreground-subtle hover:text-foreground flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-border hover:bg-muted"
             >
               <Settings className="w-3.5 h-3.5" />
               <span>设置</span>
@@ -487,7 +487,7 @@ export default function ChatDashboard() {
               <button
                 onClick={() => window.location.reload()}
                 aria-label="刷新页面"
-                className="text-xs text-slate-500 hover:text-slate-900 flex items-center gap-1 p-1.5 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800"
+                className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 p-1.5 rounded-md hover:bg-muted"
               >
                 <RefreshCw className="w-3.5 h-3.5" />
               </button>
@@ -510,7 +510,7 @@ export default function ChatDashboard() {
             onRewindMessage={handleRewindMessage}
           />
         ) : (
-          <div className="flex-1 flex items-center justify-center text-sm text-slate-400">
+          <div className="flex-1 flex items-center justify-center text-sm text-foreground-faint">
             正在加载会话…
           </div>
         )}
@@ -524,16 +524,16 @@ export default function ChatDashboard() {
 
         {/* 上下文用量条：最近一次响应的实测 promptTokens / 模型窗口；>70% 黄、>90% 红 */}
         {contextUsage && (
-          <div className="px-6 pb-1.5 flex items-center gap-2 text-[10px] text-slate-400 select-none">
+          <div className="px-6 pb-1.5 flex items-center gap-2 text-[10px] text-foreground-faint select-none">
             <span className="shrink-0">上下文</span>
-            <div className="w-32 h-1 rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden">
+            <div className="w-32 h-1 rounded-full bg-surface-raised overflow-hidden">
               <div
                 className={`h-full rounded-full transition-all ${
                   (contextUsage.promptTokens / contextUsage.window) > 0.9
-                    ? "bg-red-500"
+                    ? "bg-danger-solid"
                     : (contextUsage.promptTokens / contextUsage.window) > 0.7
-                      ? "bg-amber-500"
-                      : "bg-emerald-500"
+                      ? "bg-warning-solid"
+                      : "bg-success-solid"
                 }`}
                 style={{
                   width: `${Math.min(100, Math.round((contextUsage.promptTokens / contextUsage.window) * 100))}%`,

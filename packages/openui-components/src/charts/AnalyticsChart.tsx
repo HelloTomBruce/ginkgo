@@ -40,13 +40,15 @@ export interface AnalyticsChartProps {
   height?: number;
 }
 
+/* 系列色读取主题 token（--chart-1..6，见应用层 globals.css），
+ * var() 引用直接透传到 SVG 属性，浏览器端解析，SSR/测试环境无需兜底 */
 const DEFAULT_COLORS = [
-  "#3b82f6", // blue
-  "#10b981", // emerald
-  "#8b5cf6", // violet
-  "#f59e0b", // amber
-  "#ec4899", // pink
-  "#06b6d4", // cyan
+  "var(--chart-1)",
+  "var(--chart-2)",
+  "var(--chart-3)",
+  "var(--chart-4)",
+  "var(--chart-5)",
+  "var(--chart-6)",
 ];
 
 export const AnalyticsChart: React.FC<AnalyticsChartProps> = ({
@@ -91,14 +93,14 @@ export const AnalyticsChart: React.FC<AnalyticsChartProps> = ({
   }, [series, safeData, xAxisKey]);
 
   return (
-    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 shadow-xs">
+    <div className="bg-card border border-border rounded-xl p-5 shadow-xs">
       {title && (
         <div className="mb-4">
-          <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+          <h3 className="text-sm font-semibold text-foreground">
             {title}
           </h3>
           {description && (
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+            <p className="text-xs text-muted-foreground mt-0.5">
               {description}
             </p>
           )}
@@ -107,7 +109,7 @@ export const AnalyticsChart: React.FC<AnalyticsChartProps> = ({
 
       <div style={{ width: "100%", height, minHeight: height }}>
         {safeData.length === 0 ? (
-          <div className="flex h-full items-center justify-center text-xs text-slate-400">
+          <div className="flex h-full items-center justify-center text-xs text-foreground-faint">
             暂无图表数据
           </div>
         ) : (
@@ -120,7 +122,7 @@ export const AnalyticsChart: React.FC<AnalyticsChartProps> = ({
                 <Tooltip
                   contentStyle={{
                     borderRadius: "8px",
-                    border: "1px solid #e2e8f0",
+                    border: "1px solid var(--border)",
                     boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)",
                   }}
                 />
@@ -146,7 +148,7 @@ export const AnalyticsChart: React.FC<AnalyticsChartProps> = ({
                 <Tooltip
                   contentStyle={{
                     borderRadius: "8px",
-                    border: "1px solid #e2e8f0",
+                    border: "1px solid var(--border)",
                     boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)",
                   }}
                 />
@@ -169,7 +171,7 @@ export const AnalyticsChart: React.FC<AnalyticsChartProps> = ({
                 <Tooltip
                   contentStyle={{
                     borderRadius: "8px",
-                    border: "1px solid #e2e8f0",
+                    border: "1px solid var(--border)",
                     boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)",
                   }}
                 />
@@ -194,7 +196,7 @@ export const AnalyticsChart: React.FC<AnalyticsChartProps> = ({
                 <Tooltip
                   contentStyle={{
                     borderRadius: "8px",
-                    border: "1px solid #e2e8f0",
+                    border: "1px solid var(--border)",
                     boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)",
                   }}
                 />

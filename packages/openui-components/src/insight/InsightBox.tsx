@@ -19,31 +19,31 @@ export const InsightBox: React.FC<InsightBoxProps> = ({
   content,
 }) => {
   const defaultStyle = {
-    bg: "bg-blue-50 dark:bg-blue-950/20",
-    border: "border-blue-200 dark:border-blue-800",
-    text: "text-blue-900 dark:text-blue-200",
-    icon: <Info className="w-4 h-4 text-blue-600 dark:text-blue-400" />,
+    bg: "bg-info-soft",
+    border: "border-info-border",
+    text: "text-info-fg-strong",
+    icon: <Info className="w-4 h-4 text-info-fg" />,
   };
 
   const styles = {
     tip: {
-      bg: "bg-amber-50 dark:bg-amber-950/20",
-      border: "border-amber-200 dark:border-amber-800",
-      text: "text-amber-900 dark:text-amber-200",
-      icon: <Lightbulb className="w-4 h-4 text-amber-600 dark:text-amber-400" />,
+      bg: "bg-warning-soft",
+      border: "border-warning-border",
+      text: "text-warning-fg-strong",
+      icon: <Lightbulb className="w-4 h-4 text-warning-fg" />,
     },
     info: defaultStyle,
     warning: {
-      bg: "bg-rose-50 dark:bg-rose-950/20",
-      border: "border-rose-200 dark:border-rose-800",
-      text: "text-rose-900 dark:text-rose-200",
-      icon: <AlertTriangle className="w-4 h-4 text-rose-600 dark:text-rose-400" />,
+      bg: "bg-danger-soft",
+      border: "border-danger-border",
+      text: "text-danger-fg-strong",
+      icon: <AlertTriangle className="w-4 h-4 text-danger-fg" />,
     },
     success: {
-      bg: "bg-emerald-50 dark:bg-emerald-950/20",
-      border: "border-emerald-200 dark:border-emerald-800",
-      text: "text-emerald-900 dark:text-emerald-200",
-      icon: <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />,
+      bg: "bg-success-soft",
+      border: "border-success-border",
+      text: "text-success-fg-strong",
+      icon: <CheckCircle2 className="w-4 h-4 text-success-fg" />,
     },
   }[type] || defaultStyle;
 

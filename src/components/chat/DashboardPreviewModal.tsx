@@ -131,11 +131,11 @@ export function DashboardPreviewModal({
       <DialogContent
         showCloseButton={false}
         aria-label={`看板预览：${dashboard.title}`}
-        className="max-w-[calc(100%-2rem)] sm:max-w-6xl max-h-full h-full md:h-auto w-full p-0 gap-0 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden flex flex-col"
+        className="max-w-[calc(100%-2rem)] sm:max-w-6xl max-h-full h-full md:h-auto w-full p-0 gap-0 rounded-2xl bg-card border border-border shadow-2xl overflow-hidden flex flex-col"
       >
         <DialogTitle className="sr-only">看板预览：{dashboard.title}</DialogTitle>
         {/* 头部：标题（行内重命名）+ 元信息 + 操作 */}
-        <div className="flex items-start justify-between gap-3 p-4 border-b border-slate-200 dark:border-slate-800 shrink-0">
+        <div className="flex items-start justify-between gap-3 p-4 border-b border-border shrink-0">
           <div className="min-w-0 flex-1">
             {editing ? (
               <div className="flex items-center gap-1.5">
@@ -148,32 +148,32 @@ export function DashboardPreviewModal({
                     if (e.key === "Escape") setEditing(false);
                   }}
                   aria-label="看板标题"
-                  className="flex-1 min-w-0 px-2 py-1 text-sm bg-slate-50 dark:bg-slate-950 border border-blue-300 dark:border-blue-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="flex-1 min-w-0 px-2 py-1 text-sm bg-surface-sunken border border-info-border-strong rounded-lg focus:outline-none focus:ring-1 focus:ring-ring"
                 />
                 <button
                   onClick={saveRename}
                   aria-label="保存标题"
-                  className="p-1.5 rounded-lg text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/50"
+                  className="p-1.5 rounded-lg text-success-fg hover:bg-success-soft"
                 >
                   <Check className="w-4 h-4" />
                 </button>
               </div>
             ) : (
               <div className="flex items-center gap-2 min-w-0">
-                <Star className="w-4 h-4 text-amber-500 fill-current shrink-0" />
+                <Star className="w-4 h-4 text-warning-fg fill-current shrink-0" />
                 <h2 className="font-semibold text-sm truncate">{dashboard.title}</h2>
                 <Hint label="重命名">
                   <button
                     onClick={startRename}
                     aria-label="重命名看板"
-                    className="p-1 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/50 shrink-0"
+                    className="p-1 rounded text-foreground-faint hover:text-info-fg hover:bg-info-soft shrink-0"
                   >
                     <Edit3 className="w-3.5 h-3.5" />
                   </button>
                 </Hint>
               </div>
             )}
-            <div className="mt-1 flex items-center gap-2 text-[11px] text-slate-400 flex-wrap">
+            <div className="mt-1 flex items-center gap-2 text-[11px] text-foreground-faint flex-wrap">
               <span>收藏于 {formatSessionTime(dashboard.updatedAt)}</span>
               {dashboard.dataUpdatedAt !== undefined && (
                 <span title={new Date(dashboard.dataUpdatedAt).toLocaleString()}>
@@ -184,13 +184,13 @@ export function DashboardPreviewModal({
                 <span
                   data-testid="stale-badge"
                   title={`查询失败保留旧数据的组件：${staleIds.join("、")}`}
-                  className="px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-950/50 text-amber-700 dark:text-amber-400 font-medium"
+                  className="px-1.5 py-0.5 rounded bg-warning-soft-strong text-warning-fg-strong font-medium"
                 >
                   ⚠ {staleIds.length} 个组件数据过期
                 </span>
               )}
               {dashboard.sourceNames && dashboard.sourceNames.length > 0 && (
-                <span className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800">
+                <span className="px-1.5 py-0.5 rounded bg-muted">
                   {dashboard.sourceNames.join(" / ")}
                 </span>
               )}
@@ -215,7 +215,7 @@ export function DashboardPreviewModal({
                 disabled={!canRefresh || refreshing}
                 aria-label="刷新数据"
                 data-testid="refresh-data"
-                className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border border-emerald-200 dark:border-emerald-800 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 transition-colors disabled:opacity-40 disabled:pointer-events-none"
+                className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border border-success-border text-success-fg hover:bg-success-soft transition-colors disabled:opacity-40 disabled:pointer-events-none"
               >
                 <RefreshCw
                   className={`w-3.5 h-3.5 ${refreshing ? "animate-spin" : ""}`}
@@ -233,7 +233,7 @@ export function DashboardPreviewModal({
               <button
                 onClick={() => onReanalyze(dashboard.prompt)}
                 disabled={!dashboard.prompt}
-                className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border border-blue-200 dark:border-blue-800 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/50 transition-colors disabled:opacity-40 disabled:pointer-events-none"
+                className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border border-info-border text-info-fg hover:bg-info-soft transition-colors disabled:opacity-40 disabled:pointer-events-none"
               >
                 <RefreshCw className="w-3.5 h-3.5" />
                 <span>重新分析</span>
@@ -243,7 +243,7 @@ export function DashboardPreviewModal({
               <button
                 onClick={handleExportSnapshot}
                 aria-label="导出快照"
-                className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/50 transition-colors"
+                className="p-1.5 rounded-lg text-foreground-faint hover:text-info-fg hover:bg-info-soft transition-colors"
               >
                 <Download className="w-4 h-4" />
               </button>
@@ -252,7 +252,7 @@ export function DashboardPreviewModal({
               <button
                 onClick={handleCopyDsl}
                 aria-label="复制 DSL"
-                className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/50 transition-colors"
+                className="p-1.5 rounded-lg text-foreground-faint hover:text-info-fg hover:bg-info-soft transition-colors"
               >
                 <Copy className="w-4 h-4" />
               </button>
@@ -260,7 +260,7 @@ export function DashboardPreviewModal({
             {confirmDelete ? (
               <button
                 onClick={() => onDelete(dashboard.id)}
-                className="text-xs px-2.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-medium transition-colors"
+                className="text-xs px-2.5 py-1.5 rounded-lg bg-danger-solid hover:bg-danger-solid-hover text-white font-medium transition-colors"
               >
                 确认删除
               </button>
@@ -269,7 +269,7 @@ export function DashboardPreviewModal({
                 <button
                   onClick={() => setConfirmDelete(true)}
                   aria-label="删除收藏"
-                  className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/50 transition-colors"
+                  className="p-1.5 rounded-lg text-foreground-faint hover:text-danger-fg hover:bg-danger-soft transition-colors"
                 >
                   <Trash2 className="w-4 h-4" />
                 </button>
@@ -279,7 +279,7 @@ export function DashboardPreviewModal({
               <button
                 onClick={onClose}
                 aria-label="关闭预览"
-                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                className="p-1.5 rounded-lg text-foreground-faint hover:text-foreground-subtle hover:bg-muted transition-colors"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -288,7 +288,7 @@ export function DashboardPreviewModal({
         </div>
 
         {/* 快照看板本体（只读渲染；动作注入输入框不自动发送） */}
-        <div className="flex-1 overflow-y-auto p-5 bg-slate-50/60 dark:bg-slate-950/40">
+        <div className="flex-1 overflow-y-auto p-5 bg-surface-sunken/60 dark:bg-surface-inverse/40">
           <OpenUIRenderer
             content={dashboard.dsl}
             isStreaming={false}

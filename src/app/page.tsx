@@ -9,7 +9,7 @@ const ChatDashboard = dynamic(() => import("@/components/ChatDashboard"), {
 
 export default function Page() {
   return (
-    <Suspense fallback={<div className="h-screen bg-slate-50 dark:bg-slate-950" />}>
+    <Suspense fallback={<div className="h-screen bg-surface-sunken" />}>
       <ChatDashboard />
     </Suspense>
   );

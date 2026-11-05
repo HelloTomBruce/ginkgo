@@ -39,21 +39,21 @@ export const ComparisonLayout: React.FC<ComparisonLayoutProps> = ({
     <div className="space-y-4 w-full">
       {/* 页头 */}
       {(title || subtitle) && (
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-5 py-4 shadow-xs flex items-center justify-between gap-3">
+        <div className="bg-card border border-border rounded-xl px-5 py-4 shadow-xs flex items-center justify-between gap-3">
           <div className="min-w-0">
             {title && (
-              <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-                <Scale className="w-4 h-4 text-blue-500 shrink-0" />
+              <h2 className="text-base font-semibold text-foreground flex items-center gap-2">
+                <Scale className="w-4 h-4 text-info-fg shrink-0" />
                 <span className="truncate">{title}</span>
               </h2>
             )}
             {subtitle && (
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+              <p className="text-xs text-muted-foreground mt-0.5">
                 {subtitle}
               </p>
             )}
           </div>
-          <span className="text-[10px] bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 px-2.5 py-1 rounded-full font-semibold border border-blue-200 dark:border-blue-800 shrink-0">
+          <span className="text-[10px] bg-info-soft text-info-fg px-2.5 py-1 rounded-full font-semibold border border-info-border shrink-0">
             A/B Compare
           </span>
         </div>
@@ -63,9 +63,9 @@ export const ComparisonLayout: React.FC<ComparisonLayoutProps> = ({
       {hasAnyColumn ? (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
           {/* 左栏：蓝色系 */}
-          <section className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xs overflow-hidden">
-            <header className="px-4 py-2.5 bg-blue-50 dark:bg-blue-950/40 border-b border-blue-100 dark:border-blue-900/60">
-              <h3 className="text-sm font-semibold text-blue-700 dark:text-blue-300 truncate">
+          <section className="bg-card border border-border rounded-xl shadow-xs overflow-hidden">
+            <header className="px-4 py-2.5 bg-info-soft border-b border-info-border">
+              <h3 className="text-sm font-semibold text-info-fg-strong truncate">
                 {leftLabel || "左"}
               </h3>
             </header>
@@ -73,9 +73,9 @@ export const ComparisonLayout: React.FC<ComparisonLayoutProps> = ({
           </section>
 
           {/* 右栏：紫色系 */}
-          <section className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xs overflow-hidden">
-            <header className="px-4 py-2.5 bg-violet-50 dark:bg-violet-950/40 border-b border-violet-100 dark:border-violet-900/60">
-              <h3 className="text-sm font-semibold text-violet-700 dark:text-violet-300 truncate">
+          <section className="bg-card border border-border rounded-xl shadow-xs overflow-hidden">
+            <header className="px-4 py-2.5 bg-violet-soft border-b border-violet-border">
+              <h3 className="text-sm font-semibold text-violet-fg-strong truncate">
                 {rightLabel || "右"}
               </h3>
             </header>

@@ -36,28 +36,28 @@ export const ContributionHeatmap: React.FC<ContributionHeatmapProps> = ({
   }));
 
   const defaultTheme = {
-    0: "bg-slate-100 dark:bg-slate-800/80",
-    1: "bg-emerald-200 dark:bg-emerald-900/60",
-    2: "bg-emerald-400 dark:bg-emerald-700",
-    3: "bg-emerald-500 dark:bg-emerald-600",
-    4: "bg-emerald-600 dark:bg-emerald-500",
+    0: "bg-muted",
+    1: "bg-success-scale-1",
+    2: "bg-success-scale-2",
+    3: "bg-success-scale-3",
+    4: "bg-success-scale-4",
   };
 
   const colorThemes = {
     green: defaultTheme,
     blue: {
-      0: "bg-slate-100 dark:bg-slate-800/80",
-      1: "bg-blue-200 dark:bg-blue-900/60",
-      2: "bg-blue-400 dark:bg-blue-700",
-      3: "bg-blue-500 dark:bg-blue-600",
-      4: "bg-blue-600 dark:bg-blue-500",
+      0: "bg-muted",
+      1: "bg-info-scale-1",
+      2: "bg-info-scale-2",
+      3: "bg-info-scale-3",
+      4: "bg-info-scale-4",
     },
     purple: {
-      0: "bg-slate-100 dark:bg-slate-800/80",
-      1: "bg-purple-200 dark:bg-purple-900/60",
-      2: "bg-purple-400 dark:bg-purple-700",
-      3: "bg-purple-500 dark:bg-purple-600",
-      4: "bg-purple-600 dark:bg-purple-500",
+      0: "bg-muted",
+      1: "bg-brand-scale-1",
+      2: "bg-brand-scale-2",
+      3: "bg-brand-scale-3",
+      4: "bg-brand-scale-4",
     },
   }[color] || defaultTheme;
 
@@ -79,27 +79,27 @@ export const ContributionHeatmap: React.FC<ContributionHeatmapProps> = ({
   } | null>(null);
 
   return (
-    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 shadow-xs">
+    <div className="bg-card border border-border rounded-xl p-5 shadow-xs">
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
-            <Flame className="w-4 h-4 text-emerald-500" />
+          <h3 className="text-sm font-semibold text-foreground flex items-center gap-1.5">
+            <Flame className="w-4 h-4 text-success-fg" />
             <span>{title}</span>
           </h3>
           {description && (
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+            <p className="text-xs text-muted-foreground mt-0.5">
               {description}
             </p>
           )}
         </div>
-        <span className="text-[10px] bg-emerald-50 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400 px-2.5 py-0.5 rounded-full font-semibold">
+        <span className="text-[10px] bg-success-soft text-success-fg px-2.5 py-0.5 rounded-full font-semibold">
           累计 {totalCount} 次
         </span>
       </div>
 
       <div className="overflow-x-auto pb-2">
         {safeData.length === 0 ? (
-          <div className="text-xs text-slate-400 text-center py-4">
+          <div className="text-xs text-foreground-faint text-center py-4">
             暂无热力图数据
           </div>
         ) : (
@@ -132,7 +132,7 @@ export const ContributionHeatmap: React.FC<ContributionHeatmapProps> = ({
             </div>
 
             {/* 图例 */}
-            <div className="flex items-center justify-end gap-1.5 text-[10px] text-slate-400 pt-2">
+            <div className="flex items-center justify-end gap-1.5 text-[10px] text-foreground-faint pt-2">
               <span>低频</span>
               <div className={`w-3 h-3 rounded-xs ${colorThemes[0]}`} />
               <div className={`w-3 h-3 rounded-xs ${colorThemes[1]}`} />
@@ -148,7 +148,7 @@ export const ContributionHeatmap: React.FC<ContributionHeatmapProps> = ({
       {/* 悬浮气泡：fixed 定位，渲染在 overflow 容器外，避免被裁剪 */}
       {tooltip && (
         <div
-          className="fixed z-20 bg-slate-900 text-white text-[10px] py-1 px-2 rounded shadow-lg whitespace-nowrap pointer-events-none"
+          className="fixed z-20 bg-surface-inverse text-white text-[10px] py-1 px-2 rounded shadow-lg whitespace-nowrap pointer-events-none"
           style={{
             left: tooltip.x,
             top: tooltip.y,

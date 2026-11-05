@@ -33,12 +33,13 @@ export interface RadarChartProps {
   height?: number;
 }
 
+/* 读取主题 token --chart-1..5（见应用层 globals.css） */
 const DEFAULT_RADAR_COLORS = [
-  "#3b82f6", // blue
-  "#10b981", // emerald
-  "#8b5cf6", // violet
-  "#f59e0b", // amber
-  "#ec4899", // pink
+  "var(--chart-1)",
+  "var(--chart-2)",
+  "var(--chart-3)",
+  "var(--chart-4)",
+  "var(--chart-5)",
 ];
 
 export const RadarChart: React.FC<RadarChartProps> = ({
@@ -69,17 +70,17 @@ export const RadarChart: React.FC<RadarChartProps> = ({
   }
 
   return (
-    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 shadow-xs">
+    <div className="bg-card border border-border rounded-xl p-5 shadow-xs">
       {(title || description) && (
         <div className="mb-4">
           {title && (
-            <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
-              <Compass className="w-4 h-4 text-blue-500" />
+            <h3 className="text-sm font-semibold text-foreground flex items-center gap-1.5">
+              <Compass className="w-4 h-4 text-info-fg" />
               <span>{title}</span>
             </h3>
           )}
           {description && (
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+            <p className="text-xs text-muted-foreground mt-0.5">
               {description}
             </p>
           )}
@@ -88,22 +89,22 @@ export const RadarChart: React.FC<RadarChartProps> = ({
 
       <div style={{ width: "100%", height, minHeight: height }}>
         {safeData.length === 0 ? (
-          <div className="flex h-full items-center justify-center text-xs text-slate-400">
+          <div className="flex h-full items-center justify-center text-xs text-foreground-faint">
             暂无雷达图数据
           </div>
         ) : (
           <ResponsiveContainer width="100%" height={height} minWidth={0} debounce={50}>
             <RechartsRadarChart data={safeData} outerRadius="75%">
-              <PolarGrid stroke="#e2e8f0" strokeOpacity={0.4} />
+              <PolarGrid stroke="var(--border)" strokeOpacity={0.4} />
               <PolarAngleAxis
                 dataKey={angleKey}
-                tick={{ fontSize: 11, fill: "#64748b" }}
+                tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
               />
-              <PolarRadiusAxis angle={30} domain={[0, "auto"]} stroke="#cbd5e1" tick={{ fontSize: 10 }} />
+              <PolarRadiusAxis angle={30} domain={[0, "auto"]} stroke="var(--border-strong)" tick={{ fontSize: 10 }} />
               <Tooltip
                 contentStyle={{
                   borderRadius: "8px",
-                  border: "1px solid #e2e8f0",
+                  border: "1px solid var(--border)",
                   boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)",
                 }}
               />

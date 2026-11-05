@@ -21,22 +21,22 @@ export const MetricCard: React.FC<MetricCardProps> = ({
   subtext,
 }) => {
   return (
-    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 shadow-xs hover:shadow-md transition-shadow">
-      <div className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+    <div className="bg-card border border-border rounded-xl p-5 shadow-xs hover:shadow-md transition-shadow">
+      <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
         {title}
       </div>
       <div className="mt-2 flex items-baseline justify-between gap-2">
-        <div className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
+        <div className="text-2xl font-bold tracking-tight text-foreground">
           {typeof value === "object" ? "-" : (value ?? "-")}
         </div>
         {change && (
           <div
             className={`inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full ${
               trend === "up"
-                ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400"
+                ? "bg-success-soft text-success-fg-strong"
                 : trend === "down"
-                ? "bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400"
-                : "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                ? "bg-danger-soft text-danger-fg-strong"
+                : "bg-muted text-foreground-subtle"
             }`}
           >
             {trend === "up" && <TrendingUp className="w-3 h-3" />}
@@ -47,7 +47,7 @@ export const MetricCard: React.FC<MetricCardProps> = ({
         )}
       </div>
       {subtext && (
-        <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+        <div className="mt-2 text-xs text-muted-foreground">
           {subtext}
         </div>
       )}
