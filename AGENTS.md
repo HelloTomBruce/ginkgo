@@ -9,6 +9,13 @@
 - 完整的 token 清单与「旧类 → token」映射表见 [docs/theme-tokens.md](docs/theme-tokens.md)。
 - 新增颜色需求：先在 globals.css 加 token（亮暗双套），再在组件里引用。
 
+## 数据源零硬编码
+
+- **代码里不写死任何数据源**（id/名称/产品名）：数据源全部由用户在「设置 → 数据源」或 `config/datasources.json` 配置，代码不得用关键词嗅探源 id/name 来推断能力。
+- **跨源联合分析**：由 `config/cross-source-map.json` 的 `mappings` 驱动——每条映射自带双侧数据源 id；「映射存在且双侧源当前激活」时 `cross_source_link` 工具、提示词规则段、欢迎语宣称三处经 `resolveCrossSourcePairs()` 同一判定联动开启，否则全部不出现。
+- **能力宣称**：产品能力注册表在 `src/lib/capabilities.ts`；依赖数据源的能力声明 `requiresFeature`，特性开关由服务端 `/api/datasources` 的 `features` 下发，客户端不做本地推断。新会话欢迎语由 `buildWelcomeMessage(ctx)` 生成。
+- **推荐列表**：由方法卡 `presetQuery` 生成（`packages/openui-methodology`），新增方法卡即新增推荐项，不维护硬编码场景列表。
+
 ## 常用命令
 
 - `pnpm dev`：开发服务器（端口 3006）

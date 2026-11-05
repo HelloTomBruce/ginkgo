@@ -492,7 +492,7 @@ export function DatasourceSettings() {
                   type="text"
                   value={form.command}
                   onChange={(e) => setForm({ ...form, command: e.target.value })}
-                  placeholder="zentao"
+                  placeholder="如 my-mcp-cli"
                   className={inputClass}
                 />
               </div>

@@ -16,12 +16,21 @@ import {
   ensureSessionsReady,
 } from "@/lib/sessionApi";
 import {
-  DEFAULT_WELCOME_MESSAGE,
+  buildWelcomeMessage,
   generateSessionTitle,
 } from "@/lib/sessionStorage";
+import type { CapabilityContext } from "@/lib/capabilities";
 import { toast } from "@/lib/toast";
 
 export type SetMessagesFn = (messages: Message[]) => void;
+
+export interface UseSessionManagerOptions {
+  /**
+   * 生成新会话欢迎语时读取能力上下文（数据源 + 服务端特性开关，
+   * 见 src/lib/capabilities.ts）。缺省只保留无条件能力（保守宣称）。
+   */
+  getWelcomeContext?: () => CapabilityContext;
+}
 
 /** 这些标题视为「未命名」，首条用户消息到达时自动按内容生成标题 */
 const DEFAULT_TITLES = new Set([
@@ -61,7 +70,7 @@ function sortSummaries(list: SessionSummary[]): SessionSummary[] {
  * - useChat 构造顺序环解法不变：setMessages 延迟注册（registerSetMessages），
  *   bootstrap/切换会话拿到完整消息后经它同步进消息流
  */
-export function useSessionManager() {
+export function useSessionManager(options?: UseSessionManagerOptions) {
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [currentSessionId, setCurrentSessionIdState] = useState<string>("");
   // bootstrap 完成前 ChatDashboard 显示加载态（会话数据未到，禁止输入）
@@ -98,6 +107,16 @@ export function useSessionManager() {
   // 会话切换竞态守卫：快速连点时只应用最后一次切换拉到的消息
   const switchSeqRef = useRef(0);
 
+  // 欢迎语上下文读取器收进 ref：四个创建点共用稳定回调，避免 options 依赖扩散
+  const getWelcomeContextRef = useRef(options?.getWelcomeContext);
+  useEffect(() => {
+    getWelcomeContextRef.current = options?.getWelcomeContext;
+  });
+  const buildWelcome = useCallback(
+    () => buildWelcomeMessage(getWelcomeContextRef.current?.() ?? {}),
+    []
+  );
+
   // sessions 的最新快照（异步回调内读取，避免闭包过期）
   const sessionsRef = useRef(sessions);
   useEffect(() => {
@@ -133,7 +152,7 @@ export function useSessionManager() {
         const ready = await ensureSessionsReady({
           title: "营销获客与商业分析会话",
           messages: [
-            DEFAULT_WELCOME_MESSAGE,
+            buildWelcome(),
           ] as unknown as SessionRecord["messages"],
         });
         if (!ready) {
@@ -222,7 +241,9 @@ export function useSessionManager() {
   const handleCreateNewChat = useCallback(async () => {
     const created = await createSessionApi({
       title: "新建分析会话",
-      messages: [DEFAULT_WELCOME_MESSAGE] as unknown as SessionRecord["messages"],
+      messages: [
+        buildWelcome(),
+      ] as unknown as SessionRecord["messages"],
     });
     if (!created) {
       toast("新建会话失败", "error");
@@ -234,7 +255,7 @@ export function useSessionManager() {
     switchSeqRef.current++;
     setMessages(created.messages as unknown as Message[]);
     void setActiveSessionApi(created.id);
-  }, [setMessages]);
+  }, [setMessages, buildWelcome]);
 
   // 切换会话（竞态守卫：快速连点只应用最后一次）
   const handleSelectSession = useCallback(
@@ -273,7 +294,9 @@ export function useSessionManager() {
         messagesCacheRef.current.delete(sessionId);
         const created = await createSessionApi({
           title: "新分析会话",
-          messages: [DEFAULT_WELCOME_MESSAGE] as unknown as SessionRecord["messages"],
+          messages: [
+            buildWelcome(),
+          ] as unknown as SessionRecord["messages"],
         });
         if (!created) {
           setSessions([]);
@@ -306,7 +329,7 @@ export function useSessionManager() {
         if (record) setMessages(record.messages as unknown as Message[]);
       }
     },
-    [loadSessionRecord, setMessages]
+    [loadSessionRecord, setMessages, buildWelcome]
   );
 
   // 开始重命名会话
@@ -347,7 +370,9 @@ export function useSessionManager() {
     messagesCacheRef.current.clear();
     const created = await createSessionApi({
       title: "新分析会话",
-      messages: [DEFAULT_WELCOME_MESSAGE] as unknown as SessionRecord["messages"],
+      messages: [
+        buildWelcome(),
+      ] as unknown as SessionRecord["messages"],
     });
     if (!created) {
       setSessions([]);
@@ -360,7 +385,7 @@ export function useSessionManager() {
     switchSeqRef.current++;
     setMessages(created.messages as unknown as Message[]);
     void setActiveSessionApi(created.id);
-  }, [setMessages]);
+  }, [setMessages, buildWelcome]);
 
   const activeSession = useMemo(
     () => sessions.find((s) => s.id === currentSessionId),

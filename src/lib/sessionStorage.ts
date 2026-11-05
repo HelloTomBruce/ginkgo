@@ -1,4 +1,5 @@
 import type { Message } from "@ai-sdk/react";
+import { buildCapabilitySection, type CapabilityContext } from "@/lib/capabilities";
 
 export interface ChatSession {
   id: string;
@@ -32,12 +33,21 @@ export function clearLegacySessions(): void {
   }
 }
 
-export const DEFAULT_WELCOME_MESSAGE: Message = {
-  id: "welcome",
-  role: "assistant",
-  content:
-    "👋 你好！我是基于 **Vercel AI SDK**、**OpenUI 完整生态规范** 与 **动态配置的多数据源 MCP 生态（HTTP MCP / 数据库 / 本地 CLI）** 构建的对话式数据分析助手。在「设置 → 数据源」添加你的数据源后即可开始分析。\n\n本系统已深度集成：\n- ⚡ **响应式状态与本地毫秒试算 (Reactive State)**\n- 🛠️ **前端客户端工具直连 (Client Tool Provider)**\n- 📋 **动作流编排与落地清单 (Action Pipelines)**\n- 🔗 **禅道 × GitLab 跨源联合分析 (Cross-Source Insights)**\n- 🔍 **开发者 AST 实时调试检查台 (OpenUI DevTools)**\n- 📊 **流式全链路可观测性 (Observability Metrics)**",
-};
+/**
+ * 生成新会话欢迎语。能力清单由注册表按能力上下文过滤生成
+ * （src/lib/capabilities.ts）——依赖数据源配置的能力（如跨源联合分析）
+ * 在服务端正开关关闭时不出现在欢迎语里，不做不成立的能力宣称。
+ */
+export function buildWelcomeMessage(ctx: CapabilityContext = {}): Message {
+  return {
+    id: "welcome",
+    role: "assistant",
+    content: `👋 你好！我是基于 **Vercel AI SDK**、**OpenUI 完整生态规范** 与 **动态配置的多数据源 MCP 生态（HTTP MCP / 数据库 / 本地 CLI）** 构建的对话式数据分析助手。在「设置 → 数据源」添加你的数据源后即可开始分析。\n\n${buildCapabilitySection(ctx)}`,
+  };
+}
+
+/** 未知数据源语境下的兜底欢迎语（首屏占位/测试用），不含有条件能力 */
+export const DEFAULT_WELCOME_MESSAGE: Message = buildWelcomeMessage();
 
 /**
  * 读取所有历史会话

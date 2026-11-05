@@ -21,7 +21,9 @@ const TEST_DYNAMIC_HTTP = {
 
 // 依赖注入接缝：真 manager 读临时配置文件（resolveActive/get 走真实现），
 // 仅 tools（IO）覆写为 mock —— 等价于原 vi.mock("@/lib/datasources") 的语义
-async function makeFakeManager(): Promise<DatasourceManager> {
+async function makeFakeManager(
+  extraSources: Record<string, unknown>[] = []
+): Promise<DatasourceManager> {
   const { createDatasourceManager } = await import(
     "@openui-analytics/datasources"
   );
@@ -41,6 +43,7 @@ async function makeFakeManager(): Promise<DatasourceManager> {
           token: "",
           enabled: true,
         },
+        ...extraSources,
       ],
     })
   );
@@ -202,7 +205,59 @@ describe("createAnalyzeHandler 全动态装配", () => {
 
     expect(manager.tools).toHaveBeenCalledWith(TEST_DYNAMIC_HTTP);
     const arg = vi.mocked(streamText).mock.calls[0][0];
-    expect(Object.keys(arg.tools ?? {})).toContain("cross_source_link");
+    // 仅 jira 单源（无禅道×GitLab 对）：跨源映射工具不注册
+    expect(Object.keys(arg.tools ?? {})).not.toContain("cross_source_link");
+  });
+
+  it("跨源 pair 配置且双侧源激活时注册 cross_source_link 工具", async () => {
+    // pair 配置由用户维护（config/cross-source-map.json），测试用临时文件注入
+    const pairFile = path.join(
+      fs.mkdtempSync(path.join(os.tmpdir(), "handler-pair-")),
+      "map.json"
+    );
+    fs.writeFileSync(
+      pairFile,
+      JSON.stringify({
+        mappings: [
+          {
+            projectSource: "zentao-cli",
+            project: "42",
+            repoSource: "gitlab",
+            repo: "backend/trading-platform",
+          },
+        ],
+      })
+    );
+    const { reloadCrossSourceMap } = await import("./crossSourceMap");
+    reloadCrossSourceMap(pairFile);
+    try {
+      const manager = await makeFakeManager([
+        {
+          id: "zentao-cli",
+          name: "禅道",
+          kind: "stdio-cli",
+          command: "zentao",
+          enabled: true,
+        },
+        {
+          id: "gitlab",
+          name: "gitlab",
+          kind: "http-mcp",
+          url: "http://10.0.0.1:6001/mcp",
+          token: "",
+          enabled: true,
+        },
+      ]);
+      const POST = createAnalyzeHandler({ datasources: manager });
+
+      await POST(makeRequest({ messages: [], apiKey: "k" }));
+
+      const arg = vi.mocked(streamText).mock.calls[0][0];
+      expect(Object.keys(arg.tools ?? {})).toContain("cross_source_link");
+      expect(arg.system).toContain("Cross-Source Joint Analysis");
+    } finally {
+      reloadCrossSourceMap("/nonexistent/cross-source-map.json");
+    }
   });
 
   it("protocol=anthropic 时走 createAnthropic 且 baseURL 规范化补 /v1，不调 createOpenAI", async () => {
@@ -288,8 +343,8 @@ describe("createAnalyzeHandler 全动态装配", () => {
     expect(arg.system).toContain("Planning Mode");
     expect(arg.system).toContain("PlanReviewCard");
     expect(arg.maxSteps).toBe(6);
-    // 规划轮次工具照常装配（探查需要）
-    expect(Object.keys(arg.tools ?? {})).toContain("cross_source_link");
+    // 规划轮次工具照常装配（探查需要）；跨源映射工具因无禅道×GitLab 对而不注册
+    expect(Object.keys(arg.tools ?? {})).not.toContain("cross_source_link");
 
     await POST(makeRequest({ messages: [], apiKey: "k", mode: "execute" }));
     arg = vi.mocked(streamText).mock.calls[1][0];

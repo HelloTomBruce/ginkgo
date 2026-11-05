@@ -49,10 +49,18 @@ function extractErrors(
   return [fallback];
 }
 
+/** 服务端按「用户配置 × 启用源」判定的能力开关（见 /api/datasources） */
+export interface DatasourceFeatures {
+  crossSource: boolean;
+}
+
 interface DatasourceListPayload {
   sources: DataSourceDescriptor[];
   health: Record<string, HealthResult>;
+  features: DatasourceFeatures;
 }
+
+const DEFAULT_FEATURES: DatasourceFeatures = { crossSource: false };
 
 async function fetchDatasourceList(): Promise<DatasourceListPayload | null> {
   try {
@@ -61,6 +69,11 @@ async function fetchDatasourceList(): Promise<DatasourceListPayload | null> {
       return {
         sources: body.sources as DataSourceDescriptor[],
         health: (body.health as Record<string, HealthResult>) ?? {},
+        features: {
+          crossSource:
+            (body.features as DatasourceFeatures | undefined)?.crossSource ===
+            true,
+        },
       };
     }
     return null;
@@ -100,12 +113,16 @@ export function useDatasourceList() {
   const [health, setHealth] = useState<Record<string, HealthResult>>(
     () => snapshot?.health ?? {}
   );
+  const [features, setFeatures] = useState<DatasourceFeatures>(
+    () => snapshot?.features ?? DEFAULT_FEATURES
+  );
   const [loading, setLoading] = useState(() => snapshot === null);
   const [refreshing, setRefreshing] = useState(true);
 
   const apply = useCallback((data: DatasourceListPayload) => {
     setSources(data.sources);
     setHealth(data.health);
+    setFeatures(data.features);
     setLoading(false);
     setRefreshing(false);
   }, []);
@@ -146,7 +163,7 @@ export function useDatasourceList() {
     }
   }, []);
 
-  return { sources, health, loading, refreshing, refresh };
+  return { sources, health, features, loading, refreshing, refresh };
 }
 
 /** 完整 CRUD hook：设置面板「数据源」tab 使用 */

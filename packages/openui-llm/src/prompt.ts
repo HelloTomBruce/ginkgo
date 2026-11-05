@@ -1,4 +1,5 @@
 import { serverLibrary } from "./serverLibrary";
+import { resolveCrossSourcePairs } from "./crossSourceMap";
 import type { ActiveSourceSummary } from "@openui-analytics/datasources";
 
 /**
@@ -61,6 +62,28 @@ verdict = InsightBox("tip", "对比结论", "TikTok CAC 更低且增速更快（
 export const planExample = `root = Root([plan])
 plan = PlanReviewCard("渠道 CAC 分析思路确认（方法：pareto + ranking）", "各渠道获客成本对比与预算优化建议", ["postgres: marketing.leads / marketing.deals", "采样验证: leads.status 枚举值"], [{"title":"拉取近 90 天各渠道线索与成交明细","detail":"方法 ranking：按渠道聚合花费/线索/成交数并排序","chart":"DataTable"},{"title":"计算各渠道 CAC、转化率与环比变化","chart":"MetricCard + AnalyticsChart(bar)"},{"title":"方法 pareto：定位贡献 80% 的头部渠道并给出预算再分配建议","chart":"ComparisonLayout + ActionPlanCard + ReactiveSimulator"}], [{"question":"CAC 口径是否包含人力成本？","options":["仅投放花费","投放+人力成本"],"default":"仅投放花费"},{"question":"分析周期以哪个为准？","options":["近 90 天","本季度"],"default":"近 90 天"}], "按此思路开始分析")`;
 
+/**
+ * 跨源联合分析是否可用完全由用户配置驱动：
+ * config/cross-source-map.json 存在映射、且其双侧数据源 id
+ * 都在当前激活源集合中时，才注入跨源工具说明与规则段。
+ * 代码不内置任何数据源名（见 crossSourceMap.ts）。
+ */
+function hasCrossSourcePair(sources: ActiveSourceSummary[]): boolean {
+  return resolveCrossSourcePairs(sources.map((s) => s.id)).length > 0;
+}
+
+/** 解析当前成立的配对并取两侧源的展示名（找不到则用 id；多对配对取首对展示） */
+function resolvePairNames(sources: ActiveSourceSummary[]): {
+  project: string;
+  repo: string;
+} | null {
+  const pairs = resolveCrossSourcePairs(sources.map((s) => s.id));
+  if (pairs.length === 0) return null;
+  const name = (id: string) =>
+    sources.find((s) => s.id === id)?.name ?? id;
+  return { project: name(pairs[0].projectSource), repo: name(pairs[0].repoSource) };
+}
+
 function dataAccessSection(activeSources: ActiveSourceSummary[]): string {
   const lines: string[] = [];
   let n = 1;
@@ -73,10 +96,27 @@ function dataAccessSection(activeSources: ActiveSourceSummary[]): string {
       `${n++}. **${src.name}** (${kindLabel}):\n   - ${tools}. Database sources are strictly read-only.`
     );
   }
-  lines.push(
-    `${n++}. **Cross-Source Mapping**:\n   - \`cross_source_link\`: Query the mapping between a ZenTao project ID and its GitLab repository path for joint analysis.`
-  );
+  const pairNames = resolvePairNames(activeSources);
+  if (pairNames) {
+    lines.push(
+      `${n++}. **Cross-Source Mapping**:\n   - \`cross_source_link\`: Query the mapping between a project in ${pairNames.project} and its code repository in ${pairNames.repo} for joint analysis.`
+    );
+  }
   return `## Data Access:\n${lines.join("\n")}`;
+}
+
+/** 跨源联合分析规则段：仅当用户配置的源配对激活时注入 */
+function crossSourceSection(activeSources: ActiveSourceSummary[]): string {
+  const pairNames = resolvePairNames(activeSources);
+  if (!pairNames) return "";
+  return `
+## Cross-Source Joint Analysis (${pairNames.project} × ${pairNames.repo}):
+When a question involves BOTH project progress/quality (${pairNames.project}) AND code activity (${pairNames.repo}), e.g. "为什么这个迭代延期了" or "这个项目代码活跃度与 bug 趋势的关系":
+1. FIRST call \`cross_source_link\` with the project ID to get the mapped repository.
+2. If \`confidence = "mapped"\`: query both sources and correlate — e.g. use **ActivityTimeline** to mix commits/MRs with story/task status transitions on the same timeline, or use **AnalyticsChart** to overlay commit velocity against bug discovery rate.
+3. If \`confidence = "none"\`: DO NOT fabricate a join. Analyze the project-management side alone, and add an **InsightBox(type="info")** telling the user to add the mapping in \`config/cross-source-map.json\` to enable joint analysis.
+4. NEVER invent a repository name to join on — only use the mapped repository returned by \`cross_source_link\`.
+`;
 }
 
 /**
@@ -147,14 +187,7 @@ ${dataAccessSection(activeSources)}
 ${schemaDigestSection(schemaDigest)}
 ${methodIndexSection(methodIndex)}
 ${methodNamingSection(methodIndex)}
-
-## Cross-Source Joint Analysis (禅道 × GitLab):
-When a question involves BOTH project progress/quality (ZenTao) AND code activity (GitLab), e.g. "为什么这个迭代延期了" or "这个项目代码活跃度与 bug 趋势的关系":
-1. FIRST call \`cross_source_link\` with the ZenTao project ID to get the mapped GitLab repository.
-2. If \`confidence = "mapped"\`: query both sources and correlate — e.g. use **ActivityTimeline** to mix GitLab commits/MRs with ZenTao story/task status transitions on the same timeline, or use **AnalyticsChart** to overlay commit velocity against bug discovery rate.
-3. If \`confidence = "none"\`: DO NOT fabricate a join. Analyze the ZenTao side alone, and add an **InsightBox(type="info")** telling the user to add the mapping in \`config/cross-source-map.json\` to enable joint analysis.
-4. NEVER invent a GitLab project name to join on — only use the mapped repository returned by \`cross_source_link\`.
-
+${crossSourceSection(activeSources)}
 ## Visual Component Kit (OpenUI Lang):
 You have a rich set of declarative components available:
 - **ReportLayout(title, subtitle?, kpis?, charts?, detail?, insights?)**: BI report layout template — page header + KPI strip + 2-col charts zone + full-width detail zone + insights zone. Use it for periodic comprehensive reviews (business/growth/iteration reports). Pass raw MetricCard arrays in kpis (NOT MetricGrid — the template grids them itself).
@@ -182,7 +215,7 @@ Dashboards whose components bind directly to query results can be refreshed late
 3. **Component data rows reuse query result rows verbatim**: same column keys as the SQL/tool result, same values (no rounding, no unit suffixes appended to numbers, no extra computed columns). Filtering, sorting, or truncating to a subset of rows is fine.
 
 ## Instructions:
-1. When asked a business, data, GitLab engineering, or ZenTao project/bug/task question, first query the relevant data using your MCP tools.
+1. When asked a business, data, or engineering/project question, first query the relevant data using your MCP tools.
 2. After retrieving data from MCP tools, you MUST immediately synthesize the insights and generate the complete \`\`\`openui ... \`\`\` generative UI dashboard.
 3. CRITICAL: Never terminate your response after tool calls with just punctuation (such as "。" or empty text) or a brief placeholder. You MUST output a complete analytical markdown report followed by the full \`\`\`openui ... \`\`\` visual code block.
 4. Choose the most suitable visual components based on the context:
@@ -239,8 +272,11 @@ The user just asked an analytical question. Your job:
 1. Restate the goal in one sentence (your understanding of what they want).
 2. Ground the plan in real data structures BEFORE proposing it:
    - For database sources: call list_tables / describe_table to verify the tables/columns you plan to use. You MAY run small sampling queries with LIMIT (<= 10 rows) to inspect value distributions (e.g. enum values of a status column).
-   - For MCP sources (GitLab / ZenTao): you may call a few cheap list-type tools to confirm data availability. Do not pull bulk data.
-   - cross_source_link may be used to check whether a ZenTao × GitLab joint analysis is possible.
+   - For MCP sources: you may call a few cheap list-type tools to confirm data availability. Do not pull bulk data.${
+     hasCrossSourcePair(activeSources)
+       ? `\n   - cross_source_link may be used to check whether a cross-source joint analysis is possible.`
+       : ""
+   }
 3. Output the plan for user confirmation — the execution round happens only after the user confirms.
 
 ## Output contract (BOTH parts are mandatory):

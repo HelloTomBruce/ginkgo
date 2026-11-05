@@ -1,10 +1,14 @@
 import { datasources } from "@/lib/datasources";
 import { describeDynamicSource } from "@openui-analytics/datasources";
+import { resolveCrossSourcePairs } from "@openui-analytics/llm";
 
 /**
  * GET /api/datasources
  * 返回所有数据源描述符（同构、含 enabled 与脱敏字段）与实时健康状态。
  * 永不回传明文 token 与连接串密码。
+ * features：由服务端按「用户配置 × 当前启用源」判定的能力开关
+ * （如跨源联合分析要求 cross-source-map.json 存在映射且其双侧源都启用），
+ * 客户端据此裁剪能力宣称（欢迎语等），代码不内置任何数据源名。
  */
 export async function GET() {
   const sources = datasources.list();
@@ -21,7 +25,17 @@ export async function GET() {
       return [s.id, health] as const;
     })
   );
-  return Response.json({ sources, health: Object.fromEntries(entries) });
+  const enabledIds = sources
+    .filter((s) => s.enabled !== false)
+    .map((s) => s.id);
+  const features = {
+    crossSource: resolveCrossSourcePairs(enabledIds).length > 0,
+  };
+  return Response.json({
+    sources,
+    health: Object.fromEntries(entries),
+    features,
+  });
 }
 
 /**

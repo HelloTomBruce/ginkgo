@@ -25,7 +25,7 @@ import {
   type MethodLibrary,
 } from "@openui-analytics/methodology";
 import { getOpenUISystemPrompt, getOpenUIPlanPrompt, getExecuteSystemPrompt } from "./prompt";
-import { getCrossSourceLinks } from "./crossSourceMap";
+import { getCrossSourceLinks, resolveCrossSourcePairs } from "./crossSourceMap";
 
 /** 全部启用源结构卡注入 prompt 的总量预算（与单卡 2KB 预算配套，快照测试守护） */
 export const SCHEMA_DIGEST_TOTAL_BUDGET_BYTES = 8 * 1024;
@@ -381,6 +381,33 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
         });
       }
 
+      // 跨源映射工具：仅当用户在 cross-source-map.json 配置的源配对
+      // 在当前激活源集合中成立时注册（代码不内置任何数据源名）
+      const crossSourceTools: Record<string, CoreTool> = {};
+      const crossSourcePairs = resolveCrossSourcePairs(summaries.map((s) => s.id));
+      if (crossSourcePairs.length > 0) {
+        const pairDesc = crossSourcePairs
+          .map((p) => `${p.projectSource} ↔ ${p.repoSource}`)
+          .join(", ");
+        crossSourceTools.cross_source_link = tool({
+          description: `查询项目管理侧项目与代码仓库侧仓库的关联映射（当前配对：${pairDesc}），用于跨源联合分析（迭代进度 × 代码活跃度）。映射缺失时返回 confidence=none，此时应提示用户在 config/cross-source-map.json 补充映射，不得编造关联结果。`,
+          parameters: jsonSchema<{ project_id: string }>({
+            type: "object",
+            properties: {
+              project_id: {
+                type: "string",
+                description: "项目管理侧的项目 ID",
+              },
+            },
+            required: ["project_id"],
+          }),
+          execute: async ({ project_id }) => {
+            console.log("[Vercel AI SDK -> CrossSource] cross_source_link:", project_id);
+            return getCrossSourceLinks(project_id);
+          },
+        });
+      }
+
       const result = streamText({
         model: languageModel,
         system,
@@ -391,23 +418,7 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
         maxTokens: maxOutputTokens,
         tools: {
           ...loadedTools,
-          cross_source_link: tool({
-            description: "查询禅道项目与 GitLab 仓库的关联映射，用于跨源联合分析（迭代进度 × 代码活跃度）。映射缺失时返回 confidence=none，此时应提示用户补充映射，不得编造关联结果。",
-            parameters: jsonSchema<{ zentao_project_id: string }>({
-              type: "object",
-              properties: {
-                zentao_project_id: {
-                  type: "string",
-                  description: "禅道项目 ID，例如: \"42\"",
-                },
-              },
-              required: ["zentao_project_id"],
-            }),
-            execute: async ({ zentao_project_id }) => {
-              console.log("[Vercel AI SDK -> CrossSource] cross_source_link:", zentao_project_id);
-              return getCrossSourceLinks(zentao_project_id);
-            },
-          }),
+          ...crossSourceTools,
         },
         // 规划阶段只需 schema 探查 + 小样本，步数预算收紧；执行/直出保持 10
         maxSteps: mode === "plan" ? 6 : 10,

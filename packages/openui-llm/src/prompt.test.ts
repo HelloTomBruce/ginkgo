@@ -1,10 +1,14 @@
 // @vitest-environment node
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import {
   getOpenUISystemPrompt,
   getOpenUIPlanPrompt,
   getExecuteSystemPrompt,
 } from "./prompt";
+import { reloadCrossSourceMap } from "./crossSourceMap";
 import type { ActiveSourceSummary } from "@openui-analytics/datasources";
 
 const ACTIVE: ActiveSourceSummary[] = [
@@ -23,24 +27,84 @@ const ACTIVE: ActiveSourceSummary[] = [
   },
 ];
 
+/** 禅道 + GitLab 成对激活：跨源联合分析能力才注入 */
+const PAIRED: ActiveSourceSummary[] = [
+  ...ACTIVE,
+  {
+    id: "gitlab",
+    name: "gitlab",
+    kind: "http-mcp",
+    tools: ["gitlab_list_commits"],
+  },
+];
+
 describe("getOpenUISystemPrompt 全动态数据源段", () => {
-  it("Data Access 段完全由激活源生成：源名/kind/工具 + 跨源映射保留", () => {
+  it("Data Access 段完全由激活源生成：源名/kind/工具", () => {
     const prompt = getOpenUISystemPrompt(ACTIVE);
 
     expect(prompt).toContain("订单库");
     expect(prompt).toContain("mysql-orders_execute_sql");
     expect(prompt).toContain("禅道");
     expect(prompt).toContain("zentao-cli_zentao_bug");
-    expect(prompt).toContain("cross_source_link");
     // 无内置静态段残留
     expect(prompt).not.toContain("PostgreSQL Analytics Database");
     expect(prompt).not.toContain("GitLab Repository");
   });
 
-  it("空源列表仍生成可用 prompt（仅跨源映射说明）", () => {
+  it("空源列表仍生成可用 prompt", () => {
     const prompt = getOpenUISystemPrompt([]);
-    expect(prompt).toContain("cross_source_link");
+    expect(prompt).toContain("## Data Access:");
     expect(prompt).not.toContain("PostgreSQL Analytics Database");
+  });
+});
+
+describe("跨源联合分析条件注入（pair 配置 + 双侧源激活才出现）", () => {
+  // pair 配置由用户维护（config/cross-source-map.json），测试用临时文件注入
+  const pairFile = path.join(
+    fs.mkdtempSync(path.join(os.tmpdir(), "prompt-pair-")),
+    "map.json"
+  );
+  fs.writeFileSync(
+    pairFile,
+    JSON.stringify({
+      mappings: [
+        {
+          projectSource: "zentao-cli",
+          project: "42",
+          repoSource: "gitlab",
+          repo: "backend/trading-platform",
+        },
+      ],
+    })
+  );
+
+  beforeEach(() => {
+    reloadCrossSourceMap(pairFile);
+  });
+  afterEach(() => {
+    reloadCrossSourceMap("/nonexistent/cross-source-map.json");
+  });
+
+  it("仅激活 pair 单侧源：不出现 cross_source_link 与跨源规则段", () => {
+    const prompt = getOpenUISystemPrompt(ACTIVE);
+    expect(prompt).not.toContain("cross_source_link");
+    expect(prompt).not.toContain("Cross-Source Joint Analysis");
+  });
+
+  it("pair 双侧源激活：注入映射工具说明与跨源规则段（含源展示名）", () => {
+    const prompt = getOpenUISystemPrompt(PAIRED);
+    expect(prompt).toContain("cross_source_link");
+    expect(prompt).toContain("Cross-Source Joint Analysis");
+    expect(prompt).toContain("gitlab_list_commits");
+    // 规则段使用配置的源名而非写死的产品名
+    expect(prompt).toContain("禅道 × gitlab");
+  });
+
+  it("plan/execute 提示词同样按 pair 配置条件注入", () => {
+    expect(getOpenUIPlanPrompt(ACTIVE)).not.toContain("cross_source_link");
+    expect(getOpenUIPlanPrompt(PAIRED)).toContain("cross_source_link");
+    expect(getExecuteSystemPrompt(ACTIVE)).not.toContain("Cross-Source Joint Analysis");
+    expect(getExecuteSystemPrompt(PAIRED)).toContain("Cross-Source Joint Analysis");
   });
 });
 
@@ -51,7 +115,8 @@ describe("getOpenUIPlanPrompt 规划模式提示词", () => {
     // 动态数据源段照常生成
     expect(prompt).toContain("订单库");
     expect(prompt).toContain("mysql-orders_list_tables");
-    expect(prompt).toContain("cross_source_link");
+    // 仅有禅道无 GitLab：不注入跨源探查说明
+    expect(prompt).not.toContain("cross_source_link");
     // 规划模式标识与输出契约
     expect(prompt).toContain("Planning Mode");
     expect(prompt).toContain("PlanReviewCard");
