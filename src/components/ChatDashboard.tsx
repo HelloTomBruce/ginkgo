@@ -41,17 +41,40 @@ const IS_DEV = process.env.NODE_ENV === "development";
  * 组合层：唯一接线点。
  * 状态在 useLlmSettings / useSessionManager 中管理，展示在 chat/ 下的专注子组件中。
  */
+
+/** 上下文用量派生（纯函数，组件外定义以兼容 React Compiler 手动记忆化） */
+function deriveContextUsage(
+  data: unknown,
+  fallbackPromptTokens: number | null,
+  model: string
+): { promptTokens: number; window: number } | null {
+  if (Array.isArray(data) && data.length > 0) {
+    for (let i = data.length - 1; i >= 0; i--) {
+      const item = data[i] as { type?: string; promptTokens?: number } | null;
+      if (
+        item &&
+        item.type === "context_usage" &&
+        typeof item.promptTokens === "number" &&
+        item.promptTokens > 0
+      ) {
+        return { promptTokens: item.promptTokens, window: resolveContextWindow(model) };
+      }
+    }
+  }
+  if (typeof fallbackPromptTokens === "number" && fallbackPromptTokens > 0) {
+    return { promptTokens: fallbackPromptTokens, window: resolveContextWindow(model) };
+  }
+  return null;
+}
+
 export default function ChatDashboard() {
   const [showRawLang, setShowRawLang] = useState(false);
   const [showDevTools, setShowDevTools] = useState(false);
   // 分析方法论查看入口（侧边栏底部按钮打开，弹窗内自取数）
   const [showMethodology, setShowMethodology] = useState(false);
   const [devToolsCode, setDevToolsCode] = useState(DEFAULT_SANDBOX_CODE);
-  // 上下文用量（最近一次响应的实测 promptTokens；用量条数据源）
-  const [contextUsage, setContextUsage] = useState<{
-    promptTokens: number;
-    window: number;
-  } | null>(null);
+  // 上下文用量兜底（仅在未收到 StreamData 时生效）
+  const [fallbackPromptTokens, setFallbackPromptTokens] = useState<number | null>(null);
 
   const {
     showSettings,
@@ -137,6 +160,8 @@ export default function ChatDashboard() {
     rename: renameDashboard,
     remove: removeDashboard,
     refreshOne: refreshDashboardData,
+    toggleTemplate: toggleDashboardTemplate,
+    createFromTemplate: createDashboardFromTemplate,
   } = useDashboards();
   // 星标判定集合：收藏记录的 origin.messageId
   const favoritedMessageIds = useMemo(() => {
@@ -205,6 +230,8 @@ export default function ChatDashboard() {
     isLoading,
     error,
     reload,
+    stop,
+    data,
   } = useChat({
     api: "/api/analyze",
     body: chatBodyWithSources,
@@ -218,16 +245,19 @@ export default function ChatDashboard() {
         upsertMessage(getMessages(), message),
         streamingSessionIdRef.current ?? undefined
       );
-      // 上下文用量条：实测 promptTokens + 模型窗口（查表，与服务端同规则）
+      // 上下文用量：记录兜底值（当 StreamData 可用时优先消费真实单步值）
       const promptTokens = options?.usage?.promptTokens;
       if (typeof promptTokens === "number" && Number.isFinite(promptTokens)) {
-        setContextUsage({
-          promptTokens,
-          window: resolveContextWindow(model),
-        });
+        setFallbackPromptTokens(promptTokens);
       }
     },
   });
+
+  // 上下文用量派生计算：
+  // 1. 优先从 data（服务端 StreamData 下发的最后一步真实单步 promptTokens）读取；
+  // 2. 其次回退到 onFinish 记录的 fallbackPromptTokens（兼容无 StreamData 场景）；
+  // 3. 实时轻量求值，零 useEffect 级联渲染
+  const contextUsage = deriveContextUsage(data, fallbackPromptTokens, model);
 
   // useChat 就绪后注入 setMessages 与最新消息快照（均由 useSessionManager 内部持有）
   useEffect(() => {
@@ -249,7 +279,10 @@ export default function ChatDashboard() {
       .find((m) => m.role === "assistant");
     return Boolean(
       lastAssistant &&
-        /PlanReviewCard\s*\(/.test(String(lastAssistant.content ?? ""))
+        (/PlanReviewCard\s*\(/.test(String(lastAssistant.content ?? "")) ||
+          /(?:分析思路|分析规划|请确认以下分析方案|澄清点说明)/.test(
+            String(lastAssistant.content ?? "")
+          ))
     );
   }, [messages]);
 
@@ -275,6 +308,16 @@ export default function ChatDashboard() {
     },
     [append, currentSessionId, nextModeBody]
   );
+
+  // 暂停/中止当前会话生成（保留已有内容并即刻持久化）
+  const handleStop = useCallback(() => {
+    stop();
+    saveCurrentSessionMessages(
+      getMessages(),
+      streamingSessionIdRef.current ?? undefined
+    );
+    toast("已暂停生成", "info");
+  }, [stop, getMessages, saveCurrentSessionMessages]);
 
   // 分叉：从该消息复制前缀历史生成新会话（hook 内完成切换与落盘）
   const handleForkMessage = useCallback(
@@ -322,6 +365,55 @@ export default function ChatDashboard() {
       }
     },
     [getDashboard]
+  );
+
+  // 看板模板（M3-4）：存为模板/取消模板；用模板新建（换源选择，多源时序号输入）
+  const handleToggleDashboardTemplate = useCallback(
+    async (id: string) => {
+      const result = await toggleDashboardTemplate(id);
+      if (!result.ok) {
+        toast(result.error ?? "操作失败", "error");
+        return;
+      }
+      toast("模板状态已更新", "success");
+    },
+    [toggleDashboardTemplate]
+  );
+
+  const handleCreateDashboardFromTemplate = useCallback(
+    async (templateId: string) => {
+      const enabled = allDatasources.filter((src) => src.enabled !== false);
+      if (enabled.length === 0) {
+        toast("没有可用的数据源，请先在设置中启用", "error");
+        return;
+      }
+      const picked =
+        enabled.length === 1
+          ? enabled[0].id
+          : window.prompt(
+              `选择目标数据源（输入序号）：\n${enabled
+                .map((s, i) => `${i + 1}. ${s.name} (${s.id})`)
+                .join("\n")}`
+            );
+      if (!picked) return;
+      const idx = Number(picked);
+      const targetSourceId =
+        enabled.length === 1 ? enabled[0].id : enabled[idx - 1]?.id;
+      if (!targetSourceId) {
+        toast("无效的数据源序号", "error");
+        return;
+      }
+      const result = await createDashboardFromTemplate(templateId, targetSourceId);
+      if (!result.ok) {
+        toast(result.error ?? "用模板新建失败", "error");
+        return;
+      }
+      toast("已从模板创建新看板", "success");
+      if (result.newId) {
+        void handlePreviewDashboard(result.newId);
+      }
+    },
+    [allDatasources, createDashboardFromTemplate, handlePreviewDashboard]
   );
 
   // 重新分析：原始提问作为新用户消息进入当前会话（沿用预设场景的直出模式与当前会话源设置）
@@ -450,6 +542,8 @@ export default function ChatDashboard() {
         onRenameDashboard={handleRenameDashboard}
         onDeleteDashboard={handleDeleteDashboard}
         onExportDashboard={handleExportDashboard}
+        onToggleDashboardTemplate={handleToggleDashboardTemplate}
+        onCreateDashboardFromTemplate={handleCreateDashboardFromTemplate}
         onImportDashboard={handleImportDashboard}
         onCreateNewChat={handleCreateNewChat}
         onSelectSession={handleSelectSession}
@@ -525,6 +619,7 @@ export default function ChatDashboard() {
             activeSources={sessionSources}
             onRendererAction={handleRendererAction}
             onReload={reload}
+            onStop={handleStop}
             favoritedMessageIds={favoritedMessageIds}
             onFavoriteDashboard={handleFavoriteDashboard}
             onForkMessage={handleForkMessage}
@@ -575,6 +670,7 @@ export default function ChatDashboard() {
           onChange={(e) => handleInputChange(e as unknown as React.ChangeEvent<HTMLInputElement>)}
           onSubmit={handleChatSubmit}
           onPlanModeChange={setPlanMode}
+          onStop={handleStop}
         />
       </main>
 

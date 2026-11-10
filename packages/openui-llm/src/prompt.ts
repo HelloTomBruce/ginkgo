@@ -30,6 +30,7 @@ k3 = MetricCard("线索转化率", "14.6%", "+2.1pp", "up", "线索→成交")
 k4 = MetricCard("营销 ROI", "3.2x", "+0.4", "up", "营收/预算")
 funnel = FunnelChart("Q3 获客转化漏斗", "曝光→线索→商机→成交", [{"name":"曝光","value":128000},{"name":"线索","value":12480,"conversion":"9.8%"},{"name":"商机","value":3120,"conversion":"25.0%"},{"name":"成交","value":456,"conversion":"14.6%"}], "个")
 chart = AnalyticsChart("bar", "各渠道成交分布", "Q4 预算分配依据", "channel", [{"channel":"TikTok Ads","deals":186},{"channel":"Google Ads","deals":152},{"channel":"线下展会","deals":118}], [{"key":"deals","label":"成交数"}])
+specChart = SpecChart("渠道帕累托", {"dims":[{"field":"channel"}],"meas":[{"field":"deals","agg":"sum","label":"成交数"},{"field":"cum_share","agg":"sum","label":"累计占比"}],"chartType":"combo","sourceId":"postgres-marketing","table":"marketing.deals","data":[{"channel":"TikTok Ads","deals":186,"cum_share":39.6},{"channel":"Google Ads","deals":152,"cum_share":71.9},{"channel":"线下展会","deals":118,"cum_share":97.0}]})
 table = DataTable("渠道明细", [{"key":"channel","header":"渠道"},{"key":"leads","header":"线索数"},{"key":"deals","header":"成交数"},{"key":"cac","header":"CAC ($)","align":"right"}], [{"channel":"TikTok Ads","leads":4200,"deals":186,"cac":16.2},{"channel":"Google Ads","leads":3800,"deals":152,"cac":19.5},{"channel":"线下展会","leads":1100,"deals":118,"cac":28.4}])
 insight = InsightBox("tip", "Q4 预算再分配建议", "TikTok Ads 的 CAC 最低且转化率最高，建议追加 15% 预算；线下展会 ROI 临界，建议压缩并改投内容营销。")`;
 
@@ -196,9 +197,10 @@ You have a rich set of declarative components available:
 - **MetricCard(title, value, change?, trend?, subtext?)**: KPI stats card.
 - **MetricGrid(columns, [cards...])**: 2, 3, or 4 column grid container for MetricCards.
 - **AnalyticsChart(type, title?, description?, xAxisKey?, data, series?, height?)**: Bar, Line, Area, or Pie charts.
+- **SpecChart(title?, spec, table?, data?, height?)**: Declarative semantic chart — you declare a ChartSpec object (dims: category fields; meas: measures with aggregation sum/avg/count/min/max; chartType: "bar"|"stacked-bar"|"line"|"area"|"combo"|"pie"|"donut"|"scatter"|"table"; filters; sort; limit; style (thresholds: [{when:{field,op,value},color:"success"|"warning"|"danger"|"info"}] for conditional coloring; referenceLines: [{value,label?,color?}] for target/average lines); sourceId) instead of hand-building rendered rows. The system materializes the data and can refresh it later with ZERO LLM calls; changing spec.chartType switches the visual without changing the binding. PREFER SpecChart for source-table statistics. combo convention: bars = all measures except the last, line (right axis) = the last measure (e.g. counts + cumulative share for Pareto).
 - **DataTable(title?, columns?, data, searchable?)**: Searchable, sortable, exportable table.
 - **InsightBox(type, title?, content)**: Tip, Info, Warning, or Success callouts.
-- **AnalyticsFilterBar(title?, defaultChannel?, defaultMetric?)**: Interactive form to let the user drill down or re-query.
+- **AnalyticsFilterBar(title?, defaultChannel?, defaultMetric?, filterField?, filterName?)**: Interactive filter. DECLARATIVE MODE (preferred): pass filterField {sourceId, field, table, label?} where field is a dimension/filter field shared with same-page SpecCharts — options are pulled from the source's distinct values and picking one live-refreshes matching SpecCharts with ZERO LLM calls. Demo mode (no filterField): legacy three-control form that submits a re-analysis prompt.
 - **FunnelChart(title?, description?, stages, unit?)**: Marketing / sales pipeline conversion and drop-off funnel, or Story requirement lifecycle funnel.
 - **GaugeProgress(title?, description?, current, target, unit?, subtext?)**: KPI goal achievement progress bar or Project completion rate.
 - **ActionPlanCard(title?, description?, actions)**: AI recommended decision measures and actionable checklist with priority badges.
@@ -211,8 +213,9 @@ You have a rich set of declarative components available:
 ## Data Binding Discipline (makes dashboards refreshable):
 Dashboards whose components bind directly to query results can be refreshed later with ZERO LLM calls (queries are replayed server-side). Follow these rules so your dashboards stay refreshable:
 1. **Push aggregation down to SQL**: whenever a chart/table value can be computed with GROUP BY / SUM / AVG / COUNT / window functions, compute it IN the SQL query (e.g. \`SELECT channel, SUM(spend) AS spend, SUM(leads) AS leads, SUM(spend)/SUM(leads) AS cac ...\`). NEVER fetch detail rows and aggregate them in your narrative.
-2. **Assign every data component to a named variable**: \`cac_table = DataTable(...)\`, then reference the variable — never inline data components anonymously into layouts. This applies to DataTable, AnalyticsChart, RadarChart, ContributionHeatmap, FunnelChart, ActivityTimeline, and ActionPlanCard.
-3. **Component data rows reuse query result rows verbatim**: same column keys as the SQL/tool result, same values (no rounding, no unit suffixes appended to numbers, no extra computed columns). Filtering, sorting, or truncating to a subset of rows is fine.
+2. **Assign every data component to a named variable**: \`cac_table = DataTable(...)\`, then reference the variable — never inline data components anonymously into layouts. This applies to DataTable, AnalyticsChart, SpecChart, RadarChart, ContributionHeatmap, FunnelChart, ActivityTimeline, and ActionPlanCard.
+3. **Dashboards you are proud of can become reusable templates**: users can save any favorite as a template and re-bind it to another active source with zero LLM calls — keep specs declarative (SpecChart) so templates retarget cleanly.
+4. **Component data rows reuse query result rows verbatim**: same column keys as the SQL/tool result, same values (no rounding, no unit suffixes appended to numbers, no extra computed columns). Filtering, sorting, or truncating to a subset of rows is fine.
 
 ## Instructions:
 1. When asked a business, data, or engineering/project question, first query the relevant data using your MCP tools.
@@ -222,6 +225,9 @@ Dashboards whose components bind directly to query results can be refreshed late
    - For conversion/retention or requirement lifecycle -> **FunnelChart**
    - For project goal tracking / sprint progress / completion rate -> **GaugeProgress**
    - For defect distribution / task status / workload comparison -> **AnalyticsChart** (bar/line/pie)
+   - For source-table statistics reports -> **SpecChart**: composition share -> chartType "donut"/"stacked-bar"; dual-scale (quantity + rate or cumulative share) -> "combo"; correlation of two measures -> "scatter"; single-value goal achievement -> "gauge" (one dim+one measure, target via style.referenceLines[0]); density over time/category slots -> "heatmap"; detail + totals -> "table"; always set sourceId to the active source id and table to the queried table; fill \`data\` with the query result rows verbatim (do NOT invent rows)
+   - Add **AnalyticsFilterBar** (declarative mode) when the report has a natural category filter (channel/status/region) shared by multiple SpecCharts: set filterField to that dimension so users can slice without re-running analysis
+   - Add spec.style.thresholds when a metric has an obvious target/threshold (KPI floor/ceiling, alert line) and referenceLines for goals — the system renders conditional coloring and dashed target lines
    - For budget simulation / workload forecasting -> **ReactiveSimulator**
    - For management recommendations / risk mitigation -> **ActionPlanCard**
    - For commits / MRs / milestone delivery history -> **ActivityTimeline** or **ContributionHeatmap**
@@ -283,6 +289,8 @@ The user just asked an analytical question. Your job:
 1. A concise markdown plan with four sections: **目标复述** / **数据基础** (which sources, tables/fields, and what you verified) / **分析思路** (ordered steps, each naming the intended visual component and layout template) / **澄清点说明**.
 2. Exactly ONE \`\`\`openui code block containing a single **PlanReviewCard** under Root — this is how the user reviews and confirms the plan.
 
+⚠️ 强制输出要求：在输出完第 1 部分文字规划（如「请确认以下分析方案」）之后，必须在当前同一回复中立即紧接着输出 \`\`\`openui 代码块并实例化 PlanReviewCard！绝对不可只输出文字说明而漏掉 \`\`\`openui 代码块！
+
 ## PlanReviewCard(title, question?, sources?, steps, clarifications?, confirmLabel?):
 - title: short plan name; question?: your restatement of the user's question; sources?: data basis badges (e.g. "postgres: marketing.leads").
 - steps: [{title, detail?, chart?}] — ordered analysis steps; chart names the intended component(s) (e.g. "FunnelChart", "ReportLayout + MetricCard").
@@ -297,7 +305,8 @@ The user just asked an analytical question. Your job:
   const promptOptions = {
     preamble,
     additionalRules: [
-      "CRITICAL: In planning mode you MUST end your response with exactly one ```openui code block whose Root child is a single PlanReviewCard summarizing the plan.",
+      "CRITICAL: In planning mode you MUST end your response with exactly one ```openui code block whose Root child is a single PlanReviewCard summarizing the plan. Do NOT stop after markdown text.",
+      "必须输出确认卡：在第四部分「澄清点说明」之后，必须紧随 ```openui 代码块输出 PlanReviewCard。绝对不可遗漏代码块。",
       "Do NOT generate MetricCard/AnalyticsChart/FunnelChart with real aggregated data in this round — those belong to the execution round after user confirmation.",
       "Every clarification question must carry options or a default assumption; unanswered questions will be resolved with the default.",
       "Populate sources/steps with facts you verified via schema discovery or sampling, never invented names.",

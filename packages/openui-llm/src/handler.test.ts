@@ -83,6 +83,9 @@ function mockStreamOk() {
       new Response('0:"ok"\n', {
         headers: { "x-vercel-ai-data-stream": "v1" },
       }),
+    mergeIntoDataStream: (dataStream: { write: (chunk: string) => void }) => {
+      dataStream.write('0:"ok"\n');
+    },
   } as unknown as ReturnType<typeof streamText>);
 }
 
@@ -597,6 +600,31 @@ describe("createAnalyzeHandler 上下文治理", () => {
     onFinish({ usage: { promptTokens: 12345, completionTokens: 10 } });
     expect(updateContext).toHaveBeenCalledWith("sess_ab12cd34", {
       lastPromptTokens: 12345,
+    });
+  });
+
+  it("多步工具调用：优先使用最后一步单步 promptTokens 而非累加值回写锚点", async () => {
+    await POST(
+      makeRequest({
+        messages: [{ role: "user", content: "hi" }],
+        apiKey: "k",
+        sessionId: "sess_multi_step",
+      })
+    );
+    const callArgs = vi.mocked(streamText).mock.calls[0][0];
+    const onStepFinish = callArgs.onStepFinish as (arg: unknown) => void;
+    const onFinish = callArgs.onFinish as (arg: unknown) => void;
+
+    // 模拟多步 step 1 与 step 2
+    onStepFinish({ usage: { promptTokens: 10000, completionTokens: 100 } });
+    onStepFinish({ usage: { promptTokens: 18000, completionTokens: 200 } });
+
+    // AI SDK 汇总传入 onFinish 的是累加值 28000
+    onFinish({ usage: { promptTokens: 28000, completionTokens: 300 } });
+
+    // 必须回写最后一步的单步峰值 18000，而不是累加值 28000
+    expect(updateContext).toHaveBeenCalledWith("sess_multi_step", {
+      lastPromptTokens: 18000,
     });
   });
 

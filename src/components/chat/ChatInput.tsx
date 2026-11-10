@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Send, Loader2, ClipboardList } from "lucide-react";
+import { Send, ClipboardList, Square } from "lucide-react";
 import { Hint } from "@/components/ui/hint";
 
 interface ChatInputProps {
@@ -12,6 +12,8 @@ interface ChatInputProps {
   onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void;
   onSubmit: (e: React.FormEvent<HTMLFormElement>) => void;
   onPlanModeChange: (next: boolean) => void;
+  /** 中止/暂停当前生成 */
+  onStop?: () => void;
 }
 
 /** 自适应高度上限：约 6 行（24px 行高 + 余量），超出后内滚 */
@@ -24,6 +26,7 @@ export function ChatInput({
   onChange,
   onSubmit,
   onPlanModeChange,
+  onStop,
 }: ChatInputProps) {
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
 
@@ -92,18 +95,26 @@ export function ChatInput({
                 <span>先出思路</span>
               </button>
             </Hint>
-            <button
-              type="submit"
-              disabled={isLoading || !input.trim()}
-              className="bg-info-solid hover:bg-info-solid-hover text-white rounded-xl px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 shadow-xs"
-            >
-              {isLoading ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
+            {isLoading ? (
+              <button
+                type="button"
+                onClick={onStop}
+                aria-label="停止生成"
+                className="bg-danger-solid hover:bg-danger-solid-hover text-white rounded-xl px-4 py-2 text-sm font-medium transition-colors flex items-center gap-1.5 shadow-xs cursor-pointer select-none"
+              >
+                <Square className="w-3.5 h-3.5 fill-current" />
+                <span>停止</span>
+              </button>
+            ) : (
+              <button
+                type="submit"
+                disabled={!input.trim()}
+                className="bg-info-solid hover:bg-info-solid-hover text-white rounded-xl px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 shadow-xs"
+              >
                 <Send className="w-4 h-4" />
-              )}
-              <span>发送</span>
-            </button>
+                <span>发送</span>
+              </button>
+            )}
           </div>
         </div>
       </form>

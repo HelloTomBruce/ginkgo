@@ -97,16 +97,25 @@ export function estimateMessageTokens(message: unknown): number {
   const m = message as { role?: string; content?: unknown } | null;
   if (!m || typeof m !== "object") return 0;
   let tokens = 8; // role/分隔等结构开销
-  if (typeof m.content === "string") {
-    tokens += estimateTextTokens(m.content);
-  } else if (m.content !== undefined && m.content !== null) {
-    tokens += estimateTextTokens(safeSerialize(m.content));
-  }
   const rest = m as Record<string, unknown>;
-  for (const key of ["parts", "toolInvocations", "annotations"]) {
-    if (rest[key] !== undefined) {
-      tokens += estimateTextTokens(safeSerialize(rest[key]));
+
+  // AI SDK 的 UI Message 同时存在 content、parts、toolInvocations 三份镜像。
+  // 若 parts 存在且为非空数组，parts 已完整覆盖 text 和 tool-invocation，只估算 parts；
+  // 否则再估算 content 与 toolInvocations，避免同一份文本/工具结果被重复翻倍统计。
+  if (Array.isArray(rest.parts) && rest.parts.length > 0) {
+    tokens += estimateTextTokens(safeSerialize(rest.parts));
+  } else {
+    if (typeof m.content === "string") {
+      tokens += estimateTextTokens(m.content);
+    } else if (m.content !== undefined && m.content !== null) {
+      tokens += estimateTextTokens(safeSerialize(m.content));
     }
+    if (rest.toolInvocations !== undefined) {
+      tokens += estimateTextTokens(safeSerialize(rest.toolInvocations));
+    }
+  }
+  if (rest.annotations !== undefined) {
+    tokens += estimateTextTokens(safeSerialize(rest.annotations));
   }
   return tokens;
 }

@@ -11,21 +11,31 @@ import {
 // useChat mock 构造器：vi.mock 工厂被提升到文件顶部，只能引用 vi.hoisted 产物与导入值（惰性求值）
 const buildUseChatResult = vi.hoisted(
   () =>
-    (messages: unknown[]) => ({
-      messages,
-      setMessages: vi.fn(),
-      input: "",
-      setInput: vi.fn(),
-      handleInputChange: vi.fn(),
-      handleSubmit: vi.fn((e?: { preventDefault?: () => void }) =>
-        e?.preventDefault?.()
-      ),
-      status: "ready",
-      append: vi.fn(),
-      isLoading: false,
-      error: undefined,
-      reload: vi.fn(),
-    })
+    // UIMessage 结构子集即可（测试消息仅含 role/content）
+    (
+      messages: Array<{ role: string; content: string }>,
+      data: unknown[] = []
+    ) =>
+      ({
+        messages,
+        setMessages: vi.fn(),
+        input: "",
+        setInput: vi.fn(),
+        handleInputChange: vi.fn(),
+        handleSubmit: vi.fn((e?: { preventDefault?: () => void }) =>
+          e?.preventDefault?.()
+        ),
+        status: "ready" as const,
+        append: vi.fn(),
+        isLoading: false,
+        error: undefined,
+        reload: vi.fn(),
+        stop: vi.fn(),
+        setData: vi.fn(),
+        id: "mock-chat",
+        addToolResult: vi.fn(),
+        data: data as never,
+      })
 );
 const defaultUseChatResult = () => buildUseChatResult([DEFAULT_WELCOME_MESSAGE]);
 
@@ -175,6 +185,39 @@ describe("ChatDashboard 守护测试（重构行为锁定）", () => {
     expect(screen.getByText("上下文")).toBeInTheDocument();
   });
 
+  // TODO(user)：用量条展示 UI 已在重构中移除（deriveContextUsage 派生仍在），
+  // 恢复展示后取消本 skip 并断言新 UI 文案
+  it("上下文用量条：优先消费 StreamData 中的 context_usage（真实单步峰值）", async () => {
+    vi.mocked(useChat).mockImplementation(
+      () =>
+        buildUseChatResult(
+          [DEFAULT_WELCOME_MESSAGE],
+          [{ type: "context_usage", promptTokens: 32_000 }]
+        ) as never
+    );
+    render(<ChatDashboard />);
+    await screen.findByText(/32\.0k \/ 128k（25%）/);
+    expect(screen.getByText("上下文")).toBeInTheDocument();
+  });
+
+  it("会话生成中：输入区域展示停止按钮，点击触发 stop 并提示", async () => {
+    const stopMock = vi.fn();
+    vi.mocked(useChat).mockImplementation(
+      () =>
+        ({
+          ...defaultUseChatResult(),
+          isLoading: true,
+          stop: stopMock,
+        }) as never
+    );
+
+    render(<ChatDashboard />);
+    const stopBtn = screen.getByRole("button", { name: /停止生成/ });
+    expect(stopBtn).toBeInTheDocument();
+    fireEvent.click(stopBtn);
+    expect(stopMock).toHaveBeenCalledTimes(1);
+  });
+
   it("首次渲染无 React 错误 / hydration 告警", () => {
     render(<ChatDashboard />);
     const reactErrors = consoleErrorSpy.mock.calls.filter((args: unknown[]) =>
@@ -273,5 +316,38 @@ describe("ChatDashboard 守护测试（重构行为锁定）", () => {
       expect.stringContaining("核心指标近半年逐月走势如何")
     );
     expect(append).not.toHaveBeenCalled();
+  });
+
+  it("纯文本规划回复（模型漏出 PlanReviewCard 代码块）：提交答复仍按 execute 发送，防止死循环", async () => {
+    const handleSubmit = vi.fn((e?: { preventDefault?: () => void }) =>
+      e?.preventDefault?.()
+    );
+    const messages = [
+      DEFAULT_WELCOME_MESSAGE,
+      { id: "u1", role: "user" as const, content: "gitlab 活跃项目" },
+      {
+        id: "a1",
+        role: "assistant" as const,
+        content:
+          "## 🔍 分析思路\n1. 排名分层\n\n## ❓ 澄清点说明\n| 问题 | 假设 |\n\n请确认以下分析方案（点击卡片中的选项后一键确认）：",
+      },
+    ];
+    vi.mocked(useChat).mockImplementation(
+      () =>
+        ({
+          ...buildUseChatResult(messages),
+          handleSubmit,
+        }) as never
+    );
+
+    render(<ChatDashboard />);
+
+    const form = (
+      await screen.findByRole("button", { name: /发送/ })
+    ).closest("form") as HTMLFormElement;
+    fireEvent.submit(form);
+    expect(handleSubmit).toHaveBeenLastCalledWith(expect.anything(), {
+      body: { mode: "execute" },
+    });
   });
 });

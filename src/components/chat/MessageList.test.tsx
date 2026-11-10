@@ -574,4 +574,213 @@ describe("看板收藏", () => {
       expect.objectContaining({ sourceNames: ["GitLab", "禅道"] })
     );
   });
+
+  it("Thinking 卡片渲染停止响应按钮，点击触发 onStop", () => {
+    const onStop = vi.fn();
+    render(
+      <MessageList
+        {...baseProps}
+        messages={[userMsg]}
+        status="submitted"
+        onStop={onStop}
+      />
+    );
+
+    const stopBtn = screen.getByRole("button", { name: /停止响应/ });
+    expect(stopBtn).toBeInTheDocument();
+    fireEvent.click(stopBtn);
+    expect(onStop).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("消息内容与工具执行按顺序交错渲染", () => {
+  const baseProps = {
+    status: "ready" as const,
+    error: undefined,
+    showRawLang: false,
+    activeSources: [
+      { id: "gitlab", name: "GitLab" },
+    ],
+    onRendererAction: vi.fn(),
+    onReload: vi.fn(),
+  };
+
+  afterEach(() => {
+    cleanup();
+    vi.clearAllMocks();
+  });
+
+  it("当包含 parts 时，文本与工具调用按实际执行顺序在 DOM 中交错呈现", () => {
+    const interleavedMessage = {
+      id: "a-interleaved",
+      role: "assistant",
+      content: "第一步：先查项目\n第二步：再查提交\n第三步：生成看板\n```openui\n{\"type\":\"Stack\"}\n```",
+      parts: [
+        { type: "text", text: "第一步：先查项目" },
+        {
+          type: "tool-invocation",
+          toolInvocation: {
+            toolCallId: "call-1",
+            toolName: "gitlab_list_projects",
+            state: "result",
+            args: {},
+          },
+        },
+        { type: "text", text: "第二步：再查提交" },
+        {
+          type: "tool-invocation",
+          toolInvocation: {
+            toolCallId: "call-2",
+            toolName: "gitlab_list_commits",
+            state: "result",
+            args: {},
+          },
+        },
+        {
+          type: "text",
+          text: "第三步：生成看板\n```openui\n{\"type\":\"Stack\"}\n```",
+        },
+      ],
+    } as unknown as Message;
+
+    render(
+      <MessageList
+        {...baseProps}
+        messages={[userMsg, interleavedMessage]}
+      />
+    );
+
+    const step1Text = screen.getByText("第一步：先查项目");
+    const tool1 = screen.getByText(/\[GitLab\] 调用: gitlab_list_projects/);
+    const step2Text = screen.getByText("第二步：再查提交");
+    const tool2 = screen.getByText(/\[GitLab\] 调用: gitlab_list_commits/);
+    const step3Text = screen.getByText("第三步：生成看板");
+    const renderer = screen.getByTestId("renderer");
+
+    // 验证严格先后顺序（Node.DOCUMENT_POSITION_FOLLOWING = 4）
+    expect(step1Text.compareDocumentPosition(tool1) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(tool1.compareDocumentPosition(step2Text) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(step2Text.compareDocumentPosition(tool2) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(tool2.compareDocumentPosition(step3Text) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(step3Text.compareDocumentPosition(renderer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("连续多个工具调用自动合并在同一工具组内", () => {
+    const multiToolMessage = {
+      id: "a-multi-tool",
+      role: "assistant",
+      content: "开始并行查询\n查询完成",
+      parts: [
+        { type: "text", text: "开始并行查询" },
+        {
+          type: "tool-invocation",
+          toolInvocation: {
+            toolCallId: "c1",
+            toolName: "gitlab_list_projects",
+            state: "result",
+          },
+        },
+        {
+          type: "tool-invocation",
+          toolInvocation: {
+            toolCallId: "c2",
+            toolName: "gitlab_list_branches",
+            state: "result",
+          },
+        },
+        { type: "text", text: "查询完成" },
+      ],
+    } as unknown as Message;
+
+    render(
+      <MessageList
+        {...baseProps}
+        messages={[userMsg, multiToolMessage]}
+      />
+    );
+
+    const t1 = screen.getByText(/\[GitLab\] 调用: gitlab_list_projects/);
+    const t2 = screen.getByText(/\[GitLab\] 调用: gitlab_list_branches/);
+
+    // 两者属于同一父容器（space-y-2）
+    expect(t1.closest(".space-y-2")).toBe(t2.closest(".space-y-2"));
+  });
+
+  it("流式传输中最后一步工具刚执行完时，展示构思提示与动画", () => {
+    const streamingMessage = {
+      id: "a-streaming",
+      role: "assistant",
+      content: "准备查询",
+      parts: [
+        { type: "text", text: "准备查询" },
+        {
+          type: "tool-invocation",
+          toolInvocation: {
+            toolCallId: "c1",
+            toolName: "gitlab_list_projects",
+            state: "result",
+          },
+        },
+      ],
+    } as unknown as Message;
+
+    render(
+      <MessageList
+        {...baseProps}
+        status="streaming"
+        messages={[userMsg, streamingMessage]}
+      />
+    );
+
+    expect(
+      screen.getByText("数据查询已完成，大模型正在组织分析洞察并构建视觉看板...")
+    ).toBeInTheDocument();
+  });
+
+  it("思考过程 reasoning part 正常展示", () => {
+    const reasoningMessage = {
+      id: "a-reasoning",
+      role: "assistant",
+      content: "结论",
+      parts: [
+        { type: "reasoning", reasoning: "先分析用户需求" },
+        { type: "text", text: "结论" },
+      ],
+    } as unknown as Message;
+
+    render(
+      <MessageList
+        {...baseProps}
+        messages={[userMsg, reasoningMessage]}
+      />
+    );
+
+    expect(screen.getByText("思考过程")).toBeInTheDocument();
+    expect(screen.getByText("先分析用户需求")).toBeInTheDocument();
+  });
+
+  it("当模型输出文字规划但遗漏 PlanReviewCard 代码块时，兜底展示按此思路开始分析按钮并可点击触发", () => {
+    const onRendererAction = vi.fn();
+    const textPlanMsg = {
+      id: "a-text-plan",
+      role: "assistant",
+      content:
+        "## 🔍 分析思路\n1. 活跃度排名\n\n## ❓ 澄清点说明\n\n请确认以下分析方案（点击卡片中的选项后一键确认）：",
+    } as unknown as Message;
+
+    render(
+      <MessageList
+        {...baseProps}
+        messages={[userMsg, textPlanMsg]}
+        onRendererAction={onRendererAction}
+      />
+    );
+
+    const btn = screen.getByRole("button", { name: "按此思路开始分析" });
+    expect(btn).toBeInTheDocument();
+    fireEvent.click(btn);
+    expect(onRendererAction).toHaveBeenCalledWith(
+      "请按上述已确认的分析思路开始执行，产出完整的分析报告与看板。"
+    );
+  });
 });

@@ -1,4 +1,12 @@
-import { streamText, generateText, tool, jsonSchema, type CoreMessage, type CoreTool } from "ai";
+import {
+  streamText,
+  generateText,
+  tool,
+  jsonSchema,
+  createDataStreamResponse,
+  type CoreMessage,
+  type CoreTool,
+} from "ai";
 import {
   computeBudget,
   estimateTextTokens,
@@ -408,42 +416,68 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
         });
       }
 
-      const result = streamText({
-        model: languageModel,
-        system,
-        // 投影后的消息（存储层历史不动；无治理需求时与入参一致）
-        messages: projectedMessages,
-        temperature,
-        // AI SDK v1 参数名为 maxTokens（透传 max_tokens；Anthropic 端点必填）
-        maxTokens: maxOutputTokens,
-        tools: {
-          ...loadedTools,
-          ...crossSourceTools,
-        },
-        // 规划阶段只需 schema 探查 + 小样本，步数预算收紧；执行/直出保持 10
-        maxSteps: mode === "plan" ? 6 : 10,
-        onStepFinish({ stepType, toolCalls, text, finishReason }) {
-          console.log(`[Vercel AI SDK Step Finish] type=${stepType}, finishReason=${finishReason}, toolCalls=${toolCalls?.length || 0}, textLength=${text?.length || 0}`);
-        },
-        // token 锚点回写：实测 promptTokens 是下次估算的校准基线（fire-and-forget）
-        onFinish({ usage }) {
-          if (
-            sessions &&
-            typeof clientSessionId === "string" &&
-            clientSessionId &&
-            usage?.promptTokens
-          ) {
-            void sessions
-              .updateContext(clientSessionId, {
-                lastPromptTokens: usage.promptTokens,
-              })
-              .catch(() => {});
-          }
-        },
-      });
+      // 使用现代 createDataStreamResponse 管理流生命周期，避免旧 StreamData 15秒悬挂超时警告与异常中止泄漏
+      return createDataStreamResponse({
+        execute: (dataStream) => {
+          // 跟踪最后一步的单步输入 promptTokens（反映对话历史的真实单次窗口占用峰值）
+          let lastStepPromptTokens: number | undefined;
 
-      return result.toDataStreamResponse({
-        getErrorMessage: (err: unknown) => {
+          const result = streamText({
+            model: languageModel,
+            system,
+            // 投影后的消息（存储层历史不动；无治理需求时与入参一致）
+            messages: projectedMessages,
+            temperature,
+            // AI SDK v1 参数名为 maxTokens（透传 max_tokens；Anthropic 端点必填）
+            maxTokens: maxOutputTokens,
+            tools: {
+              ...loadedTools,
+              ...crossSourceTools,
+            },
+            // 规划阶段只需 schema 探查 + 小样本，步数预算收紧；执行/直出保持 10
+            maxSteps: mode === "plan" ? 6 : 10,
+            onStepFinish({ stepType, toolCalls, text, finishReason, usage }) {
+              console.log(
+                `[Vercel AI SDK Step Finish] type=${stepType}, finishReason=${finishReason}, toolCalls=${toolCalls?.length || 0}, textLength=${text?.length || 0}`
+              );
+              if (usage && typeof usage.promptTokens === "number" && Number.isFinite(usage.promptTokens)) {
+                lastStepPromptTokens = usage.promptTokens;
+                // 单步完成后即时向下发送最新单步 token 用量（实时平滑刷新）
+                dataStream.writeData({
+                  type: "context_usage",
+                  promptTokens: usage.promptTokens,
+                });
+              }
+            },
+            // token 锚点回写与流式用量下发：
+            // 关键修复：必须使用最后一步实际发往 LLM 的单步 promptTokens，不能使用 AI SDK 多步工具调用的累加值
+            onFinish({ usage }) {
+              const actualPromptTokens = lastStepPromptTokens ?? usage?.promptTokens;
+              if (typeof actualPromptTokens === "number" && Number.isFinite(actualPromptTokens)) {
+                dataStream.writeData({
+                  type: "context_usage",
+                  promptTokens: actualPromptTokens,
+                });
+              }
+
+              if (
+                sessions &&
+                typeof clientSessionId === "string" &&
+                clientSessionId &&
+                actualPromptTokens
+              ) {
+                void sessions
+                  .updateContext(clientSessionId, {
+                    lastPromptTokens: actualPromptTokens,
+                  })
+                  .catch(() => {});
+              }
+            },
+          });
+
+          result.mergeIntoDataStream(dataStream);
+        },
+        onError: (err: unknown) => {
           console.error("[AI SDK Stream Error]:", err);
           return err instanceof Error ? err.message : String(err);
         },
