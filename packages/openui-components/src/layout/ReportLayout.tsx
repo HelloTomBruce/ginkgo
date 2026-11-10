@@ -58,7 +58,7 @@ export const ReportLayout: React.FC<ReportLayoutProps> = ({
       )}
 
       {/* KPI 横排区：手机 2 列，桌面 4 列 */}
-      {kpis ? <div className="grid grid-cols-2 md:grid-cols-4 gap-4">{kpis}</div> : null}
+      {kpis ? <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 min-w-0">{kpis}</div> : null}
 
       {/* 双列图表区：奇数个时末张占满整行 */}
       {charts ? (
