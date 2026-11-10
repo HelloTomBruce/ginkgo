@@ -16,9 +16,9 @@ export const builtinMethodCards: MethodCard[] = [
       "计算环比与同比变化率，标注拐点",
       "折线呈现走势，KPI 卡呈现最新值与涨跌",
     ],
-    chartPairing: ["AnalyticsChart", "MetricCard"],
+    chartPairing: ["AnalyticsChart", "SpecChart", "MetricCard"],
     executeGuidance:
-      "Use AnalyticsChart(type=line) for the time series with period-over-period deltas annotated at inflection points; lead with MetricCard(value, change, trend) for the headline metric. Time granularity must match the question's horizon (daily for ops, monthly for reviews). Always compute both MoM and YoY when history allows.",
+      "Prefer SpecChart(chartType: \"line\") for the time series (declarative spec, refreshable without LLM); fall back to AnalyticsChart(type=line) for computed/derived series. Annotate period-over-period deltas at inflection points; lead with MetricCard(value, change, trend) for the headline metric. Time granularity must match the question's horizon (daily for ops, monthly for reviews). When the metric has an explicit target, declare SpecChart style.referenceLines (dashed goal line) and thresholds (color the breach). Always compute both MoM and YoY when history allows.",
   },
   {
     id: "pareto",
@@ -30,9 +30,9 @@ export const builtinMethodCards: MethodCard[] = [
       "计算累计占比，定位 80% 分界线",
       "柱状呈现各因素 + 累计线，头部置顶",
     ],
-    chartPairing: ["AnalyticsChart", "MetricGrid"],
+    chartPairing: ["SpecChart", "AnalyticsChart", "MetricGrid"],
     executeGuidance:
-      "Rank dimension values descending, compute cumulative share, and highlight the cutoff where ~80% accumulates. Present as bar (per-factor) plus cumulative line if possible; otherwise order bars and mark the vital-few in the narrative. Name the top factors explicitly with their shares.",
+      "Rank dimension values descending, compute cumulative share, and highlight the cutoff where ~80% accumulates. Prefer SpecChart(chartType: \"combo\"): bars per factor plus the cumulative share as the LAST measure (rendered as the line on the right axis). Fall back to AnalyticsChart bars ordered descending with the vital-few marked in the narrative. Name the top factors explicitly with their shares.",
   },
   {
     id: "funnel",
@@ -86,9 +86,9 @@ export const builtinMethodCards: MethodCard[] = [
       "按 IQR 或 z-score 计算偏离度",
       "标记异常点并量化偏移，给出可能解释方向",
     ],
-    chartPairing: ["AnalyticsChart", "InsightBox"],
+    chartPairing: ["AnalyticsChart", "SpecChart", "InsightBox"],
     executeGuidance:
-      "Establish a baseline (rolling mean / seasonal profile), score deviations via IQR fences or z-score (|z|>3 default), and mark anomalous points on the line chart. Quantify each anomaly's magnitude and timing in an InsightBox(type=warning); list plausible causes as hypotheses to verify, never as facts.",
+      "Establish a baseline (rolling mean / seasonal profile), score deviations via IQR fences or z-score (|z|>3 default), and mark anomalous points on the line chart (SpecChart(chartType: \"line\") when the series comes straight from a source table). Quantify each anomaly's magnitude and timing in an InsightBox(type=warning); list plausible causes as hypotheses to verify, never as facts.",
   },
   {
     id: "attribution",
@@ -100,7 +100,7 @@ export const builtinMethodCards: MethodCard[] = [
       "计算各维度贡献占比并排序",
       "定位主贡献维度，深钻其二级构成",
     ],
-    chartPairing: ["FocusLayout", "ComparisonLayout"],
+    chartPairing: ["FocusLayout", "ComparisonLayout", "SpecChart"],
     executeGuidance:
       "Decompose the total delta additively (sum of dimension-level changes) or multiplicatively (rate contributions) and rank contributors. Present with FocusLayout: main chart shows the headline trend, sidebar insights rank contributing dimensions with signs. For before/after or A-vs-B framing use ComparisonLayout with a verdict.",
   },
@@ -114,7 +114,7 @@ export const builtinMethodCards: MethodCard[] = [
       "计算达成率与缺口，判断是否符合时间进度",
       "仪表盘呈现达成度，按差距给出干预建议",
     ],
-    chartPairing: ["GaugeProgress", "MetricCard"],
+    chartPairing: ["GaugeProgress", "SpecChart", "MetricCard"],
     executeGuidance:
       "State target, current and time-progress baseline explicitly (ahead/behind pace). Render GaugeProgress(current, target, unit) plus MetricCard for the gap. When behind pace, quantify the required run-rate for the remaining period and recommend concrete interventions.",
   },

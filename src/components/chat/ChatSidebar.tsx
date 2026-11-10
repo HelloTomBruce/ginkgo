@@ -22,6 +22,8 @@ import {
   Upload,
   BookOpen,
   MoreHorizontal,
+  Bookmark,
+  Copy,
 } from "lucide-react";
 import type { SessionSummary } from "@/lib/sessionStore";
 // 仅取类型（编译期擦除）
@@ -46,6 +48,10 @@ interface ChatSidebarProps {
   onDeleteDashboard: (id: string) => void;
   /** 导出快照：父层拉取完整记录后下载 .openui.json */
   onExportDashboard: (id: string) => void;
+  /** 存为模板 / 取消模板（父层调 save-as-template 或 update kind=favorite） */
+  onToggleDashboardTemplate: (id: string) => void;
+  /** 用模板新建（父层弹换源选择后调 from-template） */
+  onCreateDashboardFromTemplate: (id: string) => void;
   /** 导入快照：父层负责解析校验与落库（origin 置空） */
   onImportDashboard: (file: File) => void;
   onCreateNewChat: () => void;
@@ -79,6 +85,8 @@ export function ChatSidebar({
   onDeleteDashboard,
   onExportDashboard,
   onImportDashboard,
+  onToggleDashboardTemplate,
+  onCreateDashboardFromTemplate,
   onCreateNewChat,
   onSelectSession,
   onStartRename,
@@ -269,6 +277,8 @@ export function ChatSidebar({
                 onRename={onRenameDashboard}
                 onDelete={onDeleteDashboard}
                 onExport={onExportDashboard}
+                onToggleTemplate={onToggleDashboardTemplate}
+                onCreateFromTemplate={onCreateDashboardFromTemplate}
               />
             ))
           )}
@@ -339,6 +349,8 @@ function DashboardListItem({
   onRename,
   onDelete,
   onExport,
+  onToggleTemplate,
+  onCreateFromTemplate,
 }: {
   dashboard: DashboardSummary;
   onPreview: (id: string) => void;
@@ -346,6 +358,10 @@ function DashboardListItem({
   onRename: (id: string, title: string) => void;
   onDelete: (id: string) => void;
   onExport: (id: string) => void;
+  /** 存为模板（收藏）/ 取消模板（模板） */
+  onToggleTemplate: (id: string) => void;
+  /** 用模板新建（仅模板项出现） */
+  onCreateFromTemplate: (id: string) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(dashboard.title);
@@ -419,6 +435,11 @@ function DashboardListItem({
             <div className="flex items-center gap-1.5">
               <Star className="w-3 h-3 text-warning-fg fill-current shrink-0" />
               <span className="font-medium truncate">{dashboard.title}</span>
+              {dashboard.kind === "template" && (
+                <span className="shrink-0 px-1 py-0.5 rounded bg-info-soft text-info-fg text-[10px] font-medium">
+                  模板
+                </span>
+              )}
             </div>
             <div className="mt-0.5 text-[11px] text-foreground-faint truncate">
               {dashboard.prompt ? dashboard.prompt : "（未记录原始提问）"}
@@ -511,6 +532,32 @@ function DashboardListItem({
                   <RefreshCw className="w-3.5 h-3.5 text-foreground-faint" />
                   <span>重新分析</span>
                 </button>
+                <button
+                  role="menuitem"
+                  onClick={() => {
+                    closeMenu();
+                    onToggleTemplate(dashboard.id);
+                  }}
+                  aria-label={dashboard.kind === "template" ? `取消模板 ${dashboard.title}` : `存为模板 ${dashboard.title}`}
+                  className={menuItemClass}
+                >
+                  <Bookmark className="w-3.5 h-3.5 text-foreground-faint" />
+                  <span>{dashboard.kind === "template" ? "取消模板" : "存为模板"}</span>
+                </button>
+                {dashboard.kind === "template" && (
+                  <button
+                    role="menuitem"
+                    onClick={() => {
+                      closeMenu();
+                      onCreateFromTemplate(dashboard.id);
+                    }}
+                    aria-label={`用模板新建 ${dashboard.title}`}
+                    className={menuItemClass}
+                  >
+                    <Copy className="w-3.5 h-3.5 text-foreground-faint" />
+                    <span>用模板新建</span>
+                  </button>
+                )}
                 <button
                   role="menuitem"
                   onClick={() => {

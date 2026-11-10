@@ -10,6 +10,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@openui-analytics/chart-spec": "workspace:*",
     "@openuidev/react-lang": "^0.3.1",
     "lucide-react": "^1.52.0",
     "recharts": "^3.10.1",

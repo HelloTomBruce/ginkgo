@@ -21,6 +21,11 @@ export interface DataTableProps {
   columns?: ColumnConfig[];
   data?: Array<Record<string, unknown>>;
   searchable?: boolean;
+  /** 单元格样式钩子（如阈值条件着色）；返回 undefined 用默认样式 */
+  cellStyle?: (
+    row: Record<string, unknown>,
+    col: ColumnConfig
+  ) => React.CSSProperties | undefined;
 }
 
 export const DataTable: React.FC<DataTableProps> = ({
@@ -28,6 +33,7 @@ export const DataTable: React.FC<DataTableProps> = ({
   columns = [],
   data = [],
   searchable = true,
+  cellStyle,
 }) => {
   const [searchTerm, setSearchTerm] = useState("");
   const [sortKey, setSortKey] = useState<string | null>(null);
@@ -175,6 +181,7 @@ export const DataTable: React.FC<DataTableProps> = ({
                   {safeColumns.map((col) => (
                     <td
                       key={col.key}
+                      style={cellStyle?.(row, col)}
                       className={`p-3 ${
                         col.align === "right"
                           ? "text-right font-mono"

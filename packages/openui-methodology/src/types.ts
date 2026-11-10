@@ -18,7 +18,8 @@ export interface MethodCard {
   presetQuery?: string;
   /** 分析流程步骤（有序） */
   steps: string[];
-  /** 图表配对：意图映射到组件库组件名（validateCards 校验存在性） */
+  /** 图表配对：意图映射到组件库组件名（validateCards 按注入的组件名集合校验存在性）；
+   *  图表类配对优先 SpecChart（M1 起的语义声明图表，chartType 选型写在 executeGuidance） */
   chartPairing: string[];
   /** execute 模式注入的展开指导（预算 ≤600B 渲染截断） */
   executeGuidance: string;

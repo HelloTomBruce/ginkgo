@@ -39,12 +39,21 @@ describe("内置方法卡", () => {
   it("PRD 配对表落地：关键方法 → 关键组件", () => {
     const byId = new Map(builtinMethodCards.map((c) => [c.id, c]));
     expect(byId.get("trend")?.chartPairing).toContain("AnalyticsChart");
+    expect(byId.get("trend")?.chartPairing).toContain("SpecChart");
     expect(byId.get("funnel")?.chartPairing).toContain("FunnelChart");
     expect(byId.get("cohort")?.chartPairing).toContain("ContributionHeatmap");
     expect(byId.get("anomaly")?.chartPairing).toContain("InsightBox");
+    expect(byId.get("anomaly")?.chartPairing).toContain("SpecChart");
     expect(byId.get("attribution")?.chartPairing).toEqual(
       expect.arrayContaining(["FocusLayout", "ComparisonLayout"])
     );
     expect(byId.get("goal-gap")?.chartPairing).toContain("GaugeProgress");
+  });
+
+  it("M1 语义图表接线：pareto 引导 SpecChart combo（末位指标=累计占比线）", () => {
+    const byId = new Map(builtinMethodCards.map((c) => [c.id, c]));
+    expect(byId.get("pareto")?.chartPairing).toContain("SpecChart");
+    expect(byId.get("pareto")?.executeGuidance).toMatch(/combo/);
+    expect(byId.get("pareto")?.executeGuidance).toMatch(/LAST measure/);
   });
 });

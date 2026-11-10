@@ -115,10 +115,10 @@ export const clickhouseDialect: DbDialect = {
     }));
   },
 
-  async readOnlyQuery(client, sql) {
+  async readOnlyQuery(client, sql, params?: unknown[]) {
     // 词法守卫（友好报错）→ readonly=1 已在 query 封装内（服务端硬约束）
     const finalSql = guardReadOnlySql(sql);
-    return client.query(finalSql);
+    return client.query(finalSql, params);
   },
 
   async ping(client) {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { authHeaders } from "@/lib/auth";
 // 仅取类型（编译期擦除，不会把 server-only 的 dashboardStore 打进客户端包）
 import type {
@@ -65,6 +65,11 @@ async function fetchDashboardSummaries(): Promise<DashboardSummary[] | null> {
 
 export function useDashboards() {
   const [summaries, setSummaries] = useState<DashboardSummary[]>([]);
+  // toggleTemplate 的当前形态判定用（state 读取的稳定引用）
+  const summariesRef = useRef<DashboardSummary[]>([]);
+  useEffect(() => {
+    summariesRef.current = summaries;
+  }, [summaries]);
   const [loaded, setLoaded] = useState(false);
 
   // 初始加载：setState 只发生在 promise 回调中，避免 effect 内同步 setState 级联渲染
@@ -203,5 +208,68 @@ export function useDashboards() {
     []
   );
 
-  return { summaries, loaded, refresh, get, favorite, rename, remove, refreshOne };
+  /**
+   * 存为模板 / 取消模板（M3-4）：save-as-template 切 template；取消走 update kind=favorite。
+   * 成功后原位替换摘要（含 kind/templateMeta）。
+   */
+  const toggleTemplate = useCallback(
+    async (id: string): Promise<{ ok: boolean; error?: string }> => {
+      const current = summariesRef.current.find((s) => s.id === id);
+      try {
+        const isTemplate = current?.kind === "template";
+        const url = isTemplate
+          ? `/api/dashboards/${encodeURIComponent(id)}`
+          : `/api/dashboards/${encodeURIComponent(id)}/save-as-template`;
+        const res = await fetch(url, {
+          // 取消模板走 PUT 合并 update（kind=favorite 即显式清空 templateMeta）
+          method: isTemplate ? "PUT" : "POST",
+          headers: { "Content-Type": "application/json" },
+          ...(isTemplate ? { body: JSON.stringify({ kind: "favorite" }) } : { body: "{}" }),
+        });
+        const body = (await res.json().catch(() => null)) as {
+          dashboard?: DashboardSummary;
+          error?: string;
+          errors?: string[];
+        } | null;
+        if (!res.ok || !body?.dashboard) {
+          return { ok: false, error: body?.error ?? body?.errors?.join("；") ?? "操作失败" };
+        }
+        setSummaries((prev) => prev.map((s) => (s.id === id ? body.dashboard! : s)));
+        return { ok: true };
+      } catch {
+        return { ok: false, error: "网络错误" };
+      }
+    },
+    []
+  );
+
+  /** 用模板新建（M3-4）：from-template 换源重绑定 → 新看板入列表头部 */
+  const createFromTemplate = useCallback(
+    async (
+      templateId: string,
+      targetSourceId: string
+    ): Promise<{ ok: boolean; error?: string; newId?: string }> => {
+      try {
+        const res = await fetch("/api/dashboards/from-template", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ templateId, targetSourceId }),
+        });
+        const body = (await res.json().catch(() => null)) as {
+          dashboard?: DashboardSummary;
+          error?: string;
+        } | null;
+        if (!res.ok || !body?.dashboard) {
+          return { ok: false, error: body?.error ?? "用模板新建失败" };
+        }
+        setSummaries((prev) => [body.dashboard!, ...prev]);
+        return { ok: true, newId: body.dashboard.id };
+      } catch {
+        return { ok: false, error: "网络错误" };
+      }
+    },
+    []
+  );
+
+  return { summaries, loaded, refresh, get, favorite, rename, remove, refreshOne, toggleTemplate, createFromTemplate };
 }

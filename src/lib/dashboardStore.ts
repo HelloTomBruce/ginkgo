@@ -23,6 +23,10 @@ export const DASHBOARD_QUERIES_MAX = 50;
 /** 单条查询 payload 上限（SQL 文本或 {tool,args} JSON，64KB） */
 export const DASHBOARD_QUERY_PAYLOAD_MAX = 64 * 1024;
 export const DASHBOARD_BINDINGS_MAX = 100;
+/** 模板抽象提问长度上限 */
+export const TEMPLATE_ABSTRACT_PROMPT_MAX = 1000;
+/** 模板槽位数量上限 */
+export const TEMPLATE_SLOTS_MAX = 50;
 
 const ID_RE = /^dash_[0-9a-f]{8}$/;
 /** 查询 id：q_ + 1-32 位小写字母数字（生成期捕获为 q_ + 8 位十六进制散列） */
@@ -50,9 +54,32 @@ export interface DashboardQuery {
   payload: string;
 }
 
+/** 记录形态：收藏看板（默认）/ 报表模板（可换源复用） */
+export type DashboardKind = "favorite" | "template";
+
+/** 模板槽位：重绑定时的字段角色声明（M3 数据层） */
+export interface TemplateSlot {
+  /** 绑定键（DSL 组件 statementId） */
+  bindingKey: string;
+  role: "source" | "filter";
+  required?: boolean;
+}
+
+/** 模板元数据：kind=template 时必填 */
+export interface TemplateMeta {
+  /** 抽象化提问（用模板新建时的种子 prompt，去除具体值） */
+  abstractPrompt: string;
+  /** 槽位清单（可空 = 仅换源语义） */
+  slots?: TemplateSlot[];
+}
+
 export interface DashboardRecord {
   id: string;
   title: string;
+  /** 记录形态；缺省 = favorite（向后兼容旧记录） */
+  kind?: DashboardKind;
+  /** 模板元数据（kind=template 时必填） */
+  templateMeta?: TemplateMeta;
   /** OpenUI DSL 快照全文（收藏时刻的静态数据） */
   dsl: string;
   /** 生成该看板的用户提问（重新分析的种子；可空） */
@@ -80,6 +107,8 @@ export function toSummary(record: DashboardRecord): DashboardSummary {
   return {
     id: record.id,
     title: record.title,
+    kind: record.kind,
+    templateMeta: record.templateMeta,
     prompt: record.prompt,
     sourceNames: record.sourceNames,
     origin: record.origin,
@@ -94,6 +123,8 @@ export function toSummary(record: DashboardRecord): DashboardSummary {
 
 /** 入参宽容（未经校验的 JSON body）；校验统一收敛在 validateDashboardFields */
 export interface DashboardWriteInput {
+  kind?: unknown;
+  templateMeta?: unknown;
   dsl?: unknown;
   title?: unknown;
   prompt?: unknown;
@@ -106,6 +137,8 @@ export interface DashboardWriteInput {
 }
 
 interface ValidFields {
+  kind?: DashboardKind;
+  templateMeta?: TemplateMeta;
   dsl?: string;
   title?: string;
   prompt?: string;
@@ -138,6 +171,60 @@ export function validateDashboardFields(
   const errors: string[] = [];
   if (!isRecord(body)) {
     return { ok: false, status: 400, errors: ["请求体必须是 JSON 对象"] };
+  }
+
+  // kind：缺省 favorite；显式值仅允许枚举内
+  let kind: DashboardKind | undefined;
+  if (body.kind !== undefined && body.kind !== null && body.kind !== "") {
+    if (body.kind !== "favorite" && body.kind !== "template") {
+      errors.push('kind 仅允许 "favorite" | "template"');
+    } else {
+      kind = body.kind;
+    }
+  }
+
+  // templateMeta：形态 + 长度/数量上限（kind=template 时由调用方保证存在）
+  let templateMeta: TemplateMeta | undefined;
+  if (body.templateMeta !== undefined && body.templateMeta !== null) {
+    if (!isRecord(body.templateMeta)) {
+      errors.push("templateMeta 必须是对象");
+    } else {
+      const rawMeta = body.templateMeta;
+      const ap = rawMeta.abstractPrompt;
+      if (typeof ap !== "string" || ap.trim().length === 0) {
+        errors.push("templateMeta.abstractPrompt 必须是非空字符串");
+      } else if (ap.length > TEMPLATE_ABSTRACT_PROMPT_MAX) {
+        errors.push(`templateMeta.abstractPrompt 超过 ${TEMPLATE_ABSTRACT_PROMPT_MAX} 字符上限`);
+      } else {
+        const meta: TemplateMeta = { abstractPrompt: ap.trim() };
+        if (rawMeta.slots !== undefined && rawMeta.slots !== null) {
+          if (!Array.isArray(rawMeta.slots)) {
+            errors.push("templateMeta.slots 必须是数组");
+          } else if (rawMeta.slots.length > TEMPLATE_SLOTS_MAX) {
+            errors.push(`templateMeta.slots 超过 ${TEMPLATE_SLOTS_MAX} 项上限`);
+          } else {
+            const slots: TemplateSlot[] = [];
+            for (const rawSlot of rawMeta.slots) {
+              if (!isRecord(rawSlot) || typeof rawSlot.bindingKey !== "string" || rawSlot.bindingKey.trim().length === 0) {
+                errors.push("templateMeta.slots[] 每项须含非空 bindingKey");
+                break;
+              }
+              if (rawSlot.role !== "source" && rawSlot.role !== "filter") {
+                errors.push('templateMeta.slots[].role 仅允许 "source" | "filter"');
+                break;
+              }
+              slots.push({
+                bindingKey: rawSlot.bindingKey.trim(),
+                role: rawSlot.role,
+                ...(rawSlot.required === true ? { required: true } : {}),
+              });
+            }
+            if (errors.length === 0) meta.slots = slots;
+          }
+        }
+        if (errors.length === 0) templateMeta = meta;
+      }
+    }
   }
 
   let dsl: string | undefined;
@@ -384,10 +471,17 @@ export function validateDashboardFields(
     }
   }
 
+  // kind=template 时 templateMeta 必须同时提供
+  if (kind === "template" && templateMeta === undefined) {
+    errors.push("kind=template 时必须同时提供 templateMeta（含 abstractPrompt）");
+  }
+
   if (errors.length > 0) return { ok: false, status: 400, errors };
   return {
     ok: true,
     value: {
+      ...(kind !== undefined ? { kind } : {}),
+      ...(templateMeta !== undefined ? { templateMeta } : {}),
       ...(dsl !== undefined ? { dsl } : {}),
       ...(title !== undefined ? { title } : {}),
       ...(prompt !== undefined ? { prompt } : {}),
@@ -673,6 +767,10 @@ export function createDashboardStore(opts: { dir: string }): DashboardStore {
           deriveDashboardTitle(fields.prompt) ??
           "未命名看板",
         dsl: fields.dsl,
+        ...(fields.kind !== undefined ? { kind: fields.kind } : {}),
+        ...(fields.templateMeta !== undefined
+          ? { templateMeta: fields.templateMeta }
+          : {}),
         ...(fields.prompt !== undefined ? { prompt: fields.prompt } : {}),
         ...(fields.sourceNames !== undefined
           ? { sourceNames: fields.sourceNames }
@@ -706,6 +804,8 @@ export function createDashboardStore(opts: { dir: string }): DashboardStore {
       if (!verdict.ok) return verdict;
       const fields = verdict.value;
       if (
+        fields.kind === undefined &&
+        fields.templateMeta === undefined &&
         fields.dsl === undefined &&
         fields.title === undefined &&
         fields.prompt === undefined &&
@@ -724,6 +824,12 @@ export function createDashboardStore(opts: { dir: string }): DashboardStore {
       if (!live.ok) return { ok: false, status: 400, errors: live.errors };
       const record: DashboardRecord = {
         ...existing,
+        ...(fields.kind !== undefined ? { kind: fields.kind } : {}),
+        // kind 归位 favorite 即模板退役：显式清空 templateMeta（无残留）
+        ...(fields.kind === "favorite" ? { templateMeta: undefined } : {}),
+        ...(fields.templateMeta !== undefined
+          ? { templateMeta: fields.templateMeta }
+          : {}),
         ...(fields.dsl !== undefined ? { dsl: fields.dsl } : {}),
         ...(fields.title !== undefined ? { title: fields.title } : {}),
         ...(fields.prompt !== undefined ? { prompt: fields.prompt } : {}),

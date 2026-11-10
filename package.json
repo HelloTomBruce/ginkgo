@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@ai-sdk/react": "1.1.20",
+    "@openui-analytics/chart-spec": "workspace:*",
     "@openui-analytics/components": "workspace:*",
     "@openui-analytics/datasources": "workspace:*",
     "@openui-analytics/llm": "workspace:*",

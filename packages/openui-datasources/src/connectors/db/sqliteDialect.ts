@@ -76,10 +76,10 @@ export const sqliteDialect: DbDialect = {
     }));
   },
 
-  async readOnlyQuery(client, sql) {
+  async readOnlyQuery(client, sql, params?: unknown[]) {
     // 词法守卫（友好报错）→ readOnly 打开模式为引擎级硬约束
     const finalSql = guardReadOnlySql(sql);
-    return client.query(finalSql);
+    return client.query(finalSql, params);
   },
 
   async ping(client) {

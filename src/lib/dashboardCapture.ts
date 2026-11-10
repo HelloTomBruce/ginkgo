@@ -158,6 +158,14 @@ function collectComponentNodes(root: unknown): ComponentNode[] {
       props?: unknown;
     };
     if (node.type === "element") {
+      // SpecChart 是声明式绑定（spec 自带取数语义），刷新期按 spec 物化，
+      // 不走行匹配——其静态 data 行与查询候选的巧合匹配会造成错误绑定
+      if (node.typeName === "SpecChart") {
+        if (isPlainObject(node.props)) {
+          for (const v of Object.values(node.props)) walk(v);
+        }
+        return;
+      }
       const prop = typeof node.typeName === "string" ? ROW_PROP_BY_TYPE[node.typeName] : undefined;
       const statementId = typeof node.statementId === "string" ? node.statementId : undefined;
       if (prop && statementId && isPlainObject(node.props)) {

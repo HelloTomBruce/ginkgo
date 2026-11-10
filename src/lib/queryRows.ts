@@ -10,6 +10,7 @@
 export const ROW_PROP_BY_TYPE: Record<string, string> = {
   DataTable: "data",
   AnalyticsChart: "data",
+  SpecChart: "data",
   RadarChart: "data",
   ContributionHeatmap: "data",
   FunnelChart: "stages",

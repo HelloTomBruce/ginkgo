@@ -62,6 +62,12 @@ export function createDbMcpServer(
               type: "string",
               description: `标准的 ${dialect.dbType} SELECT 查询，例如: SELECT channel, SUM(amount) FROM orders GROUP BY channel`,
             },
+            params: {
+              type: "array",
+              description:
+                "可选参数绑定值（按占位符顺序；位置占位 ? 或命名占位 {pN} 视方言而定），全参数化防注入",
+              items: {},
+            },
           },
           required: ["sql"],
         },
@@ -112,8 +118,10 @@ export function createDbMcpServer(
 
       case "execute_sql": {
         const sql = (args?.sql as string) || "";
+        const rawParams = args?.params;
+        const params = Array.isArray(rawParams) ? rawParams : undefined;
         try {
-          const result = await dialect.readOnlyQuery(client, sql);
+          const result = await dialect.readOnlyQuery(client, sql, params);
           return {
             content: [
               {

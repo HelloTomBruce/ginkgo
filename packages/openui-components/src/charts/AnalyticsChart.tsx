@@ -19,16 +19,13 @@ import {
   Legend,
 } from "recharts";
 import { parseArrayProp } from "../internal/parseProp";
+import { resolveSeries, CHART_COLORS, type SeriesConfig } from "./chartShared";
 import { defineComponent } from "@openuidev/react-lang";
 import { z } from "zod";
 import { ComponentSafeWrapper } from "../internal/ComponentSafeWrapper";
 
-
-export interface SeriesConfig {
-  key: string;
-  label?: string;
-  color?: string;
-}
+// SeriesConfig 类型由 chartShared 统一导出（保持既有 import 路径兼容）
+export type { SeriesConfig };
 
 export interface AnalyticsChartProps {
   type: "line" | "bar" | "area" | "pie";
@@ -39,17 +36,6 @@ export interface AnalyticsChartProps {
   series?: SeriesConfig[];
   height?: number;
 }
-
-/* 系列色读取主题 token（--chart-1..6，见应用层 globals.css），
- * var() 引用直接透传到 SVG 属性，浏览器端解析，SSR/测试环境无需兜底 */
-const DEFAULT_COLORS = [
-  "var(--chart-1)",
-  "var(--chart-2)",
-  "var(--chart-3)",
-  "var(--chart-4)",
-  "var(--chart-5)",
-  "var(--chart-6)",
-];
 
 export const AnalyticsChart: React.FC<AnalyticsChartProps> = ({
   type = "bar",
@@ -63,34 +49,11 @@ export const AnalyticsChart: React.FC<AnalyticsChartProps> = ({
   // 安全容错：确保 data 与 series 始终为有效数组且元素为非空对象
   const safeData: Array<Record<string, unknown>> = useMemo(() => parseArrayProp(data), [data]);
 
-  const safeSeries: SeriesConfig[] = useMemo(() => {
-    let s = parseArrayProp(series).filter(
-      (item) => typeof item.key === "string"
-    ) as unknown as SeriesConfig[];
-
-    // 如果没有传递 series，但 data 中有字段，自动提取数值字段作为默认序列
-    if (s.length === 0 && safeData.length > 0 && safeData[0] && typeof safeData[0] === "object") {
-      const firstRow = safeData[0];
-      const candidateKeys = Object.keys(firstRow).filter(
-        (k) => k !== xAxisKey && typeof firstRow[k] === "number"
-      );
-      if (candidateKeys.length > 0) {
-        s = candidateKeys.map((k, idx) => ({
-          key: k,
-          label: k,
-          color: DEFAULT_COLORS[idx % DEFAULT_COLORS.length],
-        }));
-      } else {
-        const remainingKeys = Object.keys(firstRow).filter((k) => k !== xAxisKey);
-        s = remainingKeys.map((k, idx) => ({
-          key: k,
-          label: k,
-          color: DEFAULT_COLORS[idx % DEFAULT_COLORS.length],
-        }));
-      }
-    }
-    return s;
-  }, [series, safeData, xAxisKey]);
+  // 系列解析 + 数值字段自动提取（共享 helper，见 chartShared）
+  const safeSeries: SeriesConfig[] = useMemo(
+    () => resolveSeries(series, safeData, xAxisKey),
+    [series, safeData, xAxisKey]
+  );
 
   return (
     <div className="bg-card border border-border rounded-xl p-5 shadow-xs">
@@ -133,7 +96,7 @@ export const AnalyticsChart: React.FC<AnalyticsChartProps> = ({
                     type="monotone"
                     dataKey={s.key}
                     name={s.label || s.key}
-                    stroke={s.color || DEFAULT_COLORS[idx % DEFAULT_COLORS.length]}
+                    stroke={s.color || CHART_COLORS[idx % CHART_COLORS.length]}
                     strokeWidth={2}
                     dot={{ r: 3 }}
                     activeDot={{ r: 5 }}
@@ -158,7 +121,7 @@ export const AnalyticsChart: React.FC<AnalyticsChartProps> = ({
                     key={`bar-${s.key || idx}`}
                     dataKey={s.key}
                     name={s.label || s.key}
-                    fill={s.color || DEFAULT_COLORS[idx % DEFAULT_COLORS.length]}
+                    fill={s.color || CHART_COLORS[idx % CHART_COLORS.length]}
                     radius={[4, 4, 0, 0]}
                   />
                 ))}
@@ -177,7 +140,7 @@ export const AnalyticsChart: React.FC<AnalyticsChartProps> = ({
                 />
                 <Legend wrapperStyle={{ fontSize: "12px", paddingTop: "8px" }} />
                 {safeSeries.map((s, idx) => {
-                  const color = s.color || DEFAULT_COLORS[idx % DEFAULT_COLORS.length];
+                  const color = s.color || CHART_COLORS[idx % CHART_COLORS.length];
                   return (
                     <Area
                       key={`area-${s.key || idx}`}
@@ -213,7 +176,7 @@ export const AnalyticsChart: React.FC<AnalyticsChartProps> = ({
                   {safeData.map((_: unknown, index: number) => (
                     <Cell
                       key={`pie-cell-${index}`}
-                      fill={DEFAULT_COLORS[index % DEFAULT_COLORS.length]}
+                      fill={CHART_COLORS[index % CHART_COLORS.length]}
                     />
                   ))}
                 </Pie>

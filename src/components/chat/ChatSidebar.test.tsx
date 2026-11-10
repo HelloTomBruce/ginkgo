@@ -31,6 +31,8 @@ const baseProps = {
     { id: "trend", name: "趋势与同比环比", query: "核心指标走势如何？" },
   ],
   onToggleRawLang: vi.fn(),
+  onToggleDashboardTemplate: vi.fn(),
+  onCreateDashboardFromTemplate: vi.fn(),
   onOpenMethodology: vi.fn(),
 };
 

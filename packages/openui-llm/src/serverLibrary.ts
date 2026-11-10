@@ -1,5 +1,6 @@
 import { defineComponent, createLibrary } from "@openuidev/lang-core";
 import { z } from "zod";
+import { ChartSpecSchema } from "@openui-analytics/chart-spec";
 
 export const serverRoot = defineComponent({
   name: "Root",
@@ -89,6 +90,25 @@ export const serverAnalyticsChart = defineComponent({
   component: () => null,
 });
 
+export const serverSpecChart = defineComponent({
+  name: "SpecChart",
+  description:
+    "语义声明图表：不直接给渲染数据，而是声明 ChartSpec（维度 dims×指标 meas×过滤 filters×图形类型 chartType），系统按声明物化数据并可零 LLM 刷新；改 spec.chartType 可换图不换数据。报表统计场景优先用本组件",
+  props: z.object({
+    title: z.string().optional().describe("图表标题（缺省用 spec.title）"),
+    spec: ChartSpecSchema.describe(
+      "ChartSpec 声明对象：dims(维度数组)/meas(指标数组+聚合)/chartType(图形) 必填；filters/sort/limit/style 可选；sourceId 填当前激活数据源 id"
+    ),
+    table: z.string().optional().describe("数据表名（刷新物化用，describe_table 可见的表）"),
+    data: z
+      .array(z.record(z.string(), z.any()))
+      .optional()
+      .describe("物化行数组（生成期由取数结果填充；不要凭空编造数据行）"),
+    height: z.number().optional().describe("图表高度（像素）"),
+  }),
+  component: () => null,
+});
+
 export const serverDataTable = defineComponent({
   name: "DataTable",
   description: "交互式明细数据表格，支持前端搜索、列排序和一键导出CSV",
@@ -130,11 +150,22 @@ export const serverMetricGrid = defineComponent({
 
 export const serverAnalyticsFilterBar = defineComponent({
   name: "AnalyticsFilterBar",
-  description: "供用户二次过滤渠道、切换指标维度、调整模拟预算并触发 AI 重新计算的交互式表单控件",
+  description:
+    "交互式筛选控件。声明模式（推荐）：传 filterField {sourceId, field, table} 后选项从数据源字段去重值拉取，选择即联动刷新同页 SpecChart（零 LLM）；演示模式（不传 filterField）：三控件表单 + 提交触发 AI 重新计算",
   props: z.object({
     title: z.string().optional().describe("表单标题"),
-    defaultChannel: z.string().optional().describe("默认选中的渠道"),
-    defaultMetric: z.string().optional().describe("默认选中的指标维度"),
+    defaultChannel: z.string().optional().describe("默认选中的渠道（演示模式）"),
+    defaultMetric: z.string().optional().describe("默认选中的指标维度（演示模式）"),
+    filterField: z
+      .object({
+        sourceId: z.string().describe("数据源 id（当前激活源）"),
+        field: z.string().describe("筛选字段名（需为同页 SpecChart 的维度/过滤字段）"),
+        table: z.string().describe("数据表名"),
+        label: z.string().optional().describe("展示名（缺省 = field）"),
+      })
+      .optional()
+      .describe("声明模式开关：提供后渲染数据驱动下拉并与 SpecChart 联动"),
+    filterName: z.string().optional().describe("$filter.<name> 写入键名（缺省 = filterField.field）"),
   }),
   component: () => null,
 });
@@ -317,6 +348,7 @@ export const serverLibrary = createLibrary({
     serverComparisonLayout,
     serverMetricCard,
     serverAnalyticsChart,
+    serverSpecChart,
     serverDataTable,
     serverInsightBox,
     serverMetricGrid,

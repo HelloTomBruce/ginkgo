@@ -30,8 +30,8 @@ export interface DbDialect {
     client: DbDialectClient,
     table: string
   ): Promise<{ column: string; type: string }[]>;
-  /** assertReadOnlySql → 行数封顶 → 方言只读事务/超时包裹后执行 */
-  readOnlyQuery(client: DbDialectClient, sql: string): Promise<DbQueryResult>;
+  /** assertReadOnlySql → 行数封顶 → 方言只读事务/超时包裹后执行（params 可选透传参数绑定） */
+  readOnlyQuery(client: DbDialectClient, sql: string, params?: unknown[]): Promise<DbQueryResult>;
   ping(client: DbDialectClient): Promise<void>;
 }
 

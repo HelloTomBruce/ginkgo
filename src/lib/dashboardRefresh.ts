@@ -20,6 +20,8 @@ import {
   serverLibrary,
 } from "@openui-analytics/llm/serverLibrary";
 import { extractQueryRows, rowPropFor } from "./queryRows";
+import { materializeSpecRows } from "./specMaterialize";
+import { parseChartSpec, type ChartSpec } from "@openui-analytics/chart-spec";
 import {
   applyTransform,
   isValidTransformSpec,
@@ -180,18 +182,111 @@ function backfillElements(
   return stale;
 }
 
+/** SpecChart 声明节点：spec 物化的回填目标（保留节点引用以便就地写 data） */
+interface SpecNode {
+  statementId: string;
+  spec: ChartSpec;
+  table: string | undefined;
+  props: Record<string, unknown>;
+  /** spec.sourceId 缺省时经 defaultSourceId 解析，仍缺省则节点过期 */
+  resolvedSourceId: string | undefined;
+}
+
+/** 收集 DSL 中的 SpecChart 声明节点（spec 形态非法的节点不入列，按 stale 降级） */
+function collectSpecNodes(
+  root: unknown,
+  defaultSourceId: string | undefined
+): { nodes: SpecNode[]; invalidIds: string[] } {
+  const nodes: SpecNode[] = [];
+  const invalidIds: string[] = [];
+  const seen = new Set<unknown>();
+  const walk = (value: unknown): void => {
+    if (!value || typeof value !== "object" || seen.has(value)) return;
+    seen.add(value);
+    const node = value as {
+      type?: unknown;
+      statementId?: unknown;
+      typeName?: unknown;
+      props?: unknown;
+    };
+    if (node.type === "element" && node.typeName === "SpecChart" && isPlainObject(node.props)) {
+      const statementId =
+        typeof node.statementId === "string" ? node.statementId : undefined;
+      const spec = parseChartSpec(node.props.spec);
+      const table =
+        typeof node.props.table === "string" && node.props.table ? node.props.table : undefined;
+      if (statementId && spec) {
+        nodes.push({
+          statementId,
+          spec,
+          table,
+          props: node.props,
+          resolvedSourceId: spec.sourceId ?? defaultSourceId,
+        });
+      } else if (statementId) {
+        invalidIds.push(statementId);
+      }
+    }
+    if (isPlainObject(node.props)) {
+      for (const v of Object.values(node.props)) walk(v);
+    } else if (Array.isArray(value)) {
+      for (const v of value) walk(v);
+    }
+  };
+  walk(root);
+  return { nodes, invalidIds };
+}
+
 /**
  * 刷新主入口：重放 record.queries → 回填 dsl 组件 → 序列化新 dsl。
- * - record 无 queries（v0.1 旧快照）→ readonly
+ * - record 无 queries 且无 SpecChart 声明（v0.1 旧快照）→ readonly
  * - 源不存在/停用/连接失败 → source-unavailable（整体失败，调用方附重新分析引导）
  * - 单查询失败仅影响其绑定组件（stale），其余组件正常刷新
+ * - SpecChart：按声明 spec 物化（materializeSpecRows）回填 data，sourceId
+ *   缺省时用 defaultSourceId（调用方在「仅一个激活源」时传入）
  */
 export async function refreshDashboard(
   record: DashboardRecord,
-  gateway: RefreshGateway
+  gateway: RefreshGateway,
+  defaultSourceId?: string
 ): Promise<RefreshVerdict> {
-  const queries = record.queries;
-  if (!queries || queries.length === 0) {
+  const queries = record.queries ?? [];
+
+  // 解析前置：SpecChart 声明节点决定「是否可刷新」与源集合
+  let parsed: ReturnType<typeof parser.parse>;
+  try {
+    parsed = parser.parse(record.dsl);
+  } catch {
+    if (queries.length === 0) {
+      return {
+        ok: false,
+        reason: "readonly",
+        error: "该看板为静态快照（无查询绑定），不支持数据刷新；可基于原提问重新分析生成可刷新看板",
+      };
+    }
+    return {
+      ok: false,
+      reason: "dsl-invalid",
+      error: "看板 DSL 解析失败，无法回填数据；建议重新分析",
+    };
+  }
+  if (!parsed.root) {
+    if (queries.length === 0) {
+      return {
+        ok: false,
+        reason: "readonly",
+        error: "该看板为静态快照（无查询绑定），不支持数据刷新；可基于原提问重新分析生成可刷新看板",
+      };
+    }
+    return {
+      ok: false,
+      reason: "dsl-invalid",
+      error: "看板 DSL 解析失败，无法回填数据；建议重新分析",
+    };
+  }
+  const { nodes: specNodes, invalidIds } = collectSpecNodes(parsed.root, defaultSourceId);
+
+  if (queries.length === 0 && specNodes.length === 0) {
     return {
       ok: false,
       reason: "readonly",
@@ -199,8 +294,15 @@ export async function refreshDashboard(
     };
   }
 
-  // 源预检：任一查询的源缺失/停用 → 整体失败（不做部分刷新的半吊子状态）
-  const sourceIds = [...new Set(queries.map((q) => q.sourceId))];
+  // 源预检：任一查询/声明的源缺失/停用 → 整体失败（不做部分刷新的半吊子状态）。
+  // SpecChart 缺省源（未声明 sourceId 且无 defaultSourceId）不整体失败，
+  // 仅该节点按 stale 降级。
+  const sourceIds = [
+    ...new Set([
+      ...queries.map((q) => q.sourceId),
+      ...specNodes.map((n) => n.resolvedSourceId).filter((id): id is string => Boolean(id)),
+    ]),
+  ];
   for (const sourceId of sourceIds) {
     const conf = gateway.get(sourceId);
     if (!conf || conf.enabled === false) {
@@ -241,10 +343,42 @@ export async function refreshDashboard(
     // 管理，这里不主动 close——避免打断其他并发使用者
   }
 
-  // 全部查询重放失败：无任何新数据可回填，落盘只会带来无意义的 DSL 重写
+  // SpecChart 物化：按声明 spec 取数（零 LLM），就地写回 node.props.data。
+  // 节点级失败（缺表名/缺源/物化失败）→ stale，不影响其他组件。
+  let specOkCount = 0;
+  const specStale: string[] = [];
+  for (const node of specNodes) {
+    const sourceId = node.resolvedSourceId;
+    if (!sourceId || !node.table) {
+      specStale.push(node.statementId);
+      continue;
+    }
+    const conn = connections.get(sourceId);
+    const conf = gateway.get(sourceId) as DynamicSourceConfig;
+    if (!conn || !conf) {
+      specStale.push(node.statementId);
+      continue;
+    }
+    const verdict = await materializeSpecRows(conn, conf, sourceId, node.spec, node.table);
+    if (verdict.ok) {
+      node.props.data = verdict.rows;
+      specOkCount++;
+    } else {
+      console.warn(
+        `[dashboardRefresh] SpecChart ${node.statementId} 物化失败 (${verdict.reason}):`,
+        verdict.detail ?? verdict.missing?.join(",") ?? ""
+      );
+      specStale.push(node.statementId);
+    }
+  }
+
+  // 全部数据通道失败：无任何新数据可回填，落盘只会带来无意义的 DSL 重写
   // （解析/序列化归一可能静默改动字节）→ 整体失败，保留原记录不动
-  const allFailed = queries.every((q) => rowsByQueryId.get(q.id) === null);
-  if (allFailed) {
+  const queryAllFailed =
+    queries.length === 0 || queries.every((q) => rowsByQueryId.get(q.id) === null);
+  const specAllFailed =
+    specNodes.length === 0 || specOkCount === 0;
+  if (queryAllFailed && specAllFailed) {
     return {
       ok: false,
       reason: "replay-failed",
@@ -252,31 +386,17 @@ export async function refreshDashboard(
     };
   }
 
-  // 回填：解析 → 按 bindings 替换行数组 → 重序列化
-  let parsed: ReturnType<typeof parser.parse>;
-  try {
-    parsed = parser.parse(record.dsl);
-  } catch {
-    return {
-      ok: false,
-      reason: "dsl-invalid",
-      error: "看板 DSL 解析失败，无法回填数据；建议重新分析",
-    };
-  }
-  if (!parsed.root) {
-    return {
-      ok: false,
-      reason: "dsl-invalid",
-      error: "看板 DSL 解析失败，无法回填数据；建议重新分析",
-    };
-  }
-
-  const stale = backfillElements(
-    parsed.root,
-    record.bindings ?? {},
-    record.transforms,
-    rowsByQueryId
-  );
+  // 回填：按 bindings 替换行数组（DSL 已在入口解析）
+  const stale = [
+    ...backfillElements(
+      parsed.root,
+      record.bindings ?? {},
+      record.transforms,
+      rowsByQueryId
+    ),
+    ...specStale,
+    ...invalidIds,
+  ];
   let dsl: string;
   try {
     dsl = jsonToOpenUI(parsed.root, serverLibrary);

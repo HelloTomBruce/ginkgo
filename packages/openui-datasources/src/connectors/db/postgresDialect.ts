@@ -58,12 +58,12 @@ export const postgresDialect: DbDialect = {
     return res.rows as { column: string; type: string }[];
   },
 
-  async readOnlyQuery(client, sql) {
+  async readOnlyQuery(client, sql, params?: unknown[]) {
     const finalSql = guardReadOnlySql(sql);
     await client.query("BEGIN READ ONLY");
     await client.query("SET LOCAL statement_timeout = '5s'");
     try {
-      const result = await client.query(finalSql);
+      const result = await client.query(finalSql, params);
       await client.query("COMMIT");
       return result;
     } catch (err) {

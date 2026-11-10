@@ -108,7 +108,7 @@ export const duckdbDialect: DbDialect = {
     }));
   },
 
-  async readOnlyQuery(client, sql) {
+  async readOnlyQuery(client, sql, params?: unknown[]) {
     const finalSql = guardReadOnlySql(sql);
     const raw = rawConnections.get(client);
     const timer = raw
@@ -121,7 +121,7 @@ export const duckdbDialect: DbDialect = {
         }, QUERY_TIMEOUT_MS)
       : undefined;
     try {
-      return await client.query(finalSql);
+      return await client.query(finalSql, params);
     } finally {
       if (timer) clearTimeout(timer);
     }

@@ -31,6 +31,7 @@ import { MetricCard, MetricCardDef } from "./metrics/MetricCard";
 import { GaugeProgress, GaugeProgressDef } from "./metrics/GaugeProgress";
 // charts
 import { AnalyticsChart, AnalyticsChartDef } from "./charts/AnalyticsChart";
+import { SpecChart, SpecChartDef } from "./charts/SpecChart";
 import { FunnelChart, FunnelChartDef } from "./charts/FunnelChart";
 import { RadarChart, RadarChartDef } from "./charts/RadarChart";
 import { ContributionHeatmap, ContributionHeatmapDef } from "./charts/ContributionHeatmap";
@@ -61,6 +62,7 @@ export const analyticsLibrary = createLibrary({
     MetricCardDef,
     GaugeProgressDef,
     AnalyticsChartDef,
+    SpecChartDef,
     FunnelChartDef,
     RadarChartDef,
     ContributionHeatmapDef,
@@ -85,6 +87,7 @@ export {
   MetricCard,
   GaugeProgress,
   AnalyticsChart,
+  SpecChart,
   FunnelChart,
   RadarChart,
   ContributionHeatmap,
@@ -105,3 +108,17 @@ export { RootComponent };
 export { ErrorBoundary } from "./internal/ErrorBoundary";
 export { toCsvContent, downloadCsv, escapeCsvCell } from "./internal/csv";
 export { parseArrayProp } from "./internal/parseProp";
+// 图表注册表（M1：SpecChart 派发与方法卡配对依赖）
+export {
+  chartRegistry,
+  getChartRenderer,
+  supportedChartTypes,
+  registryRenderPropsSchema,
+  normalizeRenderProps,
+  type ChartRendererEntry,
+  type RegistryRenderProps,
+  type ChartStyleProps,
+} from "./charts/registry";
+export { CHART_COLORS, resolveSeries, type SeriesConfig } from "./charts/chartShared";
+// 筛选联动总线（FilterBar 广播 → SpecChart 订阅自行物化）
+export { emitFilterChange, onFilterChange, type FilterChangeEvent } from "./charts/filterBus";

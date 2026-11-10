@@ -48,7 +48,7 @@ describe("GET /api/methodology", () => {
       source: "user",
     });
     expect(trend.steps.length).toBeGreaterThan(0);
-    expect(trend.chartPairing).toEqual(["AnalyticsChart", "MetricCard"]);
+    expect(trend.chartPairing).toEqual(["AnalyticsChart", "SpecChart", "MetricCard"]);
     // executeGuidance 是 LLM prompt 内部件，不进查看契约
     expect(trend.executeGuidance).toBeUndefined();
     // 未被覆盖的内置卡 source=builtin
