@@ -196,7 +196,11 @@ export function useSessionManager(options?: UseSessionManagerOptions) {
    * 避免把 A 会话的内容写进 B 会话。
    */
   const saveCurrentSessionMessages = useCallback(
-    (newMessages: Message[], targetSessionId?: string) => {
+    (
+      newMessages: Message[],
+      targetSessionId?: string,
+      options?: { silent?: boolean; keepalive?: boolean }
+    ) => {
       const activeId = targetSessionId ?? currentSessionIdRef.current;
       if (!activeId || newMessages.length === 0) return;
 
@@ -227,11 +231,17 @@ export function useSessionManager(options?: UseSessionManagerOptions) {
       });
 
       // 后台同步服务端
-      void updateSessionApi(activeId, {
-        messages: newMessages as unknown as SessionRecord["messages"],
-        ...(nextTitle ? { title: nextTitle } : {}),
-      }).then((ok) => {
-        if (!ok) toast("会话保存失败，刷新后以服务端内容为准", "error");
+      void updateSessionApi(
+        activeId,
+        {
+          messages: newMessages as unknown as SessionRecord["messages"],
+          ...(nextTitle ? { title: nextTitle } : {}),
+        },
+        options?.keepalive ? { keepalive: true } : undefined
+      ).then((ok) => {
+        if (!ok && !options?.silent) {
+          toast("会话保存失败，刷新后以服务端内容为准", "error");
+        }
       });
     },
     []

@@ -14,6 +14,8 @@ const STORAGE_KEYS = {
   model: "openui_llm_model",
   temperature: "openui_llm_temperature",
   maxTokens: "openui_llm_max_tokens",
+  maxSteps: "openui_llm_max_steps",
+  contextWindow: "openui_llm_context_window",
   protocol: "openui_llm_protocol",
 } as const;
 
@@ -22,6 +24,10 @@ const DEFAULT_MODEL = "gpt-4o-mini";
 const DEFAULT_TEMPERATURE = "0.2";
 // 留空 → 服务端默认 16384（Anthropic 协议端点必须显式带 max_tokens，避免 finishReason=length 静默截断）
 const DEFAULT_MAX_TOKENS = "";
+// 留空 → 服务端默认 25 步（双重终态机制保证适时退出，最高100）
+const DEFAULT_MAX_STEPS = "";
+// 留空 → 根据模型自动推断（如 128k/1000k），支持用户显式指定（如 1024000）
+const DEFAULT_CONTEXT_WINDOW = "";
 const DEFAULT_PROTOCOL = "openai";
 
 function readStored(key: string, fallback: string): string {
@@ -58,6 +64,14 @@ export function useLlmSettings() {
   const [maxTokens, setMaxTokens] = useState(() =>
     readStored(STORAGE_KEYS.maxTokens, DEFAULT_MAX_TOKENS)
   );
+  // 最大步数上限（maxSteps）：留空走服务端默认 25 步（钳制 1–100）
+  const [maxSteps, setMaxSteps] = useState(() =>
+    readStored(STORAGE_KEYS.maxSteps, DEFAULT_MAX_STEPS)
+  );
+  // 上下文窗口容量：留空自动按模型推断；支持自定义如 1024000
+  const [contextWindow, setContextWindow] = useState(() =>
+    readStored(STORAGE_KEYS.contextWindow, DEFAULT_CONTEXT_WINDOW)
+  );
   // 接口协议：openai 兼容（/chat/completions）或 anthropic（/v1/messages，如 Kimi Coding）
   const [protocol, setProtocol] = useState<"openai" | "anthropic">(() =>
     readStored(STORAGE_KEYS.protocol, DEFAULT_PROTOCOL) === "anthropic"
@@ -86,6 +100,8 @@ export function useLlmSettings() {
     localStorage.setItem(STORAGE_KEYS.model, model);
     localStorage.setItem(STORAGE_KEYS.temperature, temperature);
     localStorage.setItem(STORAGE_KEYS.maxTokens, maxTokens);
+    localStorage.setItem(STORAGE_KEYS.maxSteps, maxSteps);
+    localStorage.setItem(STORAGE_KEYS.contextWindow, contextWindow);
     localStorage.setItem(STORAGE_KEYS.protocol, protocol);
     localStorage.setItem(ACCESS_TOKEN_STORAGE_KEY, accessToken);
     setShowSettings(false);
@@ -98,9 +114,11 @@ export function useLlmSettings() {
       model: model.trim() || undefined,
       temperature: temperature.trim() || undefined,
       maxTokens: maxTokens.trim() || undefined,
+      maxSteps: maxSteps.trim() || undefined,
+      contextWindow: contextWindow.trim() || undefined,
       protocol,
     }),
-    [apiKey, baseURL, model, temperature, maxTokens, protocol]
+    [apiKey, baseURL, model, temperature, maxTokens, maxSteps, contextWindow, protocol]
   );
 
   return {
@@ -120,6 +138,10 @@ export function useLlmSettings() {
     setTemperature,
     maxTokens,
     setMaxTokens,
+    maxSteps,
+    setMaxSteps,
+    contextWindow,
+    setContextWindow,
     protocol,
     setProtocol,
     authHeaders,

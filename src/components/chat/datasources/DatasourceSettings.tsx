@@ -4,6 +4,14 @@ import React, { useState } from "react";
 import { Database, Loader2, Pencil, Plus, Power, Trash2 } from "lucide-react";
 import { Hint } from "@/components/ui/hint";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -61,6 +69,7 @@ export function DatasourceSettings() {
     useDatasources();
   const [form, setForm] = useState<FormState | typeof CLOSED_FORM>(CLOSED_FORM);
   const [errors, setErrors] = useState<string[]>([]);
+  const [saving, setSaving] = useState(false);
   /** 行内操作 pending：启停/删除涉及 PATCH + 全量探活刷新，秒级耗时必须有反馈 */
   const [pending, setPending] = useState<{
     id: string;
@@ -88,6 +97,7 @@ export function DatasourceSettings() {
 
   const openEdit = (s: DataSourceDescriptor) => {
     setErrors([]);
+    const maskedConn = s.kind === "db" ? (s.maskedConnectionString ?? "") : "";
     setForm({
       mode: "edit",
       id: s.id,
@@ -96,62 +106,84 @@ export function DatasourceSettings() {
       url: "",
       token: "",
       dbType: s.dbType ?? "postgres",
-      connectionString: "",
+      // db 连接串支持回显已配置的连接串（含脱敏串），方便查看与编辑
+      connectionString: maskedConn,
       hasExistingToken: Boolean(s.hasToken),
-      // 脱敏值仅作 placeholder 展示；若回填表单并在提交时发送，会把 *** 写成真实凭证
       urlPreview: s.kind === "http-mcp" ? (s.maskedUrl ?? "") : "",
-      connPreview: s.kind === "db" ? (s.maskedConnectionString ?? "") : "",
+      connPreview: maskedConn,
       command: s.kind === "stdio-cli" ? (s.command ?? "") : "",
-      argsRaw: "",
+      argsRaw:
+        s.kind === "stdio-cli" && Array.isArray(s.args)
+          ? s.args.join(" ")
+          : "",
     });
   };
 
   const closeForm = () => {
     setForm(CLOSED_FORM);
     setErrors([]);
+    setSaving(false);
   };
 
   const submit = async () => {
-    if (!form) return;
-    if (form.mode === "create") {
-      const body: Record<string, unknown> = {
-        id: form.id.trim(),
-        name: form.name.trim(),
-        kind: form.kind,
-      };
-      if (form.kind === "http-mcp") {
-        body.url = form.url.trim();
-        if (form.token.trim()) body.token = form.token.trim();
-      } else if (form.kind === "db") {
-        body.dbType = form.dbType;
-        body.connectionString = form.connectionString.trim();
-      } else if (form.kind === "stdio-cli") {
-        body.command = form.command.trim();
-        body.args = form.argsRaw.split(/\s+/).filter(Boolean);
+    if (!form || saving) return;
+    setSaving(true);
+    try {
+      if (form.mode === "create") {
+        const body: Record<string, unknown> = {
+          id: form.id.trim(),
+          name: form.name.trim(),
+          kind: form.kind,
+        };
+        if (form.kind === "http-mcp") {
+          body.url = form.url.trim();
+          if (form.token.trim()) body.token = form.token.trim();
+        } else if (form.kind === "db") {
+          body.dbType = form.dbType;
+          body.connectionString = form.connectionString.trim();
+        } else if (form.kind === "stdio-cli") {
+          body.command = form.command.trim();
+          body.args = form.argsRaw.split(/\s+/).filter(Boolean);
+        }
+        // file：仅 id/name/kind，文件创建后在列表中上传
+        const result = await createSource(body);
+        if (result.ok) closeForm();
+        else setErrors(result.errors ?? ["创建失败"]);
+        return;
       }
-      // file：仅 id/name/kind，文件创建后在列表中上传
-      const result = await createSource(body);
+
+      // 编辑模式：
+      // - token/url: 留空表示不更新
+      // - db: 若连接串未修改（仍等于初始回显值）或留空，则不提交 connectionString，保留服务端凭证；若修改且含 *** 则拦截
+      // - stdio: 命令非机密总是提交；参数留空表示不更新
+      const patch: Record<string, unknown> = { name: form.name.trim() };
+      if (form.kind === "http-mcp") {
+        if (form.url.trim()) patch.url = form.url.trim();
+        if (form.token.trim()) patch.token = form.token.trim();
+      } else if (form.kind === "db") {
+        patch.dbType = form.dbType;
+        const conn = form.connectionString.trim();
+        const originalConn = form.connPreview.trim();
+        if (conn && conn !== originalConn) {
+          if (conn.includes("***")) {
+            setErrors(["连接串包含脱敏星号(***)，若修改连接串请填入完整密码"]);
+            return;
+          }
+          patch.connectionString = conn;
+        }
+      } else if (form.kind === "stdio-cli") {
+        patch.command = form.command.trim();
+        if (form.argsRaw.trim()) {
+          patch.args = form.argsRaw.split(/\s+/).filter(Boolean);
+        }
+      }
+
+      const result = await updateSource(form.id, patch);
       if (result.ok) closeForm();
-      else setErrors(result.errors ?? ["创建失败"]);
-      return;
+      else setErrors(result.errors ?? ["更新失败"]);
+    } finally {
+      setSaving(false);
     }
-    // 编辑：token/url/connectionString 留空 = 不更新（不发送字段），脱敏值绝不作为新值提交
-    const patch: Record<string, unknown> = { name: form.name.trim() };
-    if (form.kind === "http-mcp") {
-      if (form.url.trim()) patch.url = form.url.trim();
-      if (form.token.trim()) patch.token = form.token.trim();
-    } else if (form.kind === "db") {
-      if (form.connectionString.trim())
-        patch.connectionString = form.connectionString.trim();
-    } else if (form.kind === "stdio-cli") {
-      // stdio：命令非机密总是提交；参数留空 = 不更新
-      patch.command = form.command.trim();
-      if (form.argsRaw.trim()) patch.args = form.argsRaw.split(/\s+/).filter(Boolean);
-    }
-    // file：仅名称可编辑，文件在列表上传区管理
-    const result = await updateSource(form.id, patch);
-    if (result.ok) closeForm();
-    else setErrors(result.errors ?? ["更新失败"]);
   };
 
   const toggleEnabled = async (s: DataSourceDescriptor) => {
@@ -173,8 +205,8 @@ export function DatasourceSettings() {
   };
 
   const inputClass =
-    "w-full p-2.5 rounded-lg border border-border bg-surface-sunken font-mono";
-  const labelClass = "block text-muted-foreground mb-1 font-medium";
+    "w-full p-2.5 rounded-lg border border-border bg-surface-sunken font-mono text-xs focus:outline-none focus:ring-1 focus:ring-border-strong";
+  const labelClass = "block text-muted-foreground mb-1 font-medium text-xs";
 
   return (
     <div className="space-y-4 text-xs">
@@ -223,6 +255,7 @@ export function DatasourceSettings() {
                   {h === undefined ? "..." : h.ok ? `${h.latencyMs}ms` : "异常"}
                 </span>
                 <button
+                  type="button"
                   onClick={() => void toggleEnabled(s)}
                   disabled={busy}
                   aria-busy={busyToggle}
@@ -240,35 +273,33 @@ export function DatasourceSettings() {
                     <Power className="w-3.5 h-3.5" />
                   )}
                 </button>
-                {(
-                  <>
-                    <Hint label="编辑">
-                      <button
-                        onClick={() => openEdit(s)}
-                        disabled={busy}
-                        aria-label={`编辑 ${s.id}`}
-                        className="p-1 rounded text-foreground-faint hover:text-foreground-subtle hover:bg-muted disabled:opacity-50"
-                      >
-                        <Pencil className="w-3.5 h-3.5" />
-                      </button>
-                    </Hint>
-                    <Hint label="删除">
-                      <button
-                        onClick={() => void remove(s.id)}
-                        disabled={busy}
-                        aria-busy={busyDelete}
-                        aria-label={`删除 ${s.id}`}
-                        className="p-1 rounded text-foreground-faint hover:text-danger-fg hover:bg-muted disabled:opacity-50"
-                      >
-                        {busyDelete ? (
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        ) : (
-                          <Trash2 className="w-3.5 h-3.5" />
-                        )}
-                      </button>
-                    </Hint>
-                  </>
-                )}
+                <Hint label="编辑">
+                  <button
+                    type="button"
+                    onClick={() => openEdit(s)}
+                    disabled={busy}
+                    aria-label={`编辑 ${s.id}`}
+                    className="p-1 rounded text-foreground-faint hover:text-foreground-subtle hover:bg-muted disabled:opacity-50"
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                  </button>
+                </Hint>
+                <Hint label="删除">
+                  <button
+                    type="button"
+                    onClick={() => void remove(s.id)}
+                    disabled={busy}
+                    aria-busy={busyDelete}
+                    aria-label={`删除 ${s.id}`}
+                    className="p-1 rounded text-foreground-faint hover:text-danger-fg hover:bg-muted disabled:opacity-50"
+                  >
+                    {busyDelete ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Trash2 className="w-3.5 h-3.5" />
+                    )}
+                  </button>
+                </Hint>
               </div>
 
               {s.kind === "file" && <FileSourcePanel sourceId={s.id} />}
@@ -278,263 +309,283 @@ export function DatasourceSettings() {
         })}
       </div>
 
-      {/* 添加按钮 / 表单 */}
-      {!form && (
-        <button
-          onClick={openCreate}
-          className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg border border-dashed border-border-strong text-muted-foreground hover:bg-surface-sunken transition-colors"
-        >
-          <Plus className="w-3.5 h-3.5" />
-          <span>添加数据源</span>
-        </button>
-      )}
+      {/* 添加按钮 */}
+      <button
+        type="button"
+        onClick={openCreate}
+        className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg border border-dashed border-border-strong text-muted-foreground hover:bg-surface-sunken transition-colors"
+      >
+        <Plus className="w-3.5 h-3.5" />
+        <span>添加数据源</span>
+      </button>
 
+      {/* 弹窗编辑 / 创建表单 */}
       {form && (
-        <div className="space-y-3 border border-border rounded-lg p-3">
-          <div className="text-[11px] font-semibold text-foreground-subtle">
-            {form.mode === "create" ? "添加数据源" : `编辑 ${form.id}`}
-          </div>
+        <Dialog open onOpenChange={(open) => !open && closeForm()}>
+          <DialogContent
+            className="max-w-lg sm:max-w-lg p-5 flex flex-col gap-4 overflow-hidden z-[60]"
+            overlayClassName="z-[60] bg-black/40 backdrop-blur-xs"
+          >
+            <DialogHeader>
+              <DialogTitle className="font-bold text-sm text-foreground">
+                {form.mode === "create" ? "添加数据源" : `编辑数据源（${form.name || form.id}）`}
+              </DialogTitle>
+              <DialogDescription className="sr-only">
+                {form.mode === "create" ? "配置并添加新的数据源" : "修改现有数据源配置"}
+              </DialogDescription>
+            </DialogHeader>
 
-          {form.mode === "create" && (
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label htmlFor="ds-kind-http" className="flex items-center gap-1.5 cursor-pointer">
-                  <input
-                    id="ds-kind-http"
-                    type="radio"
-                    name="ds-kind"
-                    checked={form.kind === "http-mcp"}
-                    onChange={() => setForm({ ...form, kind: "http-mcp" })}
-                  />
-                  <span>HTTP MCP</span>
-                </label>
-              </div>
-              <div>
-                <label htmlFor="ds-kind-db" className="flex items-center gap-1.5 cursor-pointer">
-                  <input
-                    id="ds-kind-db"
-                    type="radio"
-                    name="ds-kind"
-                    checked={form.kind === "db"}
-                    onChange={() => setForm({ ...form, kind: "db" })}
-                  />
-                  <span>数据库连接</span>
-                </label>
-              </div>
-              <div>
-                <label htmlFor="ds-kind-stdio" className="flex items-center gap-1.5 cursor-pointer">
-                  <input
-                    id="ds-kind-stdio"
-                    type="radio"
-                    name="ds-kind"
-                    checked={form.kind === "stdio-cli"}
-                    onChange={() => setForm({ ...form, kind: "stdio-cli" })}
-                  />
-                  <span>本地 CLI</span>
-                </label>
-              </div>
-              <div>
-                <label htmlFor="ds-kind-file" className="flex items-center gap-1.5 cursor-pointer">
-                  <input
-                    id="ds-kind-file"
-                    type="radio"
-                    name="ds-kind"
-                    checked={form.kind === "file"}
-                    onChange={() => setForm({ ...form, kind: "file" })}
-                  />
-                  <span>文件（CSV/Excel/Parquet/JSON）</span>
-                </label>
-              </div>
-            </div>
-          )}
-
-          {form.mode === "create" && (
-            <div>
-              <label htmlFor="ds-id" className={labelClass}>
-                ID（小写字母开头，仅小写字母/数字/连字符）
-              </label>
-              <input
-                id="ds-id"
-                type="text"
-                value={form.id}
-                onChange={(e) => setForm({ ...form, id: e.target.value })}
-                placeholder="jira-mcp / mysql-orders"
-                className={inputClass}
-              />
-            </div>
-          )}
-
-          <div>
-            <label htmlFor="ds-name" className={labelClass}>
-              名称
-            </label>
-            <input
-              id="ds-name"
-              type="text"
-              value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
-              placeholder="Jira MCP / 订单库"
-              className={inputClass}
-            />
-          </div>
-
-          {form.kind === "http-mcp" && (
-            <>
-              <div>
-                <label htmlFor="ds-url" className={labelClass}>
-                  URL
-                </label>
-                <input
-                  id="ds-url"
-                  type="text"
-                  value={form.url}
-                  onChange={(e) => setForm({ ...form, url: e.target.value })}
-                  placeholder={
-                    form.mode === "edit" && form.urlPreview
-                      ? `${form.urlPreview}（留空保持不变）`
-                      : "http://127.0.0.1:6000/mcp"
-                  }
-                  className={inputClass}
-                />
-              </div>
-              <div>
-                <label htmlFor="ds-token" className={labelClass}>
-                  Token（可选，Bearer）
-                </label>
-                <input
-                  id="ds-token"
-                  type="password"
-                  value={form.token}
-                  onChange={(e) => setForm({ ...form, token: e.target.value })}
-                  placeholder={
-                    form.mode === "edit" && form.hasExistingToken
-                      ? "留空保持不变"
-                      : "可选"
-                  }
-                  className={inputClass}
-                />
-              </div>
-            </>
-          )}
-
-          {form.kind === "db" && (
-            <>
-              <div>
-                <label htmlFor="ds-dbtype" className={labelClass}>
-                  数据库类型
-                </label>
-                <Select
-                  value={form.dbType}
-                  onValueChange={(v) =>
-                    setForm({ ...form, dbType: v as FormState["dbType"] })
-                  }
-                  name="ds-dbtype"
-                >
-                  <SelectTrigger
-                    id="ds-dbtype"
-                    className="w-full h-auto py-2.5 text-xs bg-surface-sunken border-border"
+            <div className="space-y-3.5 max-h-[60vh] overflow-y-auto pr-1 text-xs">
+              {form.mode === "create" && (
+                <div className="grid grid-cols-2 gap-2">
+                  <label
+                    htmlFor="ds-kind-http"
+                    className="flex items-center gap-2 p-2.5 rounded-lg border border-border bg-surface-sunken cursor-pointer hover:border-border-strong transition-colors"
                   >
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="text-xs">
-                    <SelectItem value="postgres">PostgreSQL</SelectItem>
-                    <SelectItem value="mysql">MySQL</SelectItem>
-                    <SelectItem value="sqlite">SQLite（文件路径）</SelectItem>
-                    <SelectItem value="clickhouse">ClickHouse</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+                    <input
+                      id="ds-kind-http"
+                      type="radio"
+                      name="ds-kind"
+                      checked={form.kind === "http-mcp"}
+                      onChange={() => setForm({ ...form, kind: "http-mcp" })}
+                    />
+                    <span className="font-medium text-foreground-subtle">HTTP MCP</span>
+                  </label>
+                  <label
+                    htmlFor="ds-kind-db"
+                    className="flex items-center gap-2 p-2.5 rounded-lg border border-border bg-surface-sunken cursor-pointer hover:border-border-strong transition-colors"
+                  >
+                    <input
+                      id="ds-kind-db"
+                      type="radio"
+                      name="ds-kind"
+                      checked={form.kind === "db"}
+                      onChange={() => setForm({ ...form, kind: "db" })}
+                    />
+                    <span className="font-medium text-foreground-subtle">数据库连接</span>
+                  </label>
+                  <label
+                    htmlFor="ds-kind-stdio"
+                    className="flex items-center gap-2 p-2.5 rounded-lg border border-border bg-surface-sunken cursor-pointer hover:border-border-strong transition-colors"
+                  >
+                    <input
+                      id="ds-kind-stdio"
+                      type="radio"
+                      name="ds-kind"
+                      checked={form.kind === "stdio-cli"}
+                      onChange={() => setForm({ ...form, kind: "stdio-cli" })}
+                    />
+                    <span className="font-medium text-foreground-subtle">本地 CLI</span>
+                  </label>
+                  <label
+                    htmlFor="ds-kind-file"
+                    className="flex items-center gap-2 p-2.5 rounded-lg border border-border bg-surface-sunken cursor-pointer hover:border-border-strong transition-colors"
+                  >
+                    <input
+                      id="ds-kind-file"
+                      type="radio"
+                      name="ds-kind"
+                      checked={form.kind === "file"}
+                      onChange={() => setForm({ ...form, kind: "file" })}
+                    />
+                    <span className="font-medium text-foreground-subtle">文件（CSV/Excel/Parquet/JSON）</span>
+                  </label>
+                </div>
+              )}
+
+              {form.mode === "create" && (
+                <div>
+                  <label htmlFor="ds-id" className={labelClass}>
+                    ID（小写字母开头，仅小写字母/数字/连字符）
+                  </label>
+                  <input
+                    id="ds-id"
+                    type="text"
+                    value={form.id}
+                    onChange={(e) => setForm({ ...form, id: e.target.value })}
+                    placeholder="jira-mcp / mysql-orders"
+                    className={inputClass}
+                  />
+                </div>
+              )}
+
               <div>
-                <label htmlFor="ds-conn" className={labelClass}>
-                  连接串（URL 形式，强制只读查询）
+                <label htmlFor="ds-name" className={labelClass}>
+                  名称
                 </label>
                 <input
-                  id="ds-conn"
-                  type="password"
-                  value={form.connectionString}
-                  onChange={(e) =>
-                    setForm({ ...form, connectionString: e.target.value })
-                  }
-                  placeholder={
-                    form.mode === "edit" && form.connPreview
-                      ? `${form.connPreview}（留空保持不变）`
-                      : "mysql://user:pass@host:3306/db"
-                  }
-                  className={inputClass}
-                />
-              </div>
-              <div className="text-[10px] text-foreground-faint flex items-center gap-1">
-                <Database className="w-3 h-3" />
-                <span>数据库源仅允许只读 SELECT，自动行数封顶与超时保护</span>
-              </div>
-            </>
-          )}
-
-          {form.kind === "file" && (
-            <div className="text-[10px] text-foreground-faint flex items-center gap-1">
-              <Database className="w-3 h-3" />
-              <span>
-                {form.mode === "create"
-                  ? "创建后在数据源列表中上传 CSV/Excel/Parquet/JSON 文件（≤50MB），即可用自然语言查询"
-                  : "文件在数据源列表的上传区管理；重新上传将完全覆盖现有表"}
-              </span>
-            </div>
-          )}
-
-          {form.kind === "stdio-cli" && (
-            <>
-              <div>
-                <label htmlFor="ds-command" className={labelClass}>
-                  命令
-                </label>
-                <input
-                  id="ds-command"
+                  id="ds-name"
                   type="text"
-                  value={form.command}
-                  onChange={(e) => setForm({ ...form, command: e.target.value })}
-                  placeholder="如 my-mcp-cli"
+                  value={form.name}
+                  onChange={(e) => setForm({ ...form, name: e.target.value })}
+                  placeholder="Jira MCP / 订单库"
                   className={inputClass}
                 />
               </div>
-              <div>
-                <label htmlFor="ds-args" className={labelClass}>
-                  参数（空格分隔，编辑留空表示不变）
-                </label>
-                <input
-                  id="ds-args"
-                  type="text"
-                  value={form.argsRaw}
-                  onChange={(e) => setForm({ ...form, argsRaw: e.target.value })}
-                  placeholder="mcp --read-only"
-                  className={inputClass}
-                />
-              </div>
-            </>
-          )}
 
-          {errors.length > 0 && (
-            <div className="text-[11px] text-danger-fg space-y-1">
-              {errors.map((e) => (
-                <div key={e}>· {e}</div>
-              ))}
+              {form.kind === "http-mcp" && (
+                <>
+                  <div>
+                    <label htmlFor="ds-url" className={labelClass}>
+                      URL
+                    </label>
+                    <input
+                      id="ds-url"
+                      type="text"
+                      value={form.url}
+                      onChange={(e) => setForm({ ...form, url: e.target.value })}
+                      placeholder={
+                        form.mode === "edit" && form.urlPreview
+                          ? `${form.urlPreview}（留空保持不变）`
+                          : "http://127.0.0.1:6000/mcp"
+                      }
+                      className={inputClass}
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="ds-token" className={labelClass}>
+                      Token（可选，Bearer）
+                    </label>
+                    <input
+                      id="ds-token"
+                      type="password"
+                      value={form.token}
+                      onChange={(e) => setForm({ ...form, token: e.target.value })}
+                      placeholder={
+                        form.mode === "edit" && form.hasExistingToken
+                          ? "留空保持不变"
+                          : "可选"
+                      }
+                      className={inputClass}
+                    />
+                  </div>
+                </>
+              )}
+
+              {form.kind === "db" && (
+                <>
+                  <div>
+                    <label htmlFor="ds-dbtype" className={labelClass}>
+                      数据库类型
+                    </label>
+                    <Select
+                      value={form.dbType}
+                      onValueChange={(v) =>
+                        setForm({ ...form, dbType: v as FormState["dbType"] })
+                      }
+                      name="ds-dbtype"
+                    >
+                      <SelectTrigger
+                        id="ds-dbtype"
+                        className="w-full h-auto py-2.5 text-xs bg-surface-sunken border-border"
+                      >
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="text-xs">
+                        <SelectItem value="postgres">PostgreSQL</SelectItem>
+                        <SelectItem value="mysql">MySQL</SelectItem>
+                        <SelectItem value="sqlite">SQLite（文件路径）</SelectItem>
+                        <SelectItem value="clickhouse">ClickHouse</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <label htmlFor="ds-conn" className={labelClass}>
+                      连接串（URL 形式，强制只读查询）
+                    </label>
+                    <input
+                      id="ds-conn"
+                      type="text"
+                      value={form.connectionString}
+                      onChange={(e) =>
+                        setForm({ ...form, connectionString: e.target.value })
+                      }
+                      placeholder={
+                        form.mode === "edit" && form.connPreview
+                          ? `${form.connPreview}（留空保持不变）`
+                          : "postgresql://user:pass@host:5432/db"
+                      }
+                      className={inputClass}
+                    />
+                  </div>
+                  <div className="text-[11px] text-foreground-faint flex items-center gap-1.5 pt-0.5">
+                    <Database className="w-3.5 h-3.5 shrink-0" />
+                    <span>数据库源仅允许只读 SELECT，自动行数封顶与超时保护</span>
+                  </div>
+                </>
+              )}
+
+              {form.kind === "file" && (
+                <div className="text-[11px] text-foreground-faint flex items-center gap-1.5 p-2 rounded-lg bg-surface-sunken border border-border">
+                  <Database className="w-3.5 h-3.5 shrink-0" />
+                  <span>
+                    {form.mode === "create"
+                      ? "创建后在数据源列表中上传 CSV/Excel/Parquet/JSON 文件（≤50MB），即可用自然语言查询"
+                      : "文件在数据源列表的上传区管理；重新上传将完全覆盖现有表"}
+                  </span>
+                </div>
+              )}
+
+              {form.kind === "stdio-cli" && (
+                <>
+                  <div>
+                    <label htmlFor="ds-command" className={labelClass}>
+                      命令
+                    </label>
+                    <input
+                      id="ds-command"
+                      type="text"
+                      value={form.command}
+                      onChange={(e) => setForm({ ...form, command: e.target.value })}
+                      placeholder="如 my-mcp-cli"
+                      className={inputClass}
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="ds-args" className={labelClass}>
+                      参数（空格分隔，编辑留空表示不变）
+                    </label>
+                    <input
+                      id="ds-args"
+                      type="text"
+                      value={form.argsRaw}
+                      onChange={(e) => setForm({ ...form, argsRaw: e.target.value })}
+                      placeholder="mcp --read-only"
+                      className={inputClass}
+                    />
+                  </div>
+                </>
+              )}
+
+              {errors.length > 0 && (
+                <div className="text-[11px] text-danger-fg space-y-1 p-2 rounded-lg bg-danger-soft border border-danger-border">
+                  {errors.map((e) => (
+                    <div key={e}>· {e}</div>
+                  ))}
+                </div>
+              )}
             </div>
-          )}
 
-          <div className="flex justify-end gap-2 pt-1">
-            <button
-              onClick={closeForm}
-              className="px-3 py-1.5 rounded-lg border border-border text-xs hover:bg-muted"
-            >
-              取消
-            </button>
-            <button
-              onClick={() => void submit()}
-              className="px-4 py-1.5 rounded-lg bg-info-solid text-white text-xs font-medium hover:bg-info-solid-hover shadow-xs"
-            >
-              保存
-            </button>
-          </div>
-        </div>
+            <DialogFooter className="flex justify-end gap-2 pt-2 border-t border-border-subtle">
+              <button
+                type="button"
+                onClick={closeForm}
+                className="px-3 py-1.5 rounded-lg border border-border text-xs hover:bg-muted"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={() => void submit()}
+                disabled={saving}
+                className="px-4 py-1.5 rounded-lg bg-info-solid text-white text-xs font-medium hover:bg-info-solid-hover shadow-xs disabled:opacity-50 flex items-center gap-1"
+              >
+                {saving && <Loader2 className="w-3 h-3 animate-spin" />}
+                <span>保存</span>
+              </button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       )}
     </div>
   );

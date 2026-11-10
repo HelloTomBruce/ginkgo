@@ -200,6 +200,21 @@ describe("ChatDashboard 守护测试（重构行为锁定）", () => {
     expect(screen.getByText("上下文")).toBeInTheDocument();
   });
 
+  it("上下文用量条：当用户配置了自定义 contextWindow（如 1024000）时，依自定义容量渲染分母", async () => {
+    localStorage.setItem("openui_llm_context_window", "1024000");
+    vi.mocked(useChat).mockImplementation(
+      () =>
+        buildUseChatResult(
+          [DEFAULT_WELCOME_MESSAGE],
+          [{ type: "context_usage", promptTokens: 64_000 }]
+        ) as never
+    );
+    render(<ChatDashboard />);
+    // 64000 / 1024000 = 6%
+    await screen.findByText(/64\.0k \/ 1024k（6%）/);
+    expect(screen.getByText("上下文")).toBeInTheDocument();
+  });
+
   it("会话生成中：输入区域展示停止按钮，点击触发 stop 并提示", async () => {
     const stopMock = vi.fn();
     vi.mocked(useChat).mockImplementation(

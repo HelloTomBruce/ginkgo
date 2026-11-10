@@ -461,4 +461,67 @@ describe("DatasourceSettings", () => {
       expect(body).toEqual({ id: "csv1", name: "销售表", kind: "file" });
     });
   });
+
+  it("编辑 db 源：连接串正确回显，支持弹窗取消关闭", async () => {
+    renderSettings();
+    await screen.findByText("订单库");
+
+    fireEvent.click(screen.getByRole("button", { name: /编辑 mysql-a/ }));
+    const connInput = await screen.findByLabelText(/连接串/);
+    // 连接串正确回显脱敏值（或明文值）
+    expect(connInput).toHaveValue("mysql://u:***@h:3306/db");
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByText(/编辑数据源（订单库）/)).toBeInTheDocument();
+
+    // 点击取消关闭弹窗
+    fireEvent.click(screen.getByRole("button", { name: /取消/ }));
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+  });
+
+  it("编辑 db 源：修改连接串并提交时 PATCH body 携带新 connectionString", async () => {
+    renderSettings();
+    await screen.findByText("订单库");
+
+    fireEvent.click(screen.getByRole("button", { name: /编辑 mysql-a/ }));
+    const connInput = await screen.findByLabelText(/连接串/);
+    fireEvent.change(connInput, {
+      target: { value: "mysql://root:secret@127.0.0.1:3306/new_orders" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /保存/ }));
+
+    await waitFor(() => {
+      const call = fetchMock.mock.calls.find(
+        (c) => String(c[0]) === "/api/datasources/mysql-a" && c[1]?.method === "PATCH"
+      );
+      expect(call).toBeTruthy();
+      const body = JSON.parse(call![1].body as string);
+      expect(body).toMatchObject({
+        connectionString: "mysql://root:secret@127.0.0.1:3306/new_orders",
+      });
+    });
+  });
+
+  it("编辑 db 源：修改连接串但保留脱敏星号(***)时拦截并报错", async () => {
+    renderSettings();
+    await screen.findByText("订单库");
+
+    fireEvent.click(screen.getByRole("button", { name: /编辑 mysql-a/ }));
+    const connInput = await screen.findByLabelText(/连接串/);
+    fireEvent.change(connInput, {
+      target: { value: "mysql://u:***@newhost:3306/db" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /保存/ }));
+
+    expect(
+      await screen.findByText(/连接串包含脱敏星号\(.*?\)，若修改连接串请填入完整密码/)
+    ).toBeInTheDocument();
+
+    // 不应发送 PATCH 请求
+    const call = fetchMock.mock.calls.find(
+      (c) => String(c[0]) === "/api/datasources/mysql-a" && c[1]?.method === "PATCH"
+    );
+    expect(call).toBeUndefined();
+  });
 });

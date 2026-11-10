@@ -151,6 +151,35 @@ describe("ingestSourceFiles: Excel", () => {
     ]);
     expect(manifest.tables[0].table).toBe("book");
   });
+
+  it("Excel 表头包含换行符（Alt+Enter）时，清洗为单空格列名", async () => {
+    const xlsx = await makeXlsx([
+      {
+        name: "Sheet1",
+        rows: [
+          [
+            "专业\n（对应六大专业，可对应多个）",
+            "场景\r\n（对应五大场景，可对应多个）",
+            "数值",
+          ],
+          ["无线通信", "智慧运维", 100],
+        ],
+      },
+    ]);
+    const manifest = await ingestSourceFiles(filesDir, "multiline_header", [
+      { name: "data.xlsx", data: xlsx },
+    ]);
+    expect(manifest.tables[0].columns.map((c) => c.name)).toEqual([
+      "专业 （对应六大专业，可对应多个）",
+      "场景 （对应五大场景，可对应多个）",
+      "数值",
+    ]);
+    const res = await queryAll(
+      duckDbPath(filesDir, "multiline_header"),
+      'SELECT "专业 （对应六大专业，可对应多个）" AS p, "场景 （对应五大场景，可对应多个）" AS s FROM data'
+    );
+    expect(res.rows).toEqual([{ p: "无线通信", s: "智慧运维" }]);
+  });
 });
 
 describe("ingestSourceFiles: 覆盖与回滚", () => {

@@ -53,11 +53,11 @@ async function makeFakeManager(
 }
 
 vi.mock("@ai-sdk/openai", () => ({
-  createOpenAI: vi.fn(() => vi.fn()),
+  createOpenAI: vi.fn(() => vi.fn(() => ({}))),
 }));
 
 vi.mock("@ai-sdk/anthropic", () => ({
-  createAnthropic: vi.fn(() => vi.fn()),
+  createAnthropic: vi.fn(() => vi.fn(() => ({}))),
 }));
 
 vi.mock("ai", async (importOriginal) => {
@@ -337,7 +337,7 @@ describe("createAnalyzeHandler 全动态装配", () => {
     expect(arg.system).not.toContain("PostgreSQL Analytics Database");
   });
 
-  it("mode 分派：plan → 规划提示词 + maxSteps=6；execute → 执行提示词；非法/缺省 → direct", async () => {
+  it("mode 分派：plan → 规划提示词；execute → 执行提示词；非法/缺省 → direct，默认 maxSteps=25", async () => {
     const manager = await makeFakeManager();
     const POST = createAnalyzeHandler({ datasources: manager });
 
@@ -345,14 +345,14 @@ describe("createAnalyzeHandler 全动态装配", () => {
     let arg = vi.mocked(streamText).mock.calls[0][0];
     expect(arg.system).toContain("Planning Mode");
     expect(arg.system).toContain("PlanReviewCard");
-    expect(arg.maxSteps).toBe(6);
+    expect(arg.maxSteps).toBe(25);
     // 规划轮次工具照常装配（探查需要）；跨源映射工具因无禅道×GitLab 对而不注册
     expect(Object.keys(arg.tools ?? {})).not.toContain("cross_source_link");
 
     await POST(makeRequest({ messages: [], apiKey: "k", mode: "execute" }));
     arg = vi.mocked(streamText).mock.calls[1][0];
     expect(arg.system).toContain("Confirmed Plan Execution Mode");
-    expect(arg.maxSteps).toBe(10);
+    expect(arg.maxSteps).toBe(25);
 
     // 非法值回落 direct：不含规划/执行增量段
     await POST(
@@ -366,7 +366,7 @@ describe("createAnalyzeHandler 全动态装配", () => {
     await POST(makeRequest({ messages: [], apiKey: "k" }));
     arg = vi.mocked(streamText).mock.calls[3][0];
     expect(arg.system).not.toContain("Planning Mode");
-    expect(arg.maxSteps).toBe(10);
+    expect(arg.maxSteps).toBe(25);
   });
 });
 
@@ -755,5 +755,172 @@ describe("createAnalyzeHandler 上下文治理", () => {
     expect(res.status).toBe(200);
     const sys = vi.mocked(streamText).mock.calls[0][0].system as string;
     expect(sys).not.toContain("此前会话摘要");
+  });
+});
+
+describe("双重终态识别与步数预算", () => {
+  beforeEach(() => {
+    mockStreamOk();
+  });
+
+  it("tools 始终装配 finish_task 显式终态工具", async () => {
+    const manager = await makeFakeManager();
+    const POST = createAnalyzeHandler({ datasources: manager });
+    await POST(makeRequest({ messages: [], apiKey: "k" }));
+    const arg = vi.mocked(streamText).mock.calls[0][0];
+    expect(arg.tools).toBeDefined();
+    expect(Object.keys(arg.tools ?? {})).toContain("finish_task");
+  });
+
+  it("显式调用 finish_task 触发 explicit 终态并返回确认消息", async () => {
+    const manager = await makeFakeManager();
+    const POST = createAnalyzeHandler({ datasources: manager });
+    const res = await POST(makeRequest({ messages: [], apiKey: "k" }));
+    expect(res.status).toBe(200);
+
+    const arg = vi.mocked(streamText).mock.calls[0][0];
+    const finishTool = arg.tools?.finish_task as unknown as {
+      execute: (args: unknown) => Promise<unknown>;
+    };
+    expect(finishTool).toBeDefined();
+
+    const result = (await finishTool.execute({
+      status: "completed",
+      summary: "分析完成",
+    })) as {
+      terminated: boolean;
+      status: string;
+      summary: string;
+    };
+    expect(result.terminated).toBe(true);
+    expect(result.status).toBe("completed");
+    expect(result.summary).toBe("分析完成");
+  });
+
+  it("未调用 finish_task 且模型正常 stop 时，触发 natural 终态兜底", async () => {
+    vi.mocked(streamText).mockImplementation((opts) => {
+      return {
+        mergeIntoDataStream: vi.fn(() => {
+          opts.onStepFinish?.({
+            stepType: "tool-result",
+            toolCalls: [],
+            finishReason: "stop",
+            text: "分析完成",
+            usage: { promptTokens: 5000, completionTokens: 100 },
+          } as never);
+          opts.onFinish?.({ usage: { promptTokens: 5000 } } as never);
+        }),
+      } as never;
+    });
+
+    const manager = await makeFakeManager();
+    const POST = createAnalyzeHandler({ datasources: manager });
+    const res = await POST(makeRequest({ messages: [], apiKey: "k" }));
+    const text = await res.text();
+
+    expect(text).toContain('"type":"task_finish"');
+    expect(text).toContain('"termination":"natural"');
+  });
+
+  it("当因为达到上限截断时（finishReason=length），触发 step_limit_reached 终态", async () => {
+    vi.mocked(streamText).mockImplementation((opts) => {
+      return {
+        mergeIntoDataStream: vi.fn(() => {
+          opts.onStepFinish?.({
+            stepType: "tool-result",
+            toolCalls: [],
+            finishReason: "length",
+            text: "被截断",
+            usage: { promptTokens: 5000, completionTokens: 100 },
+          } as never);
+          opts.onFinish?.({ usage: { promptTokens: 5000 } } as never);
+        }),
+      } as never;
+    });
+
+    const manager = await makeFakeManager();
+    const POST = createAnalyzeHandler({ datasources: manager });
+    const res = await POST(makeRequest({ messages: [], apiKey: "k" }));
+    const text = await res.text();
+
+    expect(text).toContain('"type":"task_finish"');
+    expect(text).toContain('"termination":"step_limit_reached"');
+    expect(text).toContain('"status":"truncated"');
+  });
+
+  it("步数预算：请求体 maxSteps 与环境变量 LLM_MAX_STEPS 优先级", async () => {
+    const manager = await makeFakeManager();
+    const POST = createAnalyzeHandler({ datasources: manager });
+
+    // 请求体显式传 30
+    await POST(makeRequest({ messages: [], apiKey: "k", maxSteps: 30 }));
+    let arg = vi.mocked(streamText).mock.calls[0][0];
+    expect(arg.maxSteps).toBe(30);
+
+    // 环境变量 LLM_MAX_STEPS 覆盖默认值
+    process.env.LLM_MAX_STEPS = "25";
+    try {
+      await POST(makeRequest({ messages: [], apiKey: "k" }));
+      arg = vi.mocked(streamText).mock.calls[1][0];
+      expect(arg.maxSteps).toBe(25);
+    } finally {
+      delete process.env.LLM_MAX_STEPS;
+    }
+  });
+
+  it("流重连：正在运行的会话收到新请求时不重复调用 streamText，直接接入在途流", async () => {
+    vi.mocked(streamText).mockClear();
+    let finishStream: () => void;
+    vi.mocked(streamText).mockReturnValue({
+      toDataStreamResponse: () =>
+        new Response('0:"ok"\n', {
+          headers: { "x-vercel-ai-data-stream": "v1" },
+        }),
+      mergeIntoDataStream: (dataStream: { merge: (stream: ReadableStream) => void }) => {
+        dataStream.merge(
+          new ReadableStream({
+            start(controller) {
+              controller.enqueue('0:"chunk1"\n');
+              void new Promise<void>((resolve) => {
+                finishStream = resolve;
+              }).then(() => {
+                controller.enqueue('0:"chunk2"\n');
+                controller.close();
+              });
+            },
+          })
+        );
+      },
+    } as unknown as ReturnType<typeof streamText>);
+
+    const manager = await makeFakeManager();
+    const POST = createAnalyzeHandler({ datasources: manager });
+
+    // 第一次请求：启动后台流任务
+    const res1 = await POST(
+      makeRequest({ messages: [], apiKey: "k", sessionId: "sess_recon_test" })
+    );
+    expect(res1.status).toBe(200);
+    expect(POST.isSessionRunning("sess_recon_test")).toBe(true);
+    expect(vi.mocked(streamText)).toHaveBeenCalledTimes(1);
+
+    // 第二次请求（模拟页面刷新后 reconnect）：
+    const res2 = await POST(
+      makeRequest({ messages: [], apiKey: "k", sessionId: "sess_recon_test", reconnect: true })
+    );
+    expect(res2.status).toBe(200);
+    // 不应重复触发 streamText
+    expect(vi.mocked(streamText)).toHaveBeenCalledTimes(1);
+
+    // 结束在途流
+    finishStream!();
+
+    // 显式 stop 任务
+    const stopRes = await POST(
+      makeRequest({ action: "stop", sessionId: "sess_recon_test" } as never)
+    );
+    const stopJson = await stopRes.json();
+    expect(stopJson).toEqual({ ok: true, stopped: true });
+    expect(POST.isSessionRunning("sess_recon_test")).toBe(false);
   });
 });

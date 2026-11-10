@@ -68,7 +68,7 @@ export const ReportLayout: React.FC<ReportLayoutProps> = ({
       ) : null}
 
       {/* 全宽明细区 */}
-      {detail ? <div className="w-full">{detail}</div> : null}
+      {detail ? <div className="w-full space-y-4">{detail}</div> : null}
 
       {/* 结论区 */}
       {insights ? <div className="space-y-3">{insights}</div> : null}

@@ -91,7 +91,7 @@ function defaultConfig(): DatasourcesConfig {
 export const DB_TYPES = ["postgres", "mysql", "sqlite", "clickhouse"] as const;
 export type DbSourceType = (typeof DB_TYPES)[number];
 
-function isDbType(v: unknown): v is DbSourceType {
+export function isDbType(v: unknown): v is DbSourceType {
   return (
     v === "postgres" || v === "mysql" || v === "sqlite" || v === "clickhouse"
   );

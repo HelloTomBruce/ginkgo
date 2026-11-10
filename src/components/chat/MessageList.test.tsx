@@ -201,6 +201,52 @@ describe("MessageList 快捷滚动操作", () => {
     fireEvent.click(btn);
     expect(el.scrollTo).toHaveBeenCalledWith({ top: 0, behavior: "smooth" });
   });
+
+  it("会话初次加载或切换时自动调用 scrollTo 滚到底部", async () => {
+    const scrollToSpy = vi.fn();
+    const originalScrollTo = HTMLDivElement.prototype.scrollTo;
+    HTMLDivElement.prototype.scrollTo = scrollToSpy;
+    try {
+      render(<MessageList {...base} sessionId="sess-1" />);
+      await waitFor(() => {
+        expect(scrollToSpy).toHaveBeenCalled();
+      });
+    } finally {
+      HTMLDivElement.prototype.scrollTo = originalScrollTo;
+    }
+  });
+
+  it("多轮提问时渲染 DSH 风格消息快捷跳转按钮，点击展开提问目录并支持一键跳转", async () => {
+    const scrollIntoViewSpy = vi.fn();
+    window.HTMLElement.prototype.scrollIntoView = scrollIntoViewSpy;
+
+    const multiMessages: Message[] = [
+      { id: "u1", role: "user", content: "第一问：各渠道销售额" },
+      { id: "a1", role: "assistant", content: "这是回答一" },
+      { id: "u2", role: "user", content: "第二问：退款率对比分析" },
+      { id: "a2", role: "assistant", content: "这是回答二" },
+    ];
+
+    render(<MessageList {...base} messages={multiMessages} />);
+
+    // 快捷跳转按钮存在
+    const navBtn = screen.getByRole("button", { name: "消息快捷跳转" });
+    expect(navBtn).toBeInTheDocument();
+
+    // 点击展开浮窗
+    fireEvent.click(navBtn);
+    expect(screen.getAllByText("第一问：各渠道销售额")).toHaveLength(2);
+    expect(screen.getAllByText("第二问：退款率对比分析")).toHaveLength(2);
+
+    // 点击浮窗中的提问项触发跳转
+    fireEvent.click(screen.getAllByText("第一问：各渠道销售额")[1]);
+    expect(scrollIntoViewSpy).toHaveBeenCalledWith({ behavior: "smooth", block: "start" });
+
+    // 跳转后菜单自动收起
+    await waitFor(() => {
+      expect(screen.queryByText("关闭跳转菜单")).not.toBeInTheDocument();
+    });
+  });
 });
 
 describe("看板打印导出", () => {
@@ -757,6 +803,30 @@ describe("消息内容与工具执行按顺序交错渲染", () => {
 
     expect(screen.getByText("思考过程")).toBeInTheDocument();
     expect(screen.getByText("先分析用户需求")).toBeInTheDocument();
+    expect(screen.getByText("已完成思考")).toBeInTheDocument();
+  });
+
+  it("流式思考中展示活跃状态文案与指示器", () => {
+    const streamingReasoningMsg = {
+      id: "a-reasoning-streaming",
+      role: "assistant",
+      content: "",
+      parts: [
+        { type: "reasoning", reasoning: "正在规划数据探索方案..." },
+      ],
+    } as unknown as Message;
+
+    render(
+      <MessageList
+        {...baseProps}
+        status="streaming"
+        messages={[userMsg, streamingReasoningMsg]}
+      />
+    );
+
+    expect(screen.getByText("正在深度思考...")).toBeInTheDocument();
+    expect(screen.getByText("思考中")).toBeInTheDocument();
+    expect(screen.getByText("正在规划数据探索方案...")).toBeInTheDocument();
   });
 
   it("当模型输出文字规划但遗漏 PlanReviewCard 代码块时，兜底展示按此思路开始分析按钮并可点击触发", () => {

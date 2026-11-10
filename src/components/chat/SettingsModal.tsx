@@ -41,6 +41,10 @@ export interface SettingsModalProps {
   temperature: string;
   /** 最大输出 tokens（1024–65536），留空走服务端默认；Anthropic 端点必填 max_tokens */
   maxTokens: string;
+  /** 最大步数上限（1–100），留空走服务端默认 25 步（双重终态防死循环熔断） */
+  maxSteps?: string;
+  /** 上下文窗口容量（8192–2000000），留空根据模型自动推断 */
+  contextWindow?: string;
   /** 接口协议：openai 兼容（/chat/completions）或 anthropic（/v1/messages，如 Kimi Coding） */
   protocol: "openai" | "anthropic";
   onProviderChange: (v: string) => void;
@@ -50,6 +54,8 @@ export interface SettingsModalProps {
   onAccessTokenChange: (v: string) => void;
   onTemperatureChange: (v: string) => void;
   onMaxTokensChange: (v: string) => void;
+  onMaxStepsChange?: (v: string) => void;
+  onContextWindowChange?: (v: string) => void;
   onProtocolChange: (v: "openai" | "anthropic") => void;
   onSave: () => void;
   onClose: () => void;
@@ -126,6 +132,8 @@ export function SettingsModal({
   accessToken,
   temperature,
   maxTokens,
+  maxSteps = "",
+  contextWindow = "",
   protocol,
   onProviderChange,
   onApiKeyChange,
@@ -134,6 +142,8 @@ export function SettingsModal({
   onAccessTokenChange,
   onTemperatureChange,
   onMaxTokensChange,
+  onMaxStepsChange,
+  onContextWindowChange,
   onProtocolChange,
   onSave,
   onClose,
@@ -326,6 +336,48 @@ export function SettingsModal({
                 value={maxTokens}
                 onChange={(e) => onMaxTokensChange(e.target.value)}
                 placeholder="留空使用服务端默认 16384"
+                className="w-full p-2.5 rounded-lg border border-border bg-surface-sunken font-mono"
+              />
+            </div>
+
+            <div>
+              <label htmlFor="settings-context-window" className="block text-muted-foreground mb-1 font-medium flex items-center justify-between">
+                <span>上下文窗口大小（Context Window，支持如 1024000）</span>
+                <span className="font-mono text-foreground-faint">
+                  {contextWindow && Number(contextWindow) > 0
+                    ? `${Math.round(Number(contextWindow) / 1000)}k`
+                    : "自动推断"}
+                </span>
+              </label>
+              <input
+                id="settings-context-window"
+                type="number"
+                min="8192"
+                max="2000000"
+                step="1024"
+                value={contextWindow}
+                onChange={(e) => onContextWindowChange?.(e.target.value)}
+                placeholder="留空根据模型自动推断（如 128k/1000k）"
+                className="w-full p-2.5 rounded-lg border border-border bg-surface-sunken font-mono"
+              />
+            </div>
+
+            <div>
+              <label htmlFor="settings-max-steps" className="block text-muted-foreground mb-1 font-medium flex items-center justify-between">
+                <span>最大步数上限（Max Steps，工具调用与思考轮次上限）</span>
+                <span className="font-mono text-foreground-faint">
+                  {maxSteps && Number(maxSteps) > 0 ? `${maxSteps} 步` : "默认 25 步"}
+                </span>
+              </label>
+              <input
+                id="settings-max-steps"
+                type="number"
+                min="1"
+                max="100"
+                step="1"
+                value={maxSteps}
+                onChange={(e) => onMaxStepsChange?.(e.target.value)}
+                placeholder="留空使用默认 25 步（双重终态保证适时退出，最高100）"
                 className="w-full p-2.5 rounded-lg border border-border bg-surface-sunken font-mono"
               />
             </div>

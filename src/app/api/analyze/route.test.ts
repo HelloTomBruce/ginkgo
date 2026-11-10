@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { POST } from "./route";
+import { POST, GET } from "./route";
 
 /** 薄壳冒烟：接线正确性（包 handler + 应用数据源单例）经真实路由导出验证 */
 describe("POST /api/analyze 薄壳", () => {
@@ -33,5 +33,25 @@ describe("POST /api/analyze 薄壳", () => {
     const text = await res.text();
     expect(text).toContain("未检测到 LLM API Key");
     expect(text).toContain("「设置」");
+  });
+
+  it("GET /api/analyze 探针：无 sessionId 或无任务返回 running: false", async () => {
+    const res = await GET(new Request("http://localhost:3006/api/analyze?sessionId=sess_none"));
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data).toEqual({ running: false });
+  });
+
+  it("POST /api/analyze 支持 action: stop 显式中止任务", async () => {
+    const res = await POST(
+      new Request("http://localhost:3006/api/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "stop", sessionId: "sess_stop" }),
+      })
+    );
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data).toEqual({ ok: true, stopped: true });
   });
 });

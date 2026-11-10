@@ -85,7 +85,7 @@ export const ComparisonLayout: React.FC<ComparisonLayoutProps> = ({
       ) : null}
 
       {/* 底部结论区 */}
-      {verdict ? <div className="w-full">{verdict}</div> : null}
+      {verdict ? <div className="w-full space-y-4">{verdict}</div> : null}
     </div>
   );
 };

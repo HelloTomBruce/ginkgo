@@ -242,10 +242,12 @@ Dashboards whose components bind directly to query results can be refreshed late
     preamble,
     additionalRules: [
       "CRITICAL: After executing MCP tools, you MUST generate the final analysis and the complete ```openui ... ``` code block. Do NOT finish early with just punctuation or empty text.",
+      "Dual-Termination Contract (双重终态): Once data is retrieved and the full markdown analysis + ```openui ... ``` code block is output, you may conclude naturally (finishReason=stop), OR call `finish_task` to explicitly mark task closure. Do NOT call data retrieval tools after concluding your findings.",
       "Your response MUST contain valid openui-lang code inside ```openui and ``` code fence.",
       "root = Root(...) MUST be the first statement in the openui code block.",
       "Populate actual data rows/objects fetched from MCP tools inside the data arrays for charts, funnels, timelines, and tables.",
       "Aggregate in SQL, not in your head: GROUP BY/SUM/AVG/COUNT belong in the query; component rows must reuse the query result rows verbatim (no rounding, no computed extra columns).",
+      "Exact Column References & Quotes: When generating SQL for database or Excel/file sources, ALWAYS wrap column names with double quotes verbatim when they contain spaces, parentheses, brackets, or punctuation (e.g. SELECT \"场景 （对应五大场景，可对应多个）\" AS 场景 ...). NEVER omit, truncate, or abbreviate explanatory notes or suffixes. Excel/CSV header line breaks (Alt+Enter) are normalized to single spaces (e.g. \"专业 （对应六大专业，可对应多个）\"), do NOT write '\\n' or raw newlines inside SQL column names.",
       "Every data component MUST be assigned to a named variable (e.g. cac_table = DataTable(...)) — anonymous inline components cannot be refreshed later.",
       "Use MetricGrid([c1, c2, ...]) to display multiple MetricCard items.",
       "Include ReactiveSimulator when the user is asking about budget simulation, CAC projections, or ROI forecasts.",
@@ -306,10 +308,12 @@ The user just asked an analytical question. Your job:
     preamble,
     additionalRules: [
       "CRITICAL: In planning mode you MUST end your response with exactly one ```openui code block whose Root child is a single PlanReviewCard summarizing the plan. Do NOT stop after markdown text.",
+      "Dual-Termination: You may conclude naturally after generating the PlanReviewCard, or call `finish_task` to explicitly mark planning completion.",
       "必须输出确认卡：在第四部分「澄清点说明」之后，必须紧随 ```openui 代码块输出 PlanReviewCard。绝对不可遗漏代码块。",
       "Do NOT generate MetricCard/AnalyticsChart/FunnelChart with real aggregated data in this round — those belong to the execution round after user confirmation.",
       "Every clarification question must carry options or a default assumption; unanswered questions will be resolved with the default.",
       "Populate sources/steps with facts you verified via schema discovery or sampling, never invented names.",
+      "Exact Column References: In discovery sampling queries, always quote column names verbatim in double quotes when they contain spaces, parentheses, or brackets (e.g. \"场景 （对应五大场景，可对应多个）\"). Never truncate column headers, and do not use '\\n' for multiline Excel headers (normalized to single spaces).",
     ],
     examples: [planExample],
   };
@@ -333,6 +337,8 @@ ${methodDetailsSection(methodDetails)}
 ## Confirmed Plan Execution Mode:
 The conversation history contains an analysis plan (PlanReviewCard) the user has now confirmed, possibly with clarification answers.
 - Execute the confirmed plan now: skip re-planning, do not ask further questions. Fetch the real data and produce the complete analytical markdown report plus the full \`\`\`openui dashboard following the confirmed steps and chosen visuals.
+- Exact Column References: Always reference exact column names in SQL, wrapping any column containing spaces, parentheses, or brackets in double quotes (e.g. \"场景 （对应五大场景，可对应多个）\"). Never truncate or fabricate column headers, and do not use '\\n' for multiline Excel headers (normalized to single spaces).
+- Dual-Termination: When your analysis and dashboard are complete, you can conclude naturally, or call \`finish_task\` to explicitly confirm execution closure.
 - If the user's latest message fundamentally changes or rejects the confirmed plan, do NOT force the old plan — output a REVISED PlanReviewCard instead (planning-mode output contract applies).
 - If the user's latest message is an unrelated new question, just answer it following the normal rules above.`;
 }

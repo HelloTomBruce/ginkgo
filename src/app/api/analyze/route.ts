@@ -21,3 +21,12 @@ export const POST = createAnalyzeHandler({
     },
   },
 });
+
+export async function GET(req: Request) {
+  const { searchParams } = new URL(req.url);
+  const sessionId = searchParams.get("sessionId");
+  if (!sessionId) {
+    return Response.json({ running: false });
+  }
+  return Response.json({ running: POST.isSessionRunning(sessionId) });
+}

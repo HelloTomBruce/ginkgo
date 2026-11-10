@@ -67,7 +67,7 @@ export const FocusLayout: React.FC<FocusLayoutProps> = ({
       ) : null}
 
       {/* 底部全宽明细区 */}
-      {detail ? <div className="w-full">{detail}</div> : null}
+      {detail ? <div className="w-full space-y-4">{detail}</div> : null}
     </div>
   );
 };

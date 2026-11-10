@@ -4,6 +4,8 @@ import {
   tool,
   jsonSchema,
   createDataStreamResponse,
+  wrapLanguageModel,
+  extractReasoningMiddleware,
   type CoreMessage,
   type CoreTool,
 } from "ai";
@@ -34,6 +36,8 @@ import {
 } from "@openui-analytics/methodology";
 import { getOpenUISystemPrompt, getOpenUIPlanPrompt, getExecuteSystemPrompt } from "./prompt";
 import { getCrossSourceLinks, resolveCrossSourcePairs } from "./crossSourceMap";
+import { SessionStreamHub, defaultStreamHub } from "./streamHub";
+import { createReasoningFetch } from "./reasoningStream";
 
 /** 全部启用源结构卡注入 prompt 的总量预算（与单卡 2KB 预算配套，快照测试守护） */
 export const SCHEMA_DIGEST_TOTAL_BUDGET_BYTES = 8 * 1024;
@@ -130,9 +134,13 @@ export interface AnalyzeHandlerOptions {
   methodology?: MethodLibrary;
   /** 会话上下文存取（可选注入；应用层为 src/lib/sessionStore 的适配器） */
   sessions?: SessionContextStore;
+  /** 会话流中继中枢（可选注入；缺省全局单例 defaultStreamHub） */
+  streamHub?: SessionStreamHub;
 }
 
 export interface AnalyzeRequestBody {
+  action?: string;
+  reconnect?: boolean;
   messages?: unknown[];
   apiKey?: string;
   baseURL?: string;
@@ -159,6 +167,8 @@ export interface AnalyzeRequestBody {
   sessionId?: string;
   /** 客户端提供的模型窗口 hint（provider catalog 值；缺省服务端查表） */
   contextWindow?: number | string;
+  /** 步数上限（Agent 循环熔断兜底），缺省 plan 6 步，execute/direct 10 步 */
+  maxSteps?: number | string;
   /** 历史透传字段（如 gitlabUrl/gitlabToken）被忽略的现状保持 */
   [key: string]: unknown;
 }
@@ -169,6 +179,7 @@ export interface AnalyzeRequestBody {
  */
 export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
   const { datasources, sessions } = opts;
+  const streamHub = opts.streamHub ?? defaultStreamHub;
 
   // 方法论库：注入或缺省内置；索引文本在工厂期渲染一次（库不变无需逐请求重算）
   const methodLibrary: MethodLibrary =
@@ -176,8 +187,17 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
     createMethodLibrary({ builtin: builtinMethodCards }).library;
   const methodIndexText = renderMethodIndex(methodLibrary.cards);
 
-  return async function POST(req: Request) {
+  const POST = async function (req: Request) {
     try {
+      const rawBody = (await req.json()) as AnalyzeRequestBody;
+      if (rawBody && typeof rawBody === "object" && rawBody.action === "stop") {
+        const sid = rawBody.sessionId;
+        if (sid) {
+          streamHub.abortTask(sid);
+        }
+        return Response.json({ ok: true, stopped: true });
+      }
+
       const {
         messages = [],
         apiKey: clientKey,
@@ -190,7 +210,17 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
         mode: clientMode,
         sessionId: clientSessionId,
         contextWindow: clientContextWindow,
-      } = (await req.json()) as AnalyzeRequestBody;
+        maxSteps: clientMaxSteps,
+      } = rawBody;
+
+      // 检查是否为流重连请求（如页面刷新后客户端发起无缝续接）：
+      // 若带有 reconnect 标记且服务端保留有该会话在途或刚完成的流任务，直接返回重连流
+      const isReconnect = Boolean(rawBody && typeof rawBody === "object" && rawBody.reconnect);
+      if (clientSessionId && isReconnect && streamHub.hasTask(clientSessionId)) {
+        console.log(`[StreamHub] Reconnecting to task for session ${clientSessionId}`);
+        const reconnResp = streamHub.createResponse(clientSessionId);
+        if (reconnResp) return reconnResp;
+      }
 
       const apiKey = clientKey || process.env.OPENAI_API_KEY || process.env.LLM_API_KEY;
       const baseURL = clientBaseURL || process.env.OPENAI_BASE_URL || process.env.LLM_BASE_URL || "https://api.openai.com/v1";
@@ -217,7 +247,26 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
       const mode =
         clientMode === "plan" || clientMode === "execute" ? clientMode : "direct";
 
-      console.log("[Analyze API Request]", { model, baseURL, protocol: clientProtocol ?? "openai", mode, hasApiKey: !!apiKey });
+      // 步数预算（maxSteps 熔断上限）：客户端透传优先，其次环境变量 LLM_PLAN_MAX_STEPS / LLM_MAX_STEPS，
+      // 缺省时默认 25 步（防死循环熔断上限；双重终态机制保证模型在目标达成时通过 finish_task 或自然 stop 主动提前结束）
+      const parsedClientMaxSteps = Number(clientMaxSteps);
+      const envMaxSteps = Number(process.env.LLM_MAX_STEPS);
+      const envPlanMaxSteps = Number(process.env.LLM_PLAN_MAX_STEPS);
+      const baseDefaultMaxSteps =
+        Number.isFinite(envMaxSteps) && envMaxSteps > 0 ? envMaxSteps : 25;
+      const defaultMaxSteps =
+        mode === "plan"
+          ? Number.isFinite(envPlanMaxSteps) && envPlanMaxSteps > 0
+            ? envPlanMaxSteps
+            : baseDefaultMaxSteps
+          : baseDefaultMaxSteps;
+      const rawMaxSteps =
+        Number.isFinite(parsedClientMaxSteps) && parsedClientMaxSteps > 0
+          ? parsedClientMaxSteps
+          : defaultMaxSteps;
+      const maxSteps = Math.min(Math.max(Math.round(rawMaxSteps), 1), 100);
+
+      console.log("[Analyze API Request]", { model, baseURL, protocol: clientProtocol ?? "openai", mode, maxSteps, hasApiKey: !!apiKey });
 
       // 安全约束：客户端自带 baseURL 时必须同时自带 apiKey。
       // 否则服务端会拿着 env 中的真实 Key 去请求客户端指定的任意 URL —— 凭证外泄通道。
@@ -248,10 +297,19 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
       const anthropicBase = /\/v1$/.test(normalizedBase)
         ? normalizedBase
         : `${normalizedBase}/v1`;
-      const languageModel =
+      const baseModel =
         clientProtocol === "anthropic"
           ? createAnthropic({ apiKey, baseURL: anthropicBase })(model)
-          : createOpenAI({ apiKey, baseURL: normalizedBase })(model);
+          : createOpenAI({ apiKey, baseURL: normalizedBase, fetch: createReasoningFetch() })(model);
+
+      // 提取 <think>...</think> 标签为标准 reasoning 分块（统一兼容 DeepSeek/Qwen 以及经由 createReasoningFetch 拦截转换的 GLM/Moonshot 等）
+      const languageModel =
+        baseModel && typeof baseModel === "object"
+          ? wrapLanguageModel({
+              model: baseModel,
+              middleware: extractReasoningMiddleware({ tagName: "think" }),
+            })
+          : baseModel;
 
       // 会话级数据源：请求 id ∩ 全局启用 ∩ 实际存在；未知 id 忽略并告警
       const activeSources = datasources.resolveActive(
@@ -417,10 +475,55 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
       }
 
       // 使用现代 createDataStreamResponse 管理流生命周期，避免旧 StreamData 15秒悬挂超时警告与异常中止泄漏
-      return createDataStreamResponse({
+      const rawResponse = createDataStreamResponse({
         execute: (dataStream) => {
           // 跟踪最后一步的单步输入 promptTokens（反映对话历史的真实单次窗口占用峰值）
           let lastStepPromptTokens: number | undefined;
+          let lastStepFinishReason: string | undefined;
+          let explicitFinishDetails: { status: string; summary?: string } | undefined;
+
+          // 双重终态机制：显式终态工具 finish_task
+          const finishTaskTool = tool({
+            description:
+              "显式宣告分析/规划任务已达成终态并闭环。当数据获取完毕、分析结论和可视化看板或规划卡已就绪时调用。调用此工具表示本轮取数全部结束，无需再发起其他数据查询。",
+            parameters: jsonSchema<{
+              status: "completed" | "insufficient_data" | "blocked";
+              summary?: string;
+            }>({
+              type: "object",
+              properties: {
+                status: {
+                  type: "string",
+                  enum: ["completed", "insufficient_data", "blocked"],
+                  description:
+                    "任务终态状态：completed（分析完成并已输出结论/看板）、insufficient_data（必要数据缺失或查询无果）、blocked（遇到阻塞错误）",
+                },
+                summary: {
+                  type: "string",
+                  description: "分析结果或终态说明的一句话简要总结",
+                },
+              },
+              required: ["status"],
+            }),
+            execute: async ({ status, summary }) => {
+              explicitFinishDetails = { status, summary };
+              console.log(
+                `[Dual-Termination] Explicit finish_task invoked: status=${status}, summary=${summary || ""}`
+              );
+              dataStream.writeData({
+                type: "task_finish",
+                termination: "explicit",
+                status,
+                summary: summary ?? "",
+              });
+              return {
+                terminated: true,
+                status,
+                summary: summary ?? "",
+                message: "分析任务终态已确认。请输出最终分析结果与看板（若已输出则直接结束）。",
+              };
+            },
+          });
 
           const result = streamText({
             model: languageModel,
@@ -433,10 +536,11 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
             tools: {
               ...loadedTools,
               ...crossSourceTools,
+              finish_task: finishTaskTool,
             },
-            // 规划阶段只需 schema 探查 + 小样本，步数预算收紧；执行/直出保持 10
-            maxSteps: mode === "plan" ? 6 : 10,
+            maxSteps,
             onStepFinish({ stepType, toolCalls, text, finishReason, usage }) {
+              lastStepFinishReason = finishReason;
               console.log(
                 `[Vercel AI SDK Step Finish] type=${stepType}, finishReason=${finishReason}, toolCalls=${toolCalls?.length || 0}, textLength=${text?.length || 0}`
               );
@@ -460,6 +564,32 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
                 });
               }
 
+              // 双重终态判定：若未被显式 finish_task 捕获，则评估自然停止与截断兜底
+              if (!explicitFinishDetails) {
+                if (lastStepFinishReason === "stop" || lastStepFinishReason === undefined) {
+                  console.log("[Dual-Termination] Concluded via natural termination (finishReason=stop)");
+                  dataStream.writeData({
+                    type: "task_finish",
+                    termination: "natural",
+                    status: "completed",
+                  });
+                } else if (lastStepFinishReason === "length") {
+                  console.warn("[Dual-Termination] Concluded via step limit / token length truncation");
+                  dataStream.writeData({
+                    type: "task_finish",
+                    termination: "step_limit_reached",
+                    status: "truncated",
+                  });
+                } else {
+                  console.log(`[Dual-Termination] Concluded with finishReason=${lastStepFinishReason}`);
+                  dataStream.writeData({
+                    type: "task_finish",
+                    termination: lastStepFinishReason,
+                    status: "completed",
+                  });
+                }
+              }
+
               if (
                 sessions &&
                 typeof clientSessionId === "string" &&
@@ -475,15 +605,20 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
             },
           });
 
-          result.mergeIntoDataStream(dataStream);
+          result.mergeIntoDataStream(dataStream, { sendReasoning: true });
         },
         onError: (err: unknown) => {
           console.error("[AI SDK Stream Error]:", err);
           return err instanceof Error ? err.message : String(err);
         },
       });
+
+      if (clientSessionId) {
+        return streamHub.registerAndConsume(clientSessionId, rawResponse);
+      }
+      return rawResponse;
     } catch (err: unknown) {
-      console.error("Vercel AI SDK Route error:", err);
+      console.error("Vercel AI SDK Route error in handler:", err);
       const errorMessage = err instanceof Error ? err.message : "Unknown error";
       return new Response(
         `3:${JSON.stringify(errorMessage)}\n`,
@@ -497,4 +632,10 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
       );
     }
   };
+
+  POST.isSessionRunning = (sessionId: string) => streamHub.hasRunningTask(sessionId);
+  POST.abortSession = (sessionId: string) => streamHub.abortTask(sessionId);
+  POST.streamHub = streamHub;
+
+  return POST;
 }

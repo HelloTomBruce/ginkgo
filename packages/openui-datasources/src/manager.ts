@@ -52,8 +52,9 @@ export interface DataSourceDescriptor {
   hasToken?: boolean;
   maskedUrl?: string;
   maskedConnectionString?: string;
-  /** stdio 源的命令非机密，可回传用于编辑展示 */
+  /** stdio 源的命令与参数非机密，可回传用于编辑展示 */
   command?: string;
+  args?: string[];
 }
 
 export interface HealthResult {
@@ -317,6 +318,7 @@ export function describeDynamicSource(
     tools: [],
     enabled: config.enabled,
     command: config.command,
+    args: config.args,
   };
 }
 
@@ -538,7 +540,7 @@ export function createDatasourceManager(opts: {
       cardLifecycle.ensure(source);
       if (entry.bindings) return entry.bindings;
       // listTools 走会话自愈：成功连接用于构建 bindings（连接可能是重试后的新连接）
-      const { result: mcpTools, connection } = await withSessionRetry(
+      const { result: mcpTools } = await withSessionRetry(
         source,
         (conn) => conn.listTools()
       );

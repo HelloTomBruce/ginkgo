@@ -106,19 +106,32 @@ export interface UpdateSessionInput {
 /** 局部更新会话；失败返回 null（成功返回最新摘要） */
 export async function updateSessionApi(
   id: string,
-  input: UpdateSessionInput
+  input: UpdateSessionInput,
+  options?: { keepalive?: boolean }
 ): Promise<SessionSummary | null> {
   try {
+    const bodyStr = JSON.stringify(input);
+    // 浏览器规范：keepalive 开启时，单个或累积 in-flight 请求体积上限严格为 64KB (65536 字节)
+    // 超过 64KB 时浏览器直接抛出 TypeError。因此必须在体积安全且显式需要时才启用
+    const useKeepalive = Boolean(
+      options?.keepalive && typeof bodyStr === "string" && bodyStr.length < 60000
+    );
     const res = await fetch(`/api/sessions/${id}`, {
       method: "PUT",
       headers: { "content-type": "application/json", ...authHeaders() },
-      body: JSON.stringify(input),
+      body: bodyStr,
+      ...(useKeepalive ? { keepalive: true } : {}),
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      const errText = await res.text().catch(() => "");
+      console.warn(`[updateSessionApi] HTTP ${res.status}: ${errText}`);
+      return null;
+    }
     const body = await res.json().catch(() => null);
     const session = (body as { session?: unknown } | null)?.session;
     return session ? (session as SessionSummary) : null;
-  } catch {
+  } catch (err) {
+    console.warn("[updateSessionApi] Network / runtime error:", err);
     return null;
   }
 }

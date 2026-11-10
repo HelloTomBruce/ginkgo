@@ -99,29 +99,46 @@ function assertSafeIdentifier(identifier: string): string {
   return identifier;
 }
 
+/** 单元格值转纯文本 */
+function cellToString(value: ExcelJS.CellValue): string {
+  if (value === null || value === undefined) return "";
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+  if (typeof value === "object") {
+    if ("richText" in value && Array.isArray(value.richText)) {
+      return value.richText.map((t) => t.text).join("");
+    }
+    if ("result" in value) {
+      const r = value.result;
+      return r === null || r === undefined
+        ? ""
+        : r instanceof Date
+          ? r.toISOString()
+          : String(r);
+    }
+    if ("text" in value) {
+      return String(value.text);
+    }
+    if ("error" in value) {
+      return "";
+    }
+    return String(value);
+  }
+  return String(value);
+}
+
 /** Excel 单元格 → CSV 字段文本（含 RFC-4180 转义） */
 function csvCell(value: ExcelJS.CellValue): string {
-  if (value === null || value === undefined) return "";
-  let s: string;
-  if (value instanceof Date) {
-    s = value.toISOString();
-  } else if (typeof value === "object") {
-    if ("richText" in value && Array.isArray(value.richText)) {
-      s = value.richText.map((t) => t.text).join("");
-    } else if ("result" in value) {
-      const r = value.result;
-      s = r === null || r === undefined ? "" : r instanceof Date ? r.toISOString() : String(r);
-    } else if ("text" in value) {
-      s = String(value.text);
-    } else if ("error" in value) {
-      s = "";
-    } else {
-      s = String(value);
-    }
-  } else {
-    s = String(value);
-  }
+  const s = cellToString(value);
   return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+/** Excel 表头单元格 → CSV 表头字段（换行符归一化为单空格，与 DuckDB 列名对齐） */
+function csvHeaderCell(value: ExcelJS.CellValue): string {
+  const raw = cellToString(value);
+  const s = raw.replace(/[\r\n]+/g, " ").trim();
+  return /[",]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
 /** DuckDB 读取器：csv（含 excel 临时 CSV）/ parquet / json（json+ndjson 通吃） */
@@ -263,7 +280,12 @@ async function excelToCsvSpecs(
     const rows: string[] = [];
     worksheet.eachRow({ includeEmpty: false }, (row) => {
       const values = (row.values as ExcelJS.CellValue[]).slice(1);
-      rows.push(values.map(csvCell).join(","));
+      if (rows.length === 0) {
+        // 表头首行：换行符归一化为单空格，保证 CSV 与 DuckDB 列名一致
+        rows.push(values.map(csvHeaderCell).join(","));
+      } else {
+        rows.push(values.map(csvCell).join(","));
+      }
     });
     while (rows.length > 0 && rows[rows.length - 1].trim() === "") rows.pop();
     if (rows.length > 0) {

@@ -46,8 +46,10 @@ const IS_DEV = process.env.NODE_ENV === "development";
 function deriveContextUsage(
   data: unknown,
   fallbackPromptTokens: number | null,
-  model: string
+  model: string,
+  contextWindowHint?: string | number
 ): { promptTokens: number; window: number } | null {
+  const windowSize = resolveContextWindow(model, contextWindowHint);
   if (Array.isArray(data) && data.length > 0) {
     for (let i = data.length - 1; i >= 0; i--) {
       const item = data[i] as { type?: string; promptTokens?: number } | null;
@@ -57,12 +59,12 @@ function deriveContextUsage(
         typeof item.promptTokens === "number" &&
         item.promptTokens > 0
       ) {
-        return { promptTokens: item.promptTokens, window: resolveContextWindow(model) };
+        return { promptTokens: item.promptTokens, window: windowSize };
       }
     }
   }
   if (typeof fallbackPromptTokens === "number" && fallbackPromptTokens > 0) {
-    return { promptTokens: fallbackPromptTokens, window: resolveContextWindow(model) };
+    return { promptTokens: fallbackPromptTokens, window: windowSize };
   }
   return null;
 }
@@ -93,6 +95,10 @@ export default function ChatDashboard() {
     setTemperature,
     maxTokens,
     setMaxTokens,
+    maxSteps,
+    setMaxSteps,
+    contextWindow,
+    setContextWindow,
     protocol,
     setProtocol,
     authHeaders,
@@ -257,7 +263,7 @@ export default function ChatDashboard() {
   // 1. 优先从 data（服务端 StreamData 下发的最后一步真实单步 promptTokens）读取；
   // 2. 其次回退到 onFinish 记录的 fallbackPromptTokens（兼容无 StreamData 场景）；
   // 3. 实时轻量求值，零 useEffect 级联渲染
-  const contextUsage = deriveContextUsage(data, fallbackPromptTokens, model);
+  const contextUsage = deriveContextUsage(data, fallbackPromptTokens, model, contextWindow);
 
   // useChat 就绪后注入 setMessages 与最新消息快照（均由 useSessionManager 内部持有）
   useEffect(() => {
@@ -266,6 +272,59 @@ export default function ChatDashboard() {
   useEffect(() => {
     syncMessages(messages);
   }, [messages, syncMessages]);
+
+  // 流式中进度快照与页面离开保护：
+  // 1. 每当 messages 更新且处于生成中（isLoading），节流存盘（避免刷新或意外关闭导致已生成内容全丢）
+  // 2. 页面刷新/关闭（beforeunload/pagehide）时立即进行最终落盘
+  const lastSaveTimeRef = useRef(0);
+  const saveTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    if (!isLoading || !streamingSessionIdRef.current) return;
+    const now = Date.now();
+    const sessionId = streamingSessionIdRef.current;
+
+    // 节流 2.5 秒保存一次增量进度（流式中间进度静默保存，不打扰用户）
+    if (now - lastSaveTimeRef.current > 2500) {
+      lastSaveTimeRef.current = now;
+      saveCurrentSessionMessages(messages, sessionId, { silent: true });
+    } else if (!saveTimerRef.current) {
+      saveTimerRef.current = setTimeout(() => {
+        saveTimerRef.current = null;
+        lastSaveTimeRef.current = Date.now();
+        saveCurrentSessionMessages(getMessages(), sessionId, { silent: true });
+      }, 2500);
+    }
+  }, [messages, isLoading, saveCurrentSessionMessages, getMessages]);
+
+  useEffect(() => {
+    return () => {
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    const handleUnload = () => {
+      if (isLoading && streamingSessionIdRef.current) {
+        const msgs = getMessages();
+        if (msgs.length > 0) {
+          saveCurrentSessionMessages(msgs, streamingSessionIdRef.current, {
+            silent: true,
+            keepalive: true,
+          });
+        }
+      }
+    };
+    window.addEventListener("beforeunload", handleUnload);
+    window.addEventListener("pagehide", handleUnload);
+    return () => {
+      window.removeEventListener("beforeunload", handleUnload);
+      window.removeEventListener("pagehide", handleUnload);
+    };
+  }, [isLoading, getMessages, saveCurrentSessionMessages]);
 
   // 会话开始（存在用户消息）即锁定数据源选择：仅初始会话（只有欢迎语）可勾选
   const sourcesLocked = messages.some((m) => m.role === "user");
@@ -292,6 +351,35 @@ export default function ChatDashboard() {
     return {};
   }, [awaitingPlanConfirm, planMode]);
 
+  // 页面刷新 / 会话挂载后无缝重连：
+  // 若服务端当前会话仍有在途后台流式任务，自动发起 reload 重连，无缝续接输出
+  useEffect(() => {
+    if (!sessionsLoaded || !currentSessionId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(
+          `/api/analyze?sessionId=${encodeURIComponent(currentSessionId)}`,
+          { headers: { ...authHeaders() } }
+        );
+        if (!res.ok) return;
+        const data = (await res.json()) as { running?: boolean };
+        if (!cancelled && data.running && !isLoading) {
+          console.log(
+            `[ChatDashboard] Active session ${currentSessionId} is running on server, reconnecting stream...`
+          );
+          streamingSessionIdRef.current = currentSessionId;
+          void reload({ body: { ...nextModeBody(), reconnect: true } });
+        }
+      } catch {
+        // ignore
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionsLoaded, currentSessionId, isLoading, reload, nextModeBody, authHeaders]);
+
   // 提交/追加消息时记录发起会话，供 onFinish 定向保存
   const handleChatSubmit = useCallback(
     (e?: React.FormEvent<HTMLFormElement>) => {
@@ -312,12 +400,20 @@ export default function ChatDashboard() {
   // 暂停/中止当前会话生成（保留已有内容并即刻持久化）
   const handleStop = useCallback(() => {
     stop();
+    const activeId = streamingSessionIdRef.current;
+    if (activeId) {
+      void fetch("/api/analyze", {
+        method: "POST",
+        headers: { "content-type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ action: "stop", sessionId: activeId }),
+      }).catch(() => {});
+    }
     saveCurrentSessionMessages(
       getMessages(),
-      streamingSessionIdRef.current ?? undefined
+      activeId ?? undefined
     );
     toast("已暂停生成", "info");
-  }, [stop, getMessages, saveCurrentSessionMessages]);
+  }, [stop, getMessages, saveCurrentSessionMessages, authHeaders]);
 
   // 分叉：从该消息复制前缀历史生成新会话（hook 内完成切换与落盘）
   const handleForkMessage = useCallback(
@@ -612,6 +708,8 @@ export default function ChatDashboard() {
 
         {sessionsLoaded ? (
           <MessageList
+            key={currentSessionId}
+            sessionId={currentSessionId}
             messages={messages}
             status={status}
             error={error}
@@ -709,6 +807,8 @@ export default function ChatDashboard() {
           accessToken={accessToken}
           temperature={temperature}
           maxTokens={maxTokens}
+          maxSteps={maxSteps}
+          contextWindow={contextWindow}
           protocol={protocol}
           onProviderChange={applyProvider}
           onApiKeyChange={setApiKey}
@@ -717,6 +817,8 @@ export default function ChatDashboard() {
           onAccessTokenChange={setAccessToken}
           onTemperatureChange={setTemperature}
           onMaxTokensChange={setMaxTokens}
+          onMaxStepsChange={setMaxSteps}
+          onContextWindowChange={setContextWindow}
           onProtocolChange={setProtocol}
           onSave={saveSettings}
           onClose={handleCloseSettings}

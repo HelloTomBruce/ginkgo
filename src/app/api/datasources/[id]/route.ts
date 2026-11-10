@@ -1,5 +1,6 @@
 import {
   describeDynamicSource,
+  isDbType,
   type DynamicSourceConfig,
 } from "@openui-analytics/datasources";
 import { datasources } from "@/lib/datasources";
@@ -39,6 +40,9 @@ export async function PATCH(
       ...(existing.kind === "db" &&
       typeof body.connectionString === "string"
         ? { connectionString: body.connectionString }
+        : {}),
+      ...(existing.kind === "db" && isDbType(body.dbType)
+        ? { dbType: body.dbType }
         : {}),
       ...(existing.kind === "stdio-cli" && typeof body.command === "string"
         ? { command: body.command.trim() }

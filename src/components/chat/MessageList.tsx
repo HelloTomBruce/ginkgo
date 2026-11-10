@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Message } from "@ai-sdk/react";
-import { ArrowDown, ArrowUp, Loader2, Sparkles, FileCode, Printer, Star, GitFork, RotateCcw, Square, Play } from "lucide-react";
+import { ArrowDown, ArrowUp, Loader2, Sparkles, FileCode, Printer, Star, GitFork, RotateCcw, Square, Play, Brain, ListOrdered, X } from "lucide-react";
 import { OpenUIRenderer } from "@/components/OpenUIRenderer";
 import { Hint } from "@/components/ui/hint";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -45,6 +45,7 @@ type ReasoningBlock = {
   type: "reasoning";
   id: string;
   reasoning: string;
+  isLast: boolean;
 };
 
 type ContentBlock = TextBlock | ToolsBlock | ReasoningBlock;
@@ -82,6 +83,85 @@ function toolBadgeText(
   }
   return `⚡ [MCP Tool] 调用: ${toolName}`;
 }
+
+/**
+ * 深度思考过程展示器：
+ * - 流式思考中（active）自动展开，伴随脉冲呼吸灯、光标动画与实时自动平滑滚动；
+ * - 思考完成后默认收起为精简状态，支持用户自由展开/折叠查验完整推理链；
+ * - 若用户主动点击切换折叠状态，优先遵从用户的手动选择。
+ */
+const ReasoningViewer = React.memo(function ReasoningViewer({
+  reasoning,
+  isStreaming,
+  isLast,
+}: {
+  reasoning: string;
+  isStreaming: boolean;
+  isLast: boolean;
+}) {
+  const isActivelyThinking = isStreaming && isLast;
+  const [userToggled, setUserToggled] = useState<boolean | null>(null);
+  const isOpen = userToggled !== null ? userToggled : isActivelyThinking;
+  const contentRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (isActivelyThinking && contentRef.current) {
+      contentRef.current.scrollTop = contentRef.current.scrollHeight;
+    }
+  }, [reasoning, isActivelyThinking]);
+
+  return (
+    <details
+      open={isOpen}
+      onToggle={(e) => {
+        setUserToggled((e.target as HTMLDetailsElement).open);
+      }}
+      className={`no-print text-xs rounded-xl border transition-all ${
+        isActivelyThinking
+          ? "bg-info-soft/40 border-info-border"
+          : "bg-surface-sunken border-border"
+      }`}
+    >
+      <summary className="cursor-pointer font-medium select-none flex items-center justify-between px-3 py-2 text-foreground-subtle hover:text-foreground-strong">
+        <div className="flex items-center gap-2">
+          <Brain
+            className={`w-3.5 h-3.5 transition-colors ${
+              isActivelyThinking
+                ? "text-info-fg animate-pulse"
+                : "text-foreground-faint"
+            }`}
+          />
+          <span className={isActivelyThinking ? "text-info-fg font-medium" : ""}>
+            {isActivelyThinking ? "正在深度思考..." : "思考过程"}
+          </span>
+        </div>
+        <div>
+          {isActivelyThinking ? (
+            <span className="text-[10px] bg-info-soft-strong text-info-fg-strong px-2 py-0.5 rounded font-sans font-medium flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-info-solid animate-ping" />
+              思考中
+            </span>
+          ) : (
+            <span className="text-[10px] bg-surface-subtle text-foreground-faint px-1.5 py-0.5 rounded font-sans">
+              已完成思考
+            </span>
+          )}
+        </div>
+      </summary>
+      <div
+        ref={contentRef}
+        className="px-3 pb-3 pt-1 border-t border-border/50 max-h-72 overflow-y-auto font-mono text-[11px] leading-relaxed text-foreground-subtle"
+      >
+        <div className="whitespace-pre-wrap opacity-90 break-words">
+          {reasoning}
+          {isActivelyThinking && (
+            <span className="inline-block w-1.5 h-3 bg-info-solid animate-pulse ml-0.5 align-middle rounded-xs" />
+          )}
+        </div>
+      </div>
+    </details>
+  );
+});
 
 /**
  * 单条消息（memo 化）。流式期间仅最后一条消息的 content/parts 变化，
@@ -151,6 +231,7 @@ const MessageItem = React.memo(function MessageItem({
               type: "reasoning",
               id: `reasoning-${idx}`,
               reasoning: part.reasoning,
+              isLast: idx === parts.length - 1,
             });
           }
         }
@@ -184,6 +265,8 @@ const MessageItem = React.memo(function MessageItem({
   if (msg.role === "user") {
     return (
       <div
+        id={`message-${msg.id}`}
+        data-message-id={msg.id}
         className={`print-message flex flex-col items-end${
           isPrintTarget ? " print-target" : ""
         }`}
@@ -242,6 +325,8 @@ const MessageItem = React.memo(function MessageItem({
 
   return (
     <div
+      id={`message-${msg.id}`}
+      data-message-id={msg.id}
       className={`print-message flex flex-col items-start${
         isPrintTarget ? " print-target" : ""
       }`}
@@ -288,17 +373,12 @@ const MessageItem = React.memo(function MessageItem({
 
           if (block.type === "reasoning") {
             return (
-              <details
+              <ReasoningViewer
                 key={block.id}
-                className="no-print text-xs text-foreground-subtle bg-surface-sunken rounded-lg p-2.5 border border-border"
-              >
-                <summary className="cursor-pointer font-medium select-none flex items-center gap-1.5 text-foreground-faint hover:text-foreground-strong">
-                  <span>思考过程</span>
-                </summary>
-                <div className="mt-2 whitespace-pre-wrap font-mono text-[11px] leading-relaxed opacity-80">
-                  {block.reasoning}
-                </div>
-              </details>
+                reasoning={block.reasoning}
+                isStreaming={isStreaming}
+                isLast={block.isLast}
+              />
             );
           }
 
@@ -457,6 +537,7 @@ const MessageItem = React.memo(function MessageItem({
 });
 
 interface MessageListProps {
+  sessionId?: string;
   messages: Message[];
   /** useChat 状态：submitted | streaming | ready | error */
   status: string;
@@ -483,6 +564,7 @@ interface MessageListProps {
 const SCROLL_EDGE_THRESHOLD = 120;
 
 export function MessageList({
+  sessionId,
   messages,
   status,
   error,
@@ -499,10 +581,12 @@ export function MessageList({
   // isLoading 与 status 同源，内部派生避免双重传参
   const isLoading = status === "submitted" || status === "streaming";
 
-  // 快捷滚动：右侧悬浮「回到顶部/回到底部」，仅在离开对应边缘时出现
+  // 快捷滚动与导航：右侧悬浮 DSH 风格「回到顶部 / 消息提问跳转 / 回到底部」
   const scrollRef = useRef<HTMLDivElement>(null);
   const [atTop, setAtTop] = useState(true);
   const [atBottom, setAtBottom] = useState(true);
+  const [showNavigator, setShowNavigator] = useState(false);
+  const navigatorMenuRef = useRef<HTMLDivElement>(null);
 
   const updateScrollState = useCallback(() => {
     const el = scrollRef.current;
@@ -531,6 +615,63 @@ export function MessageList({
     const el = scrollRef.current;
     if (el) scrollToEdge(el.scrollHeight, behavior);
   }, [scrollToEdge]);
+
+  const hasMessages = messages.length > 0;
+  // 会话加载后（组件挂载、会话切换或消息初次加载），自动滚动到最下面
+  useEffect(() => {
+    if (!hasMessages) return;
+    // 首次即刻滚到底部
+    scrollToBottom("auto");
+    // 延后微调（等待 Markdown 与 OpenUI 卡片计算高度）
+    const raf = requestAnimationFrame(() => {
+      scrollToBottom("auto");
+      updateScrollState();
+    });
+    const timer = setTimeout(() => {
+      scrollToBottom("smooth");
+      updateScrollState();
+    }, 120);
+
+    return () => {
+      cancelAnimationFrame(raf);
+      clearTimeout(timer);
+    };
+  }, [sessionId, hasMessages, scrollToBottom, updateScrollState]);
+
+  // 提取用户提问列表，供 DSH 风格消息快捷跳转使用
+  const userMessages = useMemo(() => {
+    return messages
+      .map((m, idx) => ({ ...m, originalIndex: idx }))
+      .filter((m) => m.role === "user");
+  }, [messages]);
+
+  // 点击外部关闭快捷跳转菜单
+  useEffect(() => {
+    if (!showNavigator) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        navigatorMenuRef.current &&
+        !navigatorMenuRef.current.contains(e.target as Node)
+      ) {
+        setShowNavigator(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [showNavigator]);
+
+  // 跳转到指定提问消息，并平滑聚焦 + 短暂高亮提示
+  const handleJumpToMessage = useCallback((msgId: string) => {
+    const el = document.getElementById(`message-${msgId}`);
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "start" });
+      el.classList.add("ring-2", "ring-info-solid", "transition-all");
+      setTimeout(() => {
+        el.classList.remove("ring-2", "ring-info-solid");
+      }, 1500);
+    }
+    setShowNavigator(false);
+  }, []);
 
   // 1. 发送消息后（消息数量增加或进入 loading 态）：自动平滑滚动到最下方
   const prevMessagesLengthRef = useRef(messages.length);
@@ -734,31 +875,123 @@ export function MessageList({
       )}
       </div>
 
-      {/* 右侧快捷滚动操作：仅离开对应边缘时出现对应按钮（不进入打印导出） */}
-      {(!atTop || !atBottom) && (
-        <div className="no-print absolute right-4 top-1/2 -translate-y-1/2 z-10 flex flex-col gap-2">
-          {!atTop && (
-            <Hint label="回到顶部" side="right">
-              <button
-                onClick={() => scrollToEdge(0)}
-                aria-label="回到顶部"
-                className="w-7 h-7 rounded-full flex items-center justify-center bg-card/80 dark:bg-surface-inverse/80 backdrop-blur border border-border text-muted-foreground hover:text-foreground-strong shadow-md transition-colors"
-              >
-                <ArrowUp className="w-3.5 h-3.5" />
-              </button>
-            </Hint>
-          )}
-          {!atBottom && (
-            <Hint label="回到底部（最新消息）" side="right">
-              <button
-                onClick={() => scrollToBottom()}
-                aria-label="回到底部"
-                className="w-7 h-7 rounded-full flex items-center justify-center bg-card/80 dark:bg-surface-inverse/80 backdrop-blur border border-border text-muted-foreground hover:text-foreground-strong shadow-md transition-colors"
-              >
-                <ArrowDown className="w-3.5 h-3.5" />
-              </button>
-            </Hint>
-          )}
+      {/* 右侧消息快捷跳转与滚动导航轨（DSH 风格） */}
+      {(!atTop || !atBottom || userMessages.length > 1) && (
+        <div className="no-print absolute right-4 top-1/2 -translate-y-1/2 z-20 flex flex-col items-center">
+          <div className="flex flex-col gap-1 p-1 rounded-2xl bg-card/90 backdrop-blur-md border border-border shadow-md">
+            {!atTop && (
+              <Hint label="回到顶部" side="left">
+                <button
+                  type="button"
+                  onClick={() => scrollToEdge(0)}
+                  aria-label="回到顶部"
+                  className="w-7 h-7 rounded-xl flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
+                >
+                  <ArrowUp className="w-3.5 h-3.5" />
+                </button>
+              </Hint>
+            )}
+
+            {userMessages.length > 0 && (
+              <div className="relative">
+                <Hint label={`消息快捷跳转（共 ${userMessages.length} 条提问）`} side="left">
+                  <button
+                    type="button"
+                    onClick={() => setShowNavigator((v) => !v)}
+                    aria-label="消息快捷跳转"
+                    className={`w-7 h-7 rounded-xl flex items-center justify-center transition-colors cursor-pointer ${
+                      showNavigator
+                        ? "bg-info-soft text-info-fg font-semibold shadow-xs"
+                        : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                    }`}
+                  >
+                    <ListOrdered className="w-3.5 h-3.5" />
+                  </button>
+                </Hint>
+
+                {showNavigator && (
+                  <div
+                    ref={navigatorMenuRef}
+                    className="absolute right-full mr-2.5 top-1/2 -translate-y-1/2 z-30 w-72 max-h-80 rounded-xl bg-card border border-border shadow-xl p-3 flex flex-col gap-2 overflow-hidden animate-in fade-in-0 zoom-in-95 duration-150"
+                  >
+                    <div className="flex items-center justify-between pb-1.5 border-b border-border-subtle">
+                      <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
+                        <ListOrdered className="w-3.5 h-3.5 text-info-fg" />
+                        <span>消息快捷跳转</span>
+                        <span className="text-[10px] text-foreground-faint px-1.5 py-0.5 rounded-full bg-surface-sunken font-mono">
+                          {userMessages.length}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setShowNavigator(false)}
+                        className="p-1 rounded text-foreground-faint hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
+                        aria-label="关闭跳转菜单"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+
+                    <div className="overflow-y-auto space-y-1 pr-1 max-h-60 text-xs">
+                      {userMessages.map((um, idx) => (
+                        <button
+                          key={um.id || idx}
+                          type="button"
+                          onClick={() => handleJumpToMessage(um.id)}
+                          className="w-full text-left p-2 rounded-lg hover:bg-muted/80 transition-colors flex items-start gap-2 group cursor-pointer"
+                        >
+                          <span className="shrink-0 text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded bg-info-soft text-info-fg group-hover:bg-info-soft-strong transition-colors">
+                            #{idx + 1}
+                          </span>
+                          <span className="line-clamp-2 text-foreground-subtle group-hover:text-foreground leading-relaxed break-all">
+                            {um.content}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="pt-1.5 border-t border-border-subtle flex items-center justify-between text-[11px] text-foreground-faint">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          scrollToEdge(0);
+                          setShowNavigator(false);
+                        }}
+                        className="flex items-center gap-1 hover:text-foreground py-0.5 px-1.5 rounded hover:bg-muted transition-colors cursor-pointer"
+                      >
+                        <ArrowUp className="w-3 h-3" />
+                        <span>顶部</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          scrollToBottom();
+                          setShowNavigator(false);
+                        }}
+                        className="flex items-center gap-1 hover:text-foreground py-0.5 px-1.5 rounded hover:bg-muted transition-colors cursor-pointer"
+                      >
+                        <ArrowDown className="w-3 h-3" />
+                        <span>最新消息</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {!atBottom && (
+              <Hint label="回到底部（最新消息）" side="left">
+                <button
+                  type="button"
+                  onClick={() => scrollToBottom()}
+                  aria-label="回到底部"
+                  className="w-7 h-7 rounded-xl flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
+                >
+                  <ArrowDown className="w-3.5 h-3.5" />
+                </button>
+              </Hint>
+            )}
+          </div>
         </div>
       )}
     </div>

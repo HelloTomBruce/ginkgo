@@ -32,12 +32,14 @@ export interface SpecChartProps {
   height?: number;
 }
 
+const EMPTY_DATA: Array<Record<string, unknown>> = [];
+
 export const SpecChart: React.FC<SpecChartProps> = ({
   title,
   spec,
   // table 供刷新物化（dashboardRefresh）与筛选联动（preview-query）取数使用
   table,
-  data = [],
+  data = EMPTY_DATA,
   height = 280,
 }) => {
   // spec 可能是对象或 JSON 字符串（LLM 输出容错，与 parseArrayProp 同哲学）
@@ -53,17 +55,15 @@ export const SpecChart: React.FC<SpecChartProps> = ({
   }
 
   // ===== 筛选联动（M2-4）：订阅 filterBus，字段命中时自行重物化回填 =====
-  // liveRows = 物化行（初始为 props.data 快照；筛选变化后为 preview-query 产物）。
-  // props.data 变化（刷新回填）→ 渲染期调整 state（React 官方 adjust-state-on-prop-change
-  // 模式，避免 effect 内同步 setState 触发级联渲染）
-  const [liveRows, setLiveRows] = React.useState(data);
-  const [lastSnapshot, setLastSnapshot] = React.useState(data);
-  if (data !== lastSnapshot) {
-    setLastSnapshot(data);
-    setLiveRows(data);
-  }
-
+  // filterState: 记录用户筛选后的物化行与对应 key。
+  // 通过 key 校验派生当前行，无需在 render 期调用 setState，彻底避免 React 级联重渲染与死循环。
   const specKey = parsedSpec ? JSON.stringify(parsedSpec) : "";
+  const currentKey = `${table || ""}:${specKey}`;
+  const [filterState, setFilterState] = React.useState<{
+    key: string;
+    rows: Array<Record<string, unknown>>;
+  } | null>(null);
+
   React.useEffect(() => {
     if (!parsedSpec || !table) return;
     const owns = new Set<string>([
@@ -87,7 +87,9 @@ export const SpecChart: React.FC<SpecChartProps> = ({
         .then((r) => r.json())
         .then((body: { rows?: Array<Record<string, unknown>> }) => {
           if (mySeq !== seq) return; // 已有更新的筛选请求，丢弃过期响应
-          if (Array.isArray(body.rows)) setLiveRows(body.rows);
+          if (Array.isArray(body.rows)) {
+            setFilterState({ key: currentKey, rows: body.rows });
+          }
         })
         .catch(() => {
           // 联动失败静默保留旧数据（与刷新 stale 降级同哲学）
@@ -98,7 +100,8 @@ export const SpecChart: React.FC<SpecChartProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [specKey, table]);
 
-  const rows = parseArrayProp(liveRows);
+  const activeFilteredRows = filterState?.key === currentKey ? filterState.rows : null;
+  const rows = parseArrayProp(activeFilteredRows ?? data);
   const chartType = parsedSpec?.chartType;
 
   const body = (() => {
@@ -135,9 +138,10 @@ export const SpecChart: React.FC<SpecChartProps> = ({
         thresholds: parsedSpec.style?.thresholds,
         referenceLines: parsedSpec.style?.referenceLines,
       };
+      const xField = parsedSpec.dims?.[0]?.field || "";
       return (
         <Renderer
-          {...normalizeRenderProps(rows, parsedSpec.dims[0].field, series)}
+          {...normalizeRenderProps(rows, xField, series)}
           height={height}
           style={style}
         />
@@ -153,11 +157,12 @@ export const SpecChart: React.FC<SpecChartProps> = ({
         </div>
       );
     }
+    const xField = parsedSpec.dims?.[0]?.field || "";
     return (
       <AnalyticsChart
         type={chartType}
         data={rows}
-        xAxisKey={parsedSpec.dims[0].field}
+        xAxisKey={xField}
         series={series}
         height={height}
       />

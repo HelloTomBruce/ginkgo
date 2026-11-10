@@ -13,3 +13,9 @@ export type {
 } from "./handler";
 export { resolveCrossSourcePairs } from "./crossSourceMap";
 export type { CrossSourcePair } from "./crossSourceMap";
+export { SessionStreamHub, defaultStreamHub } from "./streamHub";
+export type { SessionStreamTask } from "./streamHub";
+export {
+  createReasoningFetch,
+  createReasoningContentTransformStream,
+} from "./reasoningStream";

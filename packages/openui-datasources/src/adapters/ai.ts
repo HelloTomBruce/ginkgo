@@ -17,8 +17,14 @@ export function toAiTools(
           type: "object",
         }
       ),
-      execute: async (args) =>
-        binding.call(args as Record<string, unknown>),
+      execute: async (args) => {
+        try {
+          return await binding.call(args as Record<string, unknown>);
+        } catch (err: unknown) {
+          const message = err instanceof Error ? err.message : String(err);
+          return { error: message, isError: true };
+        }
+      },
     });
   }
   return aiTools;

@@ -207,4 +207,36 @@ describe("SettingsModal 协议类型", () => {
       "https://api.kimi.com/coding"
     );
   });
+
+  it("上下文窗口大小：留空时展示「自动推断」，填入值时触发变更回调并展示对应 k 数", () => {
+    const onContextWindowChange = vi.fn();
+    renderModal({ contextWindow: "", onContextWindowChange });
+
+    expect(screen.getByText("自动推断")).toBeInTheDocument();
+    const input = screen.getByLabelText(/上下文窗口大小/);
+    expect(input).toHaveValue(null);
+
+    fireEvent.change(input, { target: { value: "1024000" } });
+    expect(onContextWindowChange).toHaveBeenCalledWith("1024000");
+
+    cleanup();
+    renderModal({ contextWindow: "1024000" });
+    expect(screen.getByText("1024k")).toBeInTheDocument();
+  });
+
+  it("最大步数上限：留空时展示「默认 25 步」，填入值时触发变更回调并展示自定义步数", () => {
+    const onMaxStepsChange = vi.fn();
+    renderModal({ maxSteps: "", onMaxStepsChange });
+
+    expect(screen.getByText("默认 25 步")).toBeInTheDocument();
+    const input = screen.getByLabelText(/最大步数上限/);
+    expect(input).toHaveValue(null);
+
+    fireEvent.change(input, { target: { value: "35" } });
+    expect(onMaxStepsChange).toHaveBeenCalledWith("35");
+
+    cleanup();
+    renderModal({ maxSteps: "35" });
+    expect(screen.getByText("35 步")).toBeInTheDocument();
+  });
 });

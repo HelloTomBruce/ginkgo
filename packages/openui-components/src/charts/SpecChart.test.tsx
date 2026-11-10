@@ -1,8 +1,8 @@
+import React from "react";
 import { describe, it, expect, afterEach, vi } from "vitest";
-import { render, screen, cleanup } from "@testing-library/react";
+import { render, screen, cleanup, fireEvent, waitFor } from "@testing-library/react";
 import { SpecChart } from "./SpecChart";
 import { emitFilterChange } from "./filterBus";
-import { waitFor } from "@testing-library/react";
 import type { ChartSpec } from "@openui-analytics/chart-spec";
 
 // jsdom 下 recharts 需要显式尺寸才会渲染表面与图例（与 registry.test 同法）
@@ -65,6 +65,24 @@ describe("SpecChart", () => {
       <SpecChart spec={JSON.stringify(spec)} data={rows} />
     );
     expect(container.querySelector(".recharts-surface")).toBeInTheDocument();
+  });
+
+  it("父组件重渲染时，未传 data 或传字面量 data 不会触发 Too many re-renders 死循环", () => {
+    function Parent() {
+      const [, setTick] = React.useState(0);
+      return (
+        <div>
+          <button onClick={() => setTick((t) => t + 1)}>rerender</button>
+          <SpecChart spec={spec} />
+          <SpecChart spec={spec} data={[{ province: "广东", capacity: 1 }]} />
+        </div>
+      );
+    }
+    render(<Parent />);
+    const btn = screen.getByText("rerender");
+    fireEvent.click(btn);
+    fireEvent.click(btn);
+    expect(screen.getByText("暂无图表数据")).toBeInTheDocument();
   });
 });
 
