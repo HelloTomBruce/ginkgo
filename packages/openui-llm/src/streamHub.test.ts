@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { SessionStreamHub } from "./streamHub";
 
 function makeFakeStreamResponse(chunks: string[], delayMs = 10): Response {
@@ -94,5 +94,55 @@ describe("SessionStreamHub", () => {
     const stopped = hub.abortTask("sess_abort");
     expect(stopped).toBe(true);
     expect(hub.hasRunningTask("sess_abort")).toBe(false);
+  });
+
+  it("中止时上游 reader 阻塞在 read() 也能即刻取消（不等待下一个 chunk）", async () => {
+    const hub = new SessionStreamHub();
+    let upstreamCancelled = false;
+    // 永不产出数据、也不结束的上游（模拟 LLM 慢思考/hang 住）
+    const stream = new ReadableStream<Uint8Array>({
+      start() {
+        // 故意不 enqueue 任何数据
+      },
+      cancel() {
+        upstreamCancelled = true;
+      },
+    });
+
+    hub.registerAndConsume("sess_hang", new Response(stream));
+    expect(hub.hasRunningTask("sess_hang")).toBe(true);
+
+    // reader 正阻塞在 read() 时中止
+    const stopped = hub.abortTask("sess_hang");
+    expect(stopped).toBe(true);
+
+    // cancelUpstream 被调用，上游收到取消（abort 不再依赖下一个 chunk 到来）
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(upstreamCancelled).toBe(true);
+    expect(hub.hasRunningTask("sess_hang")).toBe(false);
+  });
+
+  it("上游响应无 body：任务转入 error 并统一清理，不滞留 map", async () => {
+    // 先装 fake timers，让 scheduleCleanup 的 setTimeout 可被推进
+    vi.useFakeTimers();
+    try {
+      const hub = new SessionStreamHub();
+      // Response(null) 的 body 为 null
+      hub.registerAndConsume("sess_nobody", new Response(null));
+
+      const task = hub.getTask("sess_nobody");
+      expect(task).toBeDefined();
+      expect(task?.status).toBe("error");
+
+      // 首个订阅者拿到的是 error 流（而非挂起）
+      const sub = hub.createResponse("sess_nobody")!;
+      await expect(collectStreamText(sub)).rejects.toThrow();
+
+      // 30 秒后自动清理
+      vi.advanceTimersByTime(31000);
+      expect(hub.hasTask("sess_nobody")).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

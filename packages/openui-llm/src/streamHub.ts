@@ -20,7 +20,8 @@ export interface SessionStreamTask {
   status: "running" | "completed" | "error";
   abortController: AbortController;
   error?: unknown;
-  startedAt: number;
+  /** 中止时立即取消上游 reader：解除 read() 阻塞，让 abort 即刻生效（而非等下一个 chunk） */
+  cancelUpstream?: () => Promise<void>;
 }
 
 export class SessionStreamHub {
@@ -43,6 +44,9 @@ export class SessionStreamHub {
     const task = this.tasks.get(sessionId);
     if (!task) return false;
     task.abortController.abort();
+    // reader 可能正阻塞在 read()（上游慢思考/hang 住），cancel 让 abort 即刻生效，
+    // 否则要等下一个 chunk 恰好到来才检查 aborted，上游会继续消耗 token
+    void task.cancelUpstream?.().catch(() => {});
     task.status = "error";
     this.closeSubscribers(task);
     this.tasks.delete(sessionId);
@@ -95,11 +99,7 @@ export class SessionStreamHub {
    * 注册由 createDataStreamResponse 产生的原始流，启动服务端后台 Reader 持续消费，
    * 并返回首个订阅者的 HTTP Response
    */
-  registerAndConsume(
-    sessionId: string,
-    rawResponse: Response,
-    onComplete?: () => Promise<void> | void
-  ): Response {
+  registerAndConsume(sessionId: string, rawResponse: Response): Response {
     // 若原会话已有未完成旧任务，先中止
     if (this.hasRunningTask(sessionId)) {
       this.abortTask(sessionId);
@@ -112,7 +112,6 @@ export class SessionStreamHub {
       subscribers: new Set(),
       status: "running",
       abortController,
-      startedAt: Date.now(),
     };
     this.tasks.set(sessionId, task);
 
@@ -120,18 +119,34 @@ export class SessionStreamHub {
     void (async () => {
       const reader = rawResponse.body?.getReader();
       if (!reader) {
-        console.error("[StreamHub] No reader on rawResponse.body, body is:", rawResponse.body);
+        // 上游响应无 body：任务即刻转入 error 并走统一清理，
+        // 绝不能 early-return 绕过清理（否则 task 永久滞留 map，重连恒拿 error 流）
+        console.error(
+          "[StreamHub] rawResponse.body is not readable; terminating task"
+        );
         task.status = "error";
+        task.error = new Error("Upstream response has no body");
+        this.closeSubscribers(task);
+        this.scheduleCleanup(sessionId, task);
         return;
       }
+      task.cancelUpstream = async () => {
+        await reader.cancel().catch(() => {});
+      };
       try {
         while (true) {
           if (task.abortController.signal.aborted) {
-            await reader.cancel().catch(() => {});
+            await task.cancelUpstream();
             task.status = "error";
             break;
           }
           const { done, value } = await reader.read();
+          // read() 解除阻塞（含被 cancel）后先复查中止态：
+          // cancel 会让 read 以 done=true 返回，不能误判为正常完成
+          if (task.abortController.signal.aborted) {
+            task.status = "error";
+            break;
+          }
           if (done) {
             task.status = "completed";
             break;
@@ -153,21 +168,20 @@ export class SessionStreamHub {
         task.error = err;
       } finally {
         this.closeSubscribers(task);
-        try {
-          await onComplete?.();
-        } catch {
-          // ignore
-        }
-        // 任务完成后在内存保留 30 秒，供刚刷新完成的页面做最后重放
-        setTimeout(() => {
-          if (this.tasks.get(sessionId) === task) {
-            this.tasks.delete(sessionId);
-          }
-        }, 30000);
+        this.scheduleCleanup(sessionId, task);
       }
     })();
 
     return this.createResponse(sessionId)!;
+  }
+
+  /** 任务终态后在内存保留 30 秒，供刚刷新完成的页面做最后重放，之后自动清理 */
+  private scheduleCleanup(sessionId: string, task: SessionStreamTask): void {
+    setTimeout(() => {
+      if (this.tasks.get(sessionId) === task) {
+        this.tasks.delete(sessionId);
+      }
+    }, 30000);
   }
 
   private closeSubscribers(task: SessionStreamTask) {
