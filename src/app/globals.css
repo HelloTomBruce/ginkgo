@@ -50,6 +50,7 @@
   --surface-raised: oklch(92.9% 0.013 255.508);   /* slate-200 进度槽/分隔块 */
   --surface-inverse: oklch(12.9% 0.042 264.695);  /* slate-950 常暗面板 */
   --surface-inverse-foreground: oklch(96.8% 0.007 247.896); /* slate-100 */
+  --surface-active: oklch(1 0 0);                 /* 激活态页签底：亮=白卡片，暗=slate-950 */
 
   /* ---- shadcn 语义槽位（校准到 slate） ---- */
   --primary: oklch(54.6% 0.245 262.881);          /* blue-600 品牌主色 */
@@ -205,6 +206,7 @@
   --color-surface-raised: var(--surface-raised);
   --color-surface-inverse: var(--surface-inverse);
   --color-surface-inverse-foreground: var(--surface-inverse-foreground);
+  --color-surface-active: var(--surface-active);
   --color-chart-6: var(--chart-6);
   --color-chart-5: var(--chart-5);
   --color-chart-4: var(--chart-4);
@@ -431,6 +433,7 @@ body {
     --surface-subtle: oklch(27.9% 0.041 260.031);   /* slate-800 */
     --surface-raised: oklch(37.2% 0.044 257.287);   /* slate-700 */
     /* surface-inverse 为常暗面板，亮暗同值，不覆写 */
+    --surface-active: oklch(12.9% 0.042 264.695);   /* slate-950 */
 
     /* ---- shadcn 语义槽位（暗） ---- */
     --primary: oklch(62.3% 0.214 259.815);          /* blue-500 */

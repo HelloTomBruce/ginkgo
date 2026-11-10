@@ -11,6 +11,7 @@
 | `bg-slate-50 dark:bg-slate-950`（页面画布） | `bg-surface-page` | 应用底层画布 |
 | `bg-white dark:bg-slate-900` | `bg-card` | 卡片/侧栏/弹窗 |
 | `bg-slate-50 dark:bg-slate-950`（输入框/凹陷井） | `bg-surface-sunken` | 与 page 同值，语义区分 |
+| `bg-white dark:bg-slate-950`（激活态页签） | `bg-surface-active` | 亮=白卡片，暗=slate-950（比 card 更沉一档） |
 | `bg-slate-100 dark:bg-slate-800` / `hover:bg-slate-100 dark:hover:bg-slate-800` | `bg-muted` / `hover:bg-muted` | 浅填充、hover |
 | `bg-slate-200 dark:bg-slate-700` | `bg-surface-raised` | 进度槽、分隔块 |
 | `bg-slate-950 text-slate-100`（常暗面板） | `bg-surface-inverse text-surface-inverse-foreground` | DevTools 等固定深色区 |

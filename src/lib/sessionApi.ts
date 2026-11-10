@@ -112,9 +112,12 @@ export async function updateSessionApi(
   try {
     const bodyStr = JSON.stringify(input);
     // 浏览器规范：keepalive 开启时，单个或累积 in-flight 请求体积上限严格为 64KB (65536 字节)
-    // 超过 64KB 时浏览器直接抛出 TypeError。因此必须在体积安全且显式需要时才启用
+    // 超过 64KB 时浏览器直接抛出 TypeError。因此必须在体积安全且显式需要时才启用。
+    // 体积必须按 UTF-8 字节数计算——length 是 UTF-16 码元数，中文等多字节字符
+    // 会让真实体积达到字符数的 2~3 倍，按 length 判断会把超限请求误判为安全。
+    const bodyBytes = new TextEncoder().encode(bodyStr).length;
     const useKeepalive = Boolean(
-      options?.keepalive && typeof bodyStr === "string" && bodyStr.length < 60000
+      options?.keepalive && bodyBytes < 60000
     );
     const res = await fetch(`/api/sessions/${id}`, {
       method: "PUT",

@@ -161,7 +161,7 @@ export function MethodologyModal({ open, onClose }: MethodologyModalProps) {
         </div>
 
         {/* 底部：用户卡扩展提示 */}
-        <div className="px-5 py-3 border-t border-border-subtle bg-surface-sunken/50 dark:bg-surface-inverse/50 shrink-0">
+        <div className="px-5 py-3 border-t border-border-subtle bg-surface-sunken/50 shrink-0">
           <p className="text-[11px] text-foreground-faint leading-relaxed">
             自定义方法卡：在{" "}
             <code className="px-1 py-0.5 rounded bg-muted text-muted-foreground">
@@ -178,7 +178,7 @@ export function MethodologyModal({ open, onClose }: MethodologyModalProps) {
 /** 单张方法卡：名称/id/来源 + 适用信号 + 分析步骤 + 图表配对 */
 function MethodCardItem({ card }: { card: MethodCardView }) {
   return (
-    <div className="p-3.5 rounded-xl border border-border/80 bg-surface-sunken/50 dark:bg-surface-inverse/40 space-y-2.5">
+    <div className="p-3.5 rounded-xl border border-border/80 bg-surface-sunken/50 space-y-2.5">
       <div className="flex items-center gap-2 flex-wrap">
         <span className="font-semibold text-xs text-foreground-subtle">
           {card.name}

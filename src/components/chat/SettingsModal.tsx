@@ -184,7 +184,7 @@ export function SettingsModal({
               <TabsTrigger
                 key={id}
                 value={id}
-                className="flex-1 h-auto py-1.5 gap-1.5 text-xs data-active:font-semibold data-active:text-info-fg dark:data-active:text-info-fg data-active:bg-card dark:data-active:bg-surface-inverse data-active:shadow-xs"
+                className="flex-1 h-auto py-1.5 gap-1.5 text-xs data-active:font-semibold data-active:text-info-fg data-active:bg-surface-active data-active:shadow-xs"
               >
                 <Icon className="w-3.5 h-3.5" />
                 <span>{label}</span>

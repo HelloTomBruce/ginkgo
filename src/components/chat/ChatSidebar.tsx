@@ -308,7 +308,7 @@ export function ChatSidebar({
       )}
 
       {/* 底部功能栏与运行状态 */}
-      <div className="p-3 border-t border-border-subtle space-y-2 bg-surface-sunken/50 dark:bg-surface-inverse/50">
+      <div className="p-3 border-t border-border-subtle space-y-2 bg-surface-sunken/50">
         <div className="flex items-center justify-between text-[11px] px-1 text-muted-foreground">
           <div className="flex items-center gap-1.5 font-medium">
             <Bot className="w-3.5 h-3.5 text-info-fg" />

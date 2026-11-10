@@ -233,6 +233,57 @@ describe("ChatDashboard 守护测试（重构行为锁定）", () => {
     expect(stopMock).toHaveBeenCalledTimes(1);
   });
 
+  it("流式中切换会话：先停流并把进度落盘到原会话；迟到的 onFinish 不写入任何会话", async () => {
+    const sessionA = makeSessionRecord({
+      title: "会话甲",
+      messages: [DEFAULT_WELCOME_MESSAGE],
+    });
+    const sessionB = makeSessionRecord({
+      title: "会话乙",
+      messages: [DEFAULT_WELCOME_MESSAGE],
+    });
+    server.seed([sessionA, sessionB], sessionA.id);
+
+    const stopMock = vi.fn();
+    const streamingMsgs = [
+      DEFAULT_WELCOME_MESSAGE,
+      { role: "user", content: "甲的问题" },
+      { role: "assistant", content: "甲的部分回答" },
+    ];
+    vi.mocked(useChat).mockImplementation(
+      () =>
+        ({
+          ...defaultUseChatResult(),
+          messages: streamingMsgs,
+          isLoading: true,
+          stop: stopMock,
+        }) as never
+    );
+
+    render(<ChatDashboard />);
+    // 侧边栏就绪后流式中切换到会话乙
+    fireEvent.click(await screen.findByText("会话乙"));
+
+    // 切换前先停流，且把流式进度落盘到原会话甲
+    expect(stopMock).toHaveBeenCalledTimes(1);
+    await waitFor(() => {
+      const saved = server.records.get(sessionA.id)?.messages as Array<{
+        content?: string;
+      }>;
+      expect(saved?.some((m) => m.content === "甲的部分回答")).toBe(true);
+    });
+
+    // 迟到的 onFinish（属于已被停掉的旧流）不得写入任何会话
+    const config = vi.mocked(useChat).mock.calls.at(-1)?.[0] as {
+      onFinish?: (m: unknown, o?: unknown) => void;
+    };
+    config?.onFinish?.({ role: "assistant", content: "迟到的旧流回答" }, undefined);
+    const allSaved = [
+      ...server.records.values(),
+    ].flatMap((r) => r.messages as Array<{ content?: string }>);
+    expect(allSaved.some((m) => m.content === "迟到的旧流回答")).toBe(false);
+  });
+
   it("首次渲染无 React 错误 / hydration 告警", () => {
     render(<ChatDashboard />);
     const reactErrors = consoleErrorSpy.mock.calls.filter((args: unknown[]) =>

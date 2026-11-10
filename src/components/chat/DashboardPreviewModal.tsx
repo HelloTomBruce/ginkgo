@@ -288,7 +288,7 @@ export function DashboardPreviewModal({
         </div>
 
         {/* 快照看板本体（只读渲染；动作注入输入框不自动发送） */}
-        <div className="flex-1 overflow-y-auto p-5 bg-surface-sunken/60 dark:bg-surface-inverse/40">
+        <div className="flex-1 overflow-y-auto p-5 bg-surface-sunken/60">
           <OpenUIRenderer
             content={dashboard.dsl}
             isStreaming={false}

@@ -247,10 +247,12 @@ export default function ChatDashboard() {
     onFinish: (message, options) => {
       // 流式结束时保存：用 getMessages() 读取最新列表（含多步工具调用的中间消息），
       // upsert 防止与 AI SDK 已合入的最终消息重复；写回发起请求时的会话。
-      saveCurrentSessionMessages(
-        upsertMessage(getMessages(), message),
-        streamingSessionIdRef.current ?? undefined
-      );
+      // 仅在仍持有流式会话标记时落盘——标记被清空（切换/新建已停流）说明
+      // 这条 finish 属于旧会话，静默丢弃，防止把 A 会话内容写进 B。
+      const targetId = streamingSessionIdRef.current;
+      if (targetId) {
+        saveCurrentSessionMessages(upsertMessage(getMessages(), message), targetId);
+      }
       // 上下文用量：记录兜底值（当 StreamData 可用时优先消费真实单步值）
       const promptTokens = options?.usage?.promptTokens;
       if (typeof promptTokens === "number" && Number.isFinite(promptTokens)) {
@@ -353,6 +355,13 @@ export default function ChatDashboard() {
 
   // 页面刷新 / 会话挂载后无缝重连：
   // 若服务端当前会话仍有在途后台流式任务，自动发起 reload 重连，无缝续接输出
+  // isLoadingRef：探测回调里复查最新流式状态。闭包捕获的 isLoading 可能已过期
+  // （fetch 返回与 React 重渲染之间有窗口），只用闭包值会与用户刚提交的新请求并发。
+  const isLoadingRef = useRef(false);
+  useEffect(() => {
+    isLoadingRef.current = isLoading;
+  }, [isLoading]);
+
   useEffect(() => {
     if (!sessionsLoaded || !currentSessionId) return;
     let cancelled = false;
@@ -364,13 +373,11 @@ export default function ChatDashboard() {
         );
         if (!res.ok) return;
         const data = (await res.json()) as { running?: boolean };
-        if (!cancelled && data.running && !isLoading) {
-          console.log(
-            `[ChatDashboard] Active session ${currentSessionId} is running on server, reconnecting stream...`
-          );
-          streamingSessionIdRef.current = currentSessionId;
-          void reload({ body: { ...nextModeBody(), reconnect: true } });
-        }
+        // 双重复查：cancelled（effect 已被更新取代）或 isLoadingRef（用户刚提交）
+        // 任一命中都放弃重连
+        if (cancelled || !data.running || isLoadingRef.current) return;
+        streamingSessionIdRef.current = currentSessionId;
+        void reload({ body: { ...nextModeBody(), reconnect: true } });
       } catch {
         // ignore
       }
@@ -397,23 +404,46 @@ export default function ChatDashboard() {
     [append, currentSessionId, nextModeBody]
   );
 
+  // 中止在途流并即刻落盘当前会话（silent=true 时不提示，供切换/新建会话前调用）
+  const stopActiveStream = useCallback(
+    (opts?: { silent?: boolean }) => {
+      if (!isLoading) return;
+      const activeId = streamingSessionIdRef.current;
+      stop();
+      if (activeId) {
+        void fetch("/api/analyze", {
+          method: "POST",
+          headers: { "content-type": "application/json", ...authHeaders() },
+          body: JSON.stringify({ action: "stop", sessionId: activeId }),
+        }).catch(() => {});
+      }
+      saveCurrentSessionMessages(getMessages(), activeId ?? undefined, {
+        silent: true,
+      });
+      if (!opts?.silent) toast("已暂停生成", "info");
+    },
+    [isLoading, stop, getMessages, saveCurrentSessionMessages, authHeaders]
+  );
+
   // 暂停/中止当前会话生成（保留已有内容并即刻持久化）
-  const handleStop = useCallback(() => {
-    stop();
-    const activeId = streamingSessionIdRef.current;
-    if (activeId) {
-      void fetch("/api/analyze", {
-        method: "POST",
-        headers: { "content-type": "application/json", ...authHeaders() },
-        body: JSON.stringify({ action: "stop", sessionId: activeId }),
-      }).catch(() => {});
-    }
-    saveCurrentSessionMessages(
-      getMessages(),
-      activeId ?? undefined
-    );
-    toast("已暂停生成", "info");
-  }, [stop, getMessages, saveCurrentSessionMessages, authHeaders]);
+  const handleStop = useCallback(() => stopActiveStream(), [stopActiveStream]);
+
+  // 切换/新建会话前必先停流并清空流式会话标记：
+  // 否则节流落盘与 onFinish 仍指向旧会话 A，会把新会话 B 的消息写进 A
+  const handleSelectSessionSafe = useCallback(
+    (sessionId: string) => {
+      stopActiveStream({ silent: true });
+      streamingSessionIdRef.current = null;
+      void handleSelectSession(sessionId);
+    },
+    [stopActiveStream, handleSelectSession]
+  );
+
+  const handleCreateNewChatSafe = useCallback(() => {
+    stopActiveStream({ silent: true });
+    streamingSessionIdRef.current = null;
+    void handleCreateNewChat();
+  }, [stopActiveStream, handleCreateNewChat]);
 
   // 分叉：从该消息复制前缀历史生成新会话（hook 内完成切换与落盘）
   const handleForkMessage = useCallback(
@@ -641,8 +671,8 @@ export default function ChatDashboard() {
         onToggleDashboardTemplate={handleToggleDashboardTemplate}
         onCreateDashboardFromTemplate={handleCreateDashboardFromTemplate}
         onImportDashboard={handleImportDashboard}
-        onCreateNewChat={handleCreateNewChat}
-        onSelectSession={handleSelectSession}
+        onCreateNewChat={handleCreateNewChatSafe}
+        onSelectSession={handleSelectSessionSafe}
         onStartRename={handleStartRename}
         onSaveRename={handleSaveRename}
         onDeleteSession={handleDeleteSession}

@@ -56,7 +56,7 @@ export function DevToolsPanel({ code, onCodeChange, onAction, onClose }: DevTool
           </div>
 
           {/* 右侧实时视觉预览区 */}
-          <div className="w-1/2 flex flex-col p-4 overflow-y-auto bg-surface-sunken dark:bg-surface-inverse/30">
+          <div className="w-1/2 flex flex-col p-4 overflow-y-auto bg-surface-sunken">
             <div className="pb-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
               Live Preview Output
             </div>
