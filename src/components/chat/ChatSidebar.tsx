@@ -134,7 +134,7 @@ export function ChatSidebar({
           className="w-full flex items-center justify-center gap-2 px-3.5 py-2.5 rounded-xl bg-info-solid hover:bg-info-solid-hover text-white text-xs font-semibold shadow-xs transition-colors"
         >
           <Plus className="w-4 h-4" />
-          <span>新建对话会话</span>
+          <span>新建会话</span>
         </button>
       </div>
 

@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useChat } from "@ai-sdk/react";
-import { TrendingUp, Plus, Code2, Settings, RefreshCw } from "lucide-react";
+import { TrendingUp, Code2, Settings, RefreshCw } from "lucide-react";
 import { resolveContextWindow } from "@openui-analytics/llm/context";
 import { Hint } from "@/components/ui/hint";
 import { DEFAULT_SANDBOX_CODE } from "@/lib/presetQueries";
@@ -671,13 +671,6 @@ export default function ChatDashboard() {
             )}
           </div>
           <div className="flex items-center gap-2">
-            <button
-              onClick={handleCreateNewChat}
-              className="text-xs text-info-fg hover:bg-info-soft flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-info-border"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>新对话</span>
-            </button>
             {IS_DEV && (
               <button
                 onClick={handleOpenDevTools}

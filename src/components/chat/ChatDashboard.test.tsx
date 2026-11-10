@@ -78,7 +78,7 @@ describe("ChatDashboard 守护测试（重构行为锁定）", () => {
 
   it("渲染侧边栏新建会话按钮与设置入口", () => {
     render(<ChatDashboard />);
-    expect(screen.getByText("新建对话会话")).toBeInTheDocument();
+    expect(screen.getByText("新建会话")).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "设置" })
     ).toBeInTheDocument();
@@ -157,7 +157,7 @@ describe("ChatDashboard 守护测试（重构行为锁定）", () => {
     await waitFor(() => expect(cb).toBeDisabled());
     expect(screen.getByText(/已锁定/)).toBeInTheDocument();
     // 新建会话（仅欢迎消息）应解锁
-    fireEvent.click(screen.getByText("新建对话会话"));
+    fireEvent.click(screen.getByText("新建会话"));
     await waitFor(async () => {
       const cbFresh = await screen.findByLabelText("Jira MCP");
       expect(cbFresh).not.toBeDisabled();
