@@ -7,7 +7,7 @@
  * - resolveSeries：系列解析 + 数值字段自动提取（原 AnalyticsChart 内联逻辑抽出）
  */
 import { parseArrayProp } from "../internal/parseProp";
-import type { ChartSpec } from "@openui-analytics/chart-spec";
+import type { ChartSpec, MeasureFormat } from "@openui-analytics/chart-spec";
 
 /** 条件样式/辅助线的语义色类型（与 chart-spec 契约同源） */
 export type SemanticColorName = NonNullable<
@@ -73,6 +73,30 @@ export function thresholdCellFill(
     if (matchesThreshold(row, t.when)) return SEMANTIC_SOLID[t.color];
   }
   return undefined;
+}
+
+/**
+ * 指标数值格式化（meas[].format → Intl.NumberFormat，见 chart-spec MEASURE_FORMATS）：
+ * - currency：style currency（spec 未提供币种代码，缺省 CNY）
+ * - percent：值本身已是比率（0.156 → 16%）
+ * - compact：notation compact（12000 → 1.2万）
+ * - number：千分位（1860 → 1,860）
+ * 非数值容错回退 String()（LLM 偶发字符串化），空值交由展示层 "-" 语义。
+ */
+export function formatMeasureValue(value: unknown, format: MeasureFormat): string {
+  if (value == null) return "-";
+  const n = asNumberOr(value);
+  if (n === null) return String(value);
+  switch (format) {
+    case "currency":
+      return new Intl.NumberFormat("zh-CN", { style: "currency", currency: "CNY" }).format(n);
+    case "percent":
+      return new Intl.NumberFormat("zh-CN", { style: "percent" }).format(n);
+    case "compact":
+      return new Intl.NumberFormat("zh-CN", { notation: "compact" }).format(n);
+    case "number":
+      return new Intl.NumberFormat("zh-CN").format(n);
+  }
 }
 
 /* 系列色读取主题 token（--chart-1..6，见应用层 globals.css），

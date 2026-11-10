@@ -4,12 +4,13 @@
  * 图表注册表：chartType → 渲染器 的可换投影层（借鉴 DataEase「切换图表」：
  * 数据绑定不变，换 chartType 只换渲染器）。
  *
- * M1 第一批落地 4 个类型：stacked-bar / combo / donut / table；
- * bar/line/area/pie 沿用既有 AnalyticsChart（SpecChart 层 fallback），
- * 第二批（scatter/gauge/heatmap）与第三批迁移后续里程碑接入。
+ * 全枚举闭合：CHART_TYPES 共 11 个类型（bar / stacked-bar / line / area / combo /
+ * pie / donut / scatter / gauge / heatmap / table）全部在本注册表落地，
+ * SpecChart 统一经注册表派发，不再有 AnalyticsChart fallback 分支。
  *
  * 渲染器只负责图形本体（无卡片外框）：卡片 chrome 由 SpecChart 壳层统一提供，
- * 唯一例外 table 复用 DataTable（自带卡片）。颜色一律 CHART_COLORS token。
+ * 例外：table 复用 DataTable、gauge 复用 GaugeProgress（各自自带卡片）。
+ * 颜色一律 CHART_COLORS / 语义 solid token。
  */
 import React from "react";
 import {
@@ -17,6 +18,7 @@ import {
   ComposedChart,
   Bar,
   Line,
+  Area,
   PieChart,
   Pie,
   Cell,
@@ -29,13 +31,16 @@ import {
   ScatterChart,
   Scatter,
 } from "recharts";
-import { z } from "zod";
-import { CHART_TYPES, type ChartType } from "@openui-analytics/chart-spec";
+import {
+  CHART_TYPES,
+  type ChartType,
+  type MeasureFormat,
+} from "@openui-analytics/chart-spec";
 import {
   CHART_COLORS,
   thresholdCellFill,
+  formatMeasureValue,
   SEMANTIC_SOLID,
-  type SeriesConfig,
   type ReferenceLineSpec,
   type ThresholdRule,
 } from "./chartShared";
@@ -56,40 +61,20 @@ export interface ChartStyleProps {
 export interface RegistryRenderProps {
   /** 物化后的行数组（已经 parseArrayProp 收敛） */
   rows: Array<Record<string, unknown>>;
-  /** 类别轴字段 = dims[0].field */
+  /** 类别轴字段 = dims[0].field（直角坐标 X 轴 / 饼图 nameKey） */
   dimField: string;
-  /** 指标序列（key 有值；label 可选展示名） */
-  measures: Array<{ key: string; label?: string }>;
+  /** 全部维度列（契约 ≤3；table 渲染全部维度，key=字段名、label 可选展示名） */
+  dimFields: Array<{ key: string; label?: string }>;
+  /** 指标序列（key 有值；label 可选展示名；format 见 chart-spec MEASURE_FORMATS） */
+  measures: Array<{ key: string; label?: string; format?: MeasureFormat }>;
   height?: number;
   style?: ChartStyleProps;
 }
 
 export interface ChartRendererEntry {
   type: ChartType;
-  /** 一句话选型信号（供方法卡 chartPairing 与 prompt 选型规则引用） */
-  when: string;
-  /** 渲染入参 schema（注册表派发契约；ChartSpec 跨字段约束在 chart-spec 包） */
-  zodSchema: z.ZodTypeAny;
-  defaultStyle: ChartStyleProps;
   render: React.FC<RegistryRenderProps>;
 }
-
-/** 渲染入参基线 schema（各渲染器共享；增量 props 在各自条目扩展） */
-export const registryRenderPropsSchema = z.object({
-  rows: z.array(z.record(z.string(), z.unknown())),
-  dimField: z.string().min(1),
-  measures: z
-    .array(z.object({ key: z.string().min(1), label: z.string().optional() }))
-    .min(1),
-  height: z.number().positive().optional(),
-  style: z
-    .object({
-      showLegend: z.boolean().optional(),
-      showLabel: z.boolean().optional(),
-    })
-    .passthrough()
-    .optional(),
-});
 
 // ===== 直角坐标公共框架 =====
 
@@ -174,7 +159,59 @@ function EmptyChart({ height }: { height: number }) {
   );
 }
 
+/** 阈值规则按行覆盖柱色（有规则时每行一个 Cell，未命中回退基础系列色） */
+function thresholdCells(
+  rows: Array<Record<string, unknown>>,
+  thresholds: readonly ThresholdRule[] | undefined,
+  base: string
+) {
+  return thresholds?.length
+    ? rows.map((row, i) => (
+        <Cell key={`th-cell-${i}`} fill={thresholdCellFill(row, thresholds) ?? base} />
+      ))
+    : null;
+}
+
 // ===== 渲染器 =====
+
+/** 柱状图：多指标并列分组柱（阈值规则按行覆盖柱色） */
+const BarRenderer: React.FC<RegistryRenderProps> = ({
+  rows,
+  dimField,
+  measures,
+  height = 280,
+  style,
+}) => {
+  if (rows.length === 0) return <EmptyChart height={height} />;
+  const showLegend = style?.showLegend !== false;
+  return (
+    <CartesianFrame
+      rows={rows}
+      dimField={dimField}
+      height={height}
+      showLegend={showLegend}
+      dualAxis={false}
+      referenceLines={style?.referenceLines}
+    >
+      {measures.map((m, idx) => {
+        const base = CHART_COLORS[idx % CHART_COLORS.length];
+        return (
+          <Bar
+            key={`bar-${m.key}`}
+            yAxisId="left"
+            dataKey={m.key}
+            name={m.label || m.key}
+            fill={base}
+            radius={[4, 4, 0, 0]}
+            isAnimationActive={false}
+          >
+            {thresholdCells(rows, style?.thresholds, base)}
+          </Bar>
+        );
+      })}
+    </CartesianFrame>
+  );
+};
 
 /** 堆叠柱状图：全部指标共用 stackId，展示构成随维度变化 */
 const StackedBarRenderer: React.FC<RegistryRenderProps> = ({
@@ -208,15 +245,84 @@ const StackedBarRenderer: React.FC<RegistryRenderProps> = ({
             radius={[2, 2, 0, 0]}
             isAnimationActive={false}
           >
-            {style?.thresholds?.length
-              ? rows.map((row, i) => (
-                  <Cell
-                    key={`th-cell-${i}`}
-                    fill={thresholdCellFill(row, style.thresholds) ?? base}
-                  />
-                ))
-              : null}
+            {thresholdCells(rows, style?.thresholds, base)}
           </Bar>
+        );
+      })}
+    </CartesianFrame>
+  );
+};
+
+/** 折线图：多指标单调平滑折线（辅助线沿用框架） */
+const LineRenderer: React.FC<RegistryRenderProps> = ({
+  rows,
+  dimField,
+  measures,
+  height = 280,
+  style,
+}) => {
+  if (rows.length === 0) return <EmptyChart height={height} />;
+  const showLegend = style?.showLegend !== false;
+  return (
+    <CartesianFrame
+      rows={rows}
+      dimField={dimField}
+      height={height}
+      showLegend={showLegend}
+      dualAxis={false}
+      referenceLines={style?.referenceLines}
+    >
+      {measures.map((m, idx) => (
+        <Line
+          key={`line-${m.key}`}
+          yAxisId="left"
+          type="monotone"
+          dataKey={m.key}
+          name={m.label || m.key}
+          stroke={CHART_COLORS[idx % CHART_COLORS.length]}
+          strokeWidth={2}
+          dot={{ r: 3 }}
+          activeDot={{ r: 5 }}
+          isAnimationActive={false}
+        />
+      ))}
+    </CartesianFrame>
+  );
+};
+
+/** 面积图：多指标半透明面积（与既有 AnalyticsChart area 同构：无 stackId 叠加） */
+const AreaRenderer: React.FC<RegistryRenderProps> = ({
+  rows,
+  dimField,
+  measures,
+  height = 280,
+  style,
+}) => {
+  if (rows.length === 0) return <EmptyChart height={height} />;
+  const showLegend = style?.showLegend !== false;
+  return (
+    <CartesianFrame
+      rows={rows}
+      dimField={dimField}
+      height={height}
+      showLegend={showLegend}
+      dualAxis={false}
+      referenceLines={style?.referenceLines}
+    >
+      {measures.map((m, idx) => {
+        const color = CHART_COLORS[idx % CHART_COLORS.length];
+        return (
+          <Area
+            key={`area-${m.key}`}
+            yAxisId="left"
+            type="monotone"
+            dataKey={m.key}
+            name={m.label || m.key}
+            stroke={color}
+            fill={color}
+            fillOpacity={0.2}
+            isAnimationActive={false}
+          />
         );
       })}
     </CartesianFrame>
@@ -259,14 +365,7 @@ const ComboRenderer: React.FC<RegistryRenderProps> = ({
             radius={[4, 4, 0, 0]}
             isAnimationActive={false}
           >
-            {style?.thresholds?.length
-              ? rows.map((row, i) => (
-                  <Cell
-                    key={`th-cell-${i}`}
-                    fill={thresholdCellFill(row, style.thresholds) ?? base}
-                  />
-                ))
-              : null}
+            {thresholdCells(rows, style?.thresholds, base)}
           </Bar>
         );
       })}
@@ -281,9 +380,45 @@ const ComboRenderer: React.FC<RegistryRenderProps> = ({
           strokeWidth={2}
           dot={{ r: 3 }}
           activeDot={{ r: 5 }}
+          isAnimationActive={false}
         />
       )}
     </CartesianFrame>
+  );
+};
+
+/** 饼图：单指标占比（实心饼 = Pie 无内径），颜色按行取 CHART_COLORS */
+const PieRenderer: React.FC<RegistryRenderProps> = ({
+  rows,
+  dimField,
+  measures,
+  height = 280,
+  style,
+}) => {
+  if (rows.length === 0) return <EmptyChart height={height} />;
+  const dataKey = measures[0]?.key || "value";
+  const showLabel = style?.showLabel !== false;
+  return (
+    <ResponsiveContainer width="100%" height={height} minWidth={0} debounce={50}>
+      <PieChart>
+        <Tooltip contentStyle={TOOLTIP_STYLE} />
+        {style?.showLegend !== false && <Legend wrapperStyle={{ fontSize: "12px" }} />}
+        <Pie
+          data={rows}
+          dataKey={dataKey}
+          nameKey={dimField}
+          cx="50%"
+          cy="50%"
+          outerRadius="80%"
+          label={showLabel}
+          isAnimationActive={false}
+        >
+          {rows.map((_: unknown, index: number) => (
+            <Cell key={`pie-cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+          ))}
+        </Pie>
+      </PieChart>
+    </ResponsiveContainer>
   );
 };
 
@@ -323,23 +458,45 @@ const DonutRenderer: React.FC<RegistryRenderProps> = ({
   );
 };
 
-/** 明细表：复用 DataTable（自带卡片与搜索），列 = 维度 + 指标（右对齐数值） */
-const TableRenderer: React.FC<RegistryRenderProps> = ({ rows, dimField, measures, style }) => {
+/**
+ * 明细表：复用 DataTable（自带卡片与搜索），列 = 全部维度 + 指标（右对齐）。
+ * 指标单元格按 meas[].format 渲染（Intl.NumberFormat，见 chartShared）；
+ * 阈值着色按行对象身份映射回原始行判定（格式化串无法回解数值）。
+ */
+const TableRenderer: React.FC<RegistryRenderProps> = ({
+  rows,
+  dimField,
+  dimFields,
+  measures,
+  style,
+}) => {
+  const dims = dimFields.length > 0 ? dimFields : [{ key: dimField }];
+  const displayRows = rows.map((row) => {
+    const display: Record<string, unknown> = { ...row };
+    for (const m of measures) {
+      // 未声明 format 保持原始值（数值列排序不退化为字符串序）
+      display[m.key] = m.format ? formatMeasureValue(row[m.key], m.format) : row[m.key];
+    }
+    return display;
+  });
+  const rawRowByDisplay = new Map(displayRows.map((display, i) => [display, rows[i]]));
   const columns: ColumnConfig[] = [
-    { key: dimField, header: dimField, align: "left" },
+    ...dims.map((d) => ({ key: d.key, header: d.label || d.key, align: "left" as const })),
     ...measures.map((m) => ({
       key: m.key,
       header: m.label || m.key,
       align: "right" as const,
-      format: "number" as const,
     })),
   ];
   return (
     <DataTable
-      data={rows}
+      data={displayRows}
       columns={columns}
       cellStyle={(row) => {
-        const fill = thresholdCellFill(row, style?.thresholds);
+        const fill = thresholdCellFill(
+          rawRowByDisplay.get(row) ?? row,
+          style?.thresholds
+        );
         return fill ? { backgroundColor: fill, color: "var(--info-on-solid)" } : undefined;
       }}
     />
@@ -389,7 +546,11 @@ const ScatterRenderer: React.FC<RegistryRenderProps> = ({
   );
 };
 
-/** 仪表盘：单指标达成率（current=首行首指标聚合值，target=首条辅助线值） */
+/**
+ * 仪表盘：单指标达成率（current=首行首指标聚合值，target=首条辅助线值）。
+ * height 暂不透传：GaugeProgress 无尺寸入参（SVG 半径固定），属既有组件
+ * 契约限制，留待后续为其补尺寸支持时接入。
+ */
 const GaugeRenderer: React.FC<RegistryRenderProps> = ({
   rows,
   measures,
@@ -429,62 +590,21 @@ const HeatmapRenderer: React.FC<RegistryRenderProps> = ({
 
 // ===== 注册表 =====
 
-/** M1 第一批支持的 chartType（bar/line/area/pie 由 AnalyticsChart 兜底） */
-export const supportedChartTypes = ["scatter", "gauge", "heatmap", "stacked-bar", "combo", "donut", "table"] as const;
-
 const entries: ChartRendererEntry[] = [
-  {
-    type: "stacked-bar",
-    when: "构成随维度变化：分类占比堆叠（如各渠道逐月花费构成）",
-    zodSchema: registryRenderPropsSchema,
-    defaultStyle: { showLegend: true },
-    render: StackedBarRenderer,
-  },
-  {
-    type: "combo",
-    when: "双量纲对比：柱表量、线表率或累计占比（帕累托、量+率）",
-    zodSchema: registryRenderPropsSchema,
-    defaultStyle: { showLegend: true },
-    render: ComboRenderer,
-  },
-  {
-    type: "donut",
-    when: "整体中各部分占比（单指标环形占比）",
-    zodSchema: registryRenderPropsSchema,
-    defaultStyle: { showLegend: true, showLabel: true },
-    render: DonutRenderer,
-  },
-  {
-    type: "scatter",
-    when: "两个指标的相关性/分布（如成本 vs 转化率）",
-    zodSchema: registryRenderPropsSchema,
-    defaultStyle: { showLegend: true },
-    render: ScatterRenderer,
-  },
-  {
-    type: "gauge",
-    when: "单指标目标达成率（聚合为单一值的 KPI，target 取首条辅助线）",
-    zodSchema: registryRenderPropsSchema,
-    defaultStyle: {},
-    render: GaugeRenderer,
-  },
-  {
-    type: "heatmap",
-    when: "时间/类目槽位的密度分布（如活跃度日历）",
-    zodSchema: registryRenderPropsSchema,
-    defaultStyle: {},
-    render: HeatmapRenderer,
-  },
-  {
-    type: "table",
-    when: "明细与汇总并看的全宽数据表",
-    zodSchema: registryRenderPropsSchema,
-    defaultStyle: {},
-    render: TableRenderer,
-  },
+  { type: "bar", render: BarRenderer },
+  { type: "stacked-bar", render: StackedBarRenderer },
+  { type: "line", render: LineRenderer },
+  { type: "area", render: AreaRenderer },
+  { type: "combo", render: ComboRenderer },
+  { type: "pie", render: PieRenderer },
+  { type: "donut", render: DonutRenderer },
+  { type: "scatter", render: ScatterRenderer },
+  { type: "gauge", render: GaugeRenderer },
+  { type: "heatmap", render: HeatmapRenderer },
+  { type: "table", render: TableRenderer },
 ];
 
-/** 注册表（type → entry，全枚举闭合：未落地类型显式为 null，bar/line/area/pie 由 AnalyticsChart 兜底） */
+/** 注册表（type → entry，全枚举闭合覆盖 CHART_TYPES；未注册类型防御性为 null） */
 export const chartRegistry: Readonly<Record<ChartType, ChartRendererEntry | null>> =
   Object.fromEntries(
     CHART_TYPES.map((t) => [t, entries.find((e) => e.type === t) ?? null])
@@ -492,17 +612,4 @@ export const chartRegistry: Readonly<Record<ChartType, ChartRendererEntry | null
 
 export function getChartRenderer(type: ChartType): ChartRendererEntry | null {
   return chartRegistry[type] ?? null;
-}
-
-/** 供 SpecChart 派发：渲染器入参的行数组规整 + 指标序列化简 */
-export function normalizeRenderProps(
-  rows: Array<Record<string, unknown>>,
-  dimField: string,
-  series: SeriesConfig[]
-): Pick<RegistryRenderProps, "rows" | "dimField" | "measures"> {
-  return {
-    rows,
-    dimField,
-    measures: series.map((s) => ({ key: s.key, label: s.label })),
-  };
 }

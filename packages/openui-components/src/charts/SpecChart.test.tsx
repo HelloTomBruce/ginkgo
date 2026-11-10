@@ -39,15 +39,16 @@ describe("SpecChart", () => {
     expect(container.querySelector(".recharts-surface")).toBeInTheDocument();
   });
 
-  it("fallback 类型（bar）沿用 AnalyticsChart 渲染", () => {
-    const { container } = render(
-      <SpecChart
-        spec={{ ...spec, chartType: "bar" }}
-        data={rows}
-      />
-    );
-    expect(container.querySelector(".recharts-surface")).toBeInTheDocument();
-    expect(screen.getByText("容量")).toBeInTheDocument(); // 图例系列名
+  it("bar/line/area/pie 统一经注册表渲染（单卡片，无双层嵌套）", () => {
+    for (const chartType of ["bar", "line", "area", "pie"] as const) {
+      const { container, unmount } = render(
+        <SpecChart spec={{ ...spec, chartType }} data={rows} />
+      );
+      expect(container.querySelector(".recharts-surface")).toBeInTheDocument();
+      // 卡片 chrome 仅壳层一层：AnalyticsChart 的 bg-card 卡片不再嵌套出现
+      expect(container.querySelectorAll(".bg-card")).toHaveLength(1);
+      unmount();
+    }
   });
 
   it("data 缺省渲染空态占位", () => {
@@ -134,5 +135,74 @@ describe("SpecChart 筛选联动（M2-4）", () => {
     expect(captured.body).toBeUndefined();
     // 旧数据保留
     expect(screen.getByText("1")).toBeInTheDocument();
+  });
+
+  it("「全部」（value=\"\"）清除该字段筛选：不再回填 eq 条件，重物化回退原数据", async () => {
+    const bodies: Array<{ sourceId: string; table: string; spec: ChartSpec }> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string, init?: { body?: string }) => {
+        if (typeof url === "string" && url.includes("preview-query")) {
+          bodies.push(JSON.parse(init?.body ?? "{}"));
+          // 第一次（筛选 江苏）返回单行；第二次（清除）返回全量两行
+          const rowsResp =
+            bodies.length === 1
+              ? [{ province: "江苏", capacity: 42 }]
+              : [
+                  { province: "广东", capacity: 10 },
+                  { province: "江苏", capacity: 8 },
+                ];
+          return Promise.resolve({ json: () => Promise.resolve({ rows: rowsResp }) });
+        }
+        return Promise.resolve({ json: () => Promise.resolve({}) });
+      }) as unknown as typeof fetch
+    );
+    render(
+      <SpecChart spec={spec} table="power_stats" data={[{ province: "广东", capacity: 1 }]} />
+    );
+
+    emitFilterChange({ field: "province", value: "江苏" });
+    await waitFor(() => {
+      expect(screen.getByText("42")).toBeInTheDocument();
+    });
+    expect(bodies[0].spec.filters).toEqual([
+      { field: "province", op: "eq", value: "江苏" },
+    ]);
+
+    // 选择「全部」→ 移除该字段筛选，按剩余声明重物化
+    emitFilterChange({ field: "province", value: "" });
+    await waitFor(() => {
+      expect(screen.getByText("10")).toBeInTheDocument();
+    });
+    expect(bodies).toHaveLength(2);
+    expect(bodies[1].spec.filters ?? []).toEqual([]);
+    // 旧筛选行（42）不再展示
+    expect(screen.queryByText("42")).not.toBeInTheDocument();
+  });
+
+  it("data 引用变化（刷新回填新数组）→ filterState 失效，回退展示新 data", async () => {
+    const captured: { body?: unknown } = {};
+    stubFetch(captured);
+    const initial = [{ province: "广东", capacity: 1 }];
+    const { rerender } = render(
+      <SpecChart spec={spec} table="power_stats" data={initial} />
+    );
+
+    // 筛选后展示回填的筛选行（42）
+    emitFilterChange({ field: "province", value: "江苏" });
+    await waitFor(() => {
+      expect(screen.getByText("42")).toBeInTheDocument();
+    });
+
+    // dashboardRefresh 原地 mutate 后回填新数组（引用变化）：
+    // 陈旧筛选行必须失效，回退展示新 data（9），否则用户看到旧数据集的筛选结果
+    const refreshed = [{ province: "江苏", capacity: 9 }];
+    rerender(<SpecChart spec={spec} table="power_stats" data={refreshed} />);
+    expect(screen.getByText("9")).toBeInTheDocument();
+    expect(screen.queryByText("42")).not.toBeInTheDocument();
+
+    // 同引用重渲染（普通父组件 state 更新）不应误伤有效筛选态
+    rerender(<SpecChart spec={spec} table="power_stats" data={refreshed} />);
+    expect(screen.getByText("9")).toBeInTheDocument();
   });
 });

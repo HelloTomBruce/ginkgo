@@ -12,6 +12,7 @@
  * 校验失败返回明确原因（400 语义由调用方映射）：
  * - 目标源不存在/停用
  * - 模板缺取数声明（无 queries 且无 SpecChart 声明 = 静态快照不可重绑定）
+ * - DSL 解析失败且无 queries 通道兜底（queries 存在时不阻断，仅 DSL 换源降级）
  */
 import {
   createParser,
@@ -116,6 +117,7 @@ export function retargetTemplate(
   const hasQueries = queries !== undefined && queries.length > 0;
   let dsl = template.dsl;
   let sawSpecChart = false;
+  let dslInvalid = false;
   if (template.dsl) {
     try {
       const parsed = parser.parse(template.dsl);
@@ -125,13 +127,23 @@ export function retargetTemplate(
         if (result.changed) {
           dsl = jsonToOpenUI(parsed.root, serverLibrary);
         }
+      } else {
+        dslInvalid = true;
       }
     } catch {
-      // DSL 解析失败不阻断：queries 通道已换源；无 queries 时报错
+      // DSL 解析失败：queries 通道仍可换源（不阻断）；无 queries 时如实上报 dsl-invalid
+      dslInvalid = true;
     }
   }
 
   if (!hasQueries && !sawSpecChart) {
+    if (dslInvalid) {
+      return {
+        ok: false,
+        reason: "dsl-invalid",
+        detail: "模板 DSL 解析失败且无 queries 取数声明，无法重绑定",
+      };
+    }
     return {
       ok: false,
       reason: "static-template",

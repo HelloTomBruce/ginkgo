@@ -8,17 +8,15 @@ import { parseChartSpec, type ChartSpec } from "@openui-analytics/chart-spec";
 import { parseArrayProp } from "../internal/parseProp";
 import { ComponentSafeWrapper } from "../internal/ComponentSafeWrapper";
 import { onFilterChange } from "./filterBus";
-import { AnalyticsChart } from "./AnalyticsChart";
-import { getChartRenderer, normalizeRenderProps } from "./registry";
-import type { SeriesConfig } from "./chartShared";
+import { getChartRenderer } from "./registry";
 
 /**
  * SpecChart —— 语义声明图表：LLM 输出「维度×指标×过滤」的 ChartSpec 而非渲染数据，
  * 图形类型是 spec.chartType 之上的可换渲染器（换图不换数据绑定）。
  *
  * 数据流：生成期 data 可由 LLM 物化填充（静态快照）；刷新期服务端按 spec
- * 物化（specMaterialize）回填 data——全程零 LLM。fallback：bar/line/area/pie
- * 四类沿用既有 AnalyticsChart，注册表类型走 registry 渲染器。
+ * 物化（specMaterialize）回填 data——全程零 LLM。全部 chartType（含
+ * bar/line/area/pie）统一走 registry 渲染器，卡片外框仅本壳层一层提供。
  */
 
 export interface SpecChartProps {
@@ -58,11 +56,26 @@ export const SpecChart: React.FC<SpecChartProps> = ({
   // filterState: 记录用户筛选后的物化行与对应 key。
   // 通过 key 校验派生当前行，无需在 render 期调用 setState，彻底避免 React 级联重渲染与死循环。
   const specKey = parsedSpec ? JSON.stringify(parsedSpec) : "";
-  const currentKey = `${table || ""}:${specKey}`;
+  // 数据版本：data 引用变化（dashboardRefresh 原地 mutate 后回填新数组）即递增，
+  // 并入 cache key——旧筛选行自动失效，回退展示新 data（防陈旧筛选结果）。
+  // 渲染期条件派生 state 的官方范式：props 变化触发即时重渲染，无提交闪烁。
+  const [dataIdentity, setDataIdentity] = React.useState({ data, version: 0 });
+  if (dataIdentity.data !== data) {
+    setDataIdentity({ data, version: dataIdentity.version + 1 });
+  }
+  const dataVersion = dataIdentity.version;
+  const currentKey = `${table || ""}:${specKey}#v${dataVersion}`;
   const [filterState, setFilterState] = React.useState<{
     key: string;
     rows: Array<Record<string, unknown>>;
   } | null>(null);
+
+  // 回填 key 经 ref 读取「响应到达时刻」的最新值：订阅期内数据版本变化时，
+  // 闭包捕获的旧 currentKey 会令新筛选结果落库即失效
+  const currentKeyRef = React.useRef(currentKey);
+  React.useEffect(() => {
+    currentKeyRef.current = currentKey;
+  }, [currentKey]);
 
   React.useEffect(() => {
     if (!parsedSpec || !table) return;
@@ -74,9 +87,13 @@ export const SpecChart: React.FC<SpecChartProps> = ({
     const off = onFilterChange((event) => {
       if (!owns.has(event.field)) return; // 声明式作用域：字段不属于本图表则不响应
       const rest = (parsedSpec.filters ?? []).filter((f) => f.field !== event.field);
+      // 「全部」（value = ""）= 清除该字段筛选：不回填 eq 条件，按剩余声明重物化
       const merged: ChartSpec = {
         ...parsedSpec,
-        filters: [...rest, { field: event.field, op: "eq", value: event.value }],
+        filters:
+          event.value === ""
+            ? rest
+            : [...rest, { field: event.field, op: "eq", value: event.value }],
       };
       const mySeq = ++seq;
       fetch("/api/dashboards/preview-query", {
@@ -88,7 +105,7 @@ export const SpecChart: React.FC<SpecChartProps> = ({
         .then((body: { rows?: Array<Record<string, unknown>> }) => {
           if (mySeq !== seq) return; // 已有更新的筛选请求，丢弃过期响应
           if (Array.isArray(body.rows)) {
-            setFilterState({ key: currentKey, rows: body.rows });
+            setFilterState({ key: currentKeyRef.current, rows: body.rows });
           }
         })
         .catch(() => {
@@ -123,48 +140,35 @@ export const SpecChart: React.FC<SpecChartProps> = ({
       );
     }
 
-    const series: SeriesConfig[] = parsedSpec.meas.map((m) => ({
-      key: m.field,
-      label: m.label || m.field,
-    }));
-
-    // 注册表类型：走统一渲染器投影
+    // 统一经注册表派发（全枚举闭合，含 bar/line/area/pie）：维度/指标/样式一次投影，
+    // 渲染器不带卡片外框，避免与壳层双层嵌套
     const entry = getChartRenderer(chartType);
-    if (entry) {
-      const Renderer = entry.render;
-      const style = {
-        showLegend: parsedSpec.style?.showLegend,
-        showLabel: parsedSpec.style?.showLabel,
-        thresholds: parsedSpec.style?.thresholds,
-        referenceLines: parsedSpec.style?.referenceLines,
-      };
-      const xField = parsedSpec.dims?.[0]?.field || "";
-      return (
-        <Renderer
-          {...normalizeRenderProps(rows, xField, series)}
-          height={height}
-          style={style}
-        />
-      );
-    }
-
-    // fallback：直角坐标四类沿用既有 AnalyticsChart（换图不换数据）；
-    // 其余类型无注册渲染器时给明确占位（不应到达：chart-spec 枚举与注册表对齐维护）
-    if (chartType !== "bar" && chartType !== "line" && chartType !== "area" && chartType !== "pie") {
+    if (!entry) {
+      // 防御分支：chart-spec 枚举与注册表应全量对齐，不应到达
       return (
         <div className="text-xs text-warning-fg bg-warning-soft rounded-lg px-3 py-2">
           图形类型 {chartType} 暂无渲染器
         </div>
       );
     }
-    const xField = parsedSpec.dims?.[0]?.field || "";
+    const Renderer = entry.render;
     return (
-      <AnalyticsChart
-        type={chartType}
-        data={rows}
-        xAxisKey={xField}
-        series={series}
+      <Renderer
+        rows={rows}
+        dimField={parsedSpec.dims[0]?.field || ""}
+        dimFields={parsedSpec.dims.map((d) => ({ key: d.field, label: d.label }))}
+        measures={parsedSpec.meas.map((m) => ({
+          key: m.field,
+          label: m.label || m.field,
+          format: m.format,
+        }))}
         height={height}
+        style={{
+          showLegend: parsedSpec.style?.showLegend,
+          showLabel: parsedSpec.style?.showLabel,
+          thresholds: parsedSpec.style?.thresholds,
+          referenceLines: parsedSpec.style?.referenceLines,
+        }}
       />
     );
   })();

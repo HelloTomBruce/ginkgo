@@ -155,6 +155,23 @@ describe("retargetTemplate", () => {
     const v = retargetTemplate(staticTpl, "duck1", OK_SOURCE);
     expect(v).toMatchObject({ ok: false, reason: "static-template" });
   });
+
+  it("DSL 解析失败且无 queries → dsl-invalid（如实上报，不再谎报 static-template）", () => {
+    const broken = seedTemplate({
+      queries: undefined,
+      bindings: undefined,
+      dsl: "这不是合法 DSL", // 与 dashboardRefresh dsl-invalid 用例同款必败输入
+    });
+    const v = retargetTemplate(broken, "duck1", OK_SOURCE);
+    expect(v).toMatchObject({ ok: false, reason: "dsl-invalid" });
+  });
+
+  it("DSL 解析失败但 queries 存在 → queries 通道兜底仍可换源", () => {
+    const broken = seedTemplate({ dsl: "这不是合法 DSL" });
+    const v = retargetTemplate(broken, "duck1", OK_SOURCE);
+    expect(v.ok).toBe(true);
+    if (v.ok) expect(v.record.queries?.[0].sourceId).toBe("duck1");
+  });
 });
 
 describe("M3-4 审查回归：origin 剥离与取消模板", () => {
