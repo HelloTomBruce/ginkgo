@@ -143,11 +143,30 @@ describe("配置模型 v3（无 builtin）", () => {
     ).toBe(false);
   });
 
-  it("mask 函数行为不变", () => {
+  it("mask 函数行为", () => {
     expect(maskConnectionString("mysql://u:p@h:3306/db")).toBe(
       "mysql://u:***@h:3306/db"
     );
     expect(maskUrl("http://u:p@h:7002/mcp?x=1")).toBe("http://h:7002/mcp");
+  });
+
+  it("maskConnectionString：query 中的 password 类参数脱敏", () => {
+    expect(
+      maskConnectionString("http://ch-server:8123/default?password=secret&user=default")
+    ).toBe("http://ch-server:8123/default?password=***&user=default");
+  });
+
+  it("maskConnectionString：无法解析的连接串回退占位符，不回显原文", () => {
+    expect(maskConnectionString("Host=db.internal;Password=secret;Port=5432")).toBe(
+      "***"
+    );
+    expect(maskConnectionString("not a url")).toBe("***");
+  });
+
+  it("maskConnectionString：无密码的可解析连接串原样返回", () => {
+    expect(maskConnectionString("postgres://u@h:5432/db")).toBe(
+      "postgres://u@h:5432/db"
+    );
   });
 });
 

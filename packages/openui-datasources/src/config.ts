@@ -263,14 +263,28 @@ export function deleteSource(
   return { sources: config.sources.filter((s) => s.id !== id) };
 }
 
-/** 脱敏连接串：隐藏密码；无密码或解析失败原样返回 */
+/** query 中视为机密的参数名（大小写不敏感） */
+const SENSITIVE_QUERY_KEYS =
+  /^(?:pass(?:word)?|pwd|secret|token|access_?key|api_?key|auth)$/i;
+
+/** 无法解析的连接串统一回显的占位符；客户端以含 *** 判定「未变更」 */
+export const MASKED_PLACEHOLDER = "***";
+
+/**
+ * 脱敏连接串：隐藏 userinfo 密码与 password 类 query 参数。
+ * 解析失败（如键值 DSN `Host=..;Password=..`）一律回退占位符——
+ * 绝不把可能含明文密码的原文下发到客户端。
+ */
 export function maskConnectionString(conn: string): string {
   try {
     const u = new URL(conn);
     if (u.password) u.password = "***";
+    u.searchParams.forEach((_, key) => {
+      if (SENSITIVE_QUERY_KEYS.test(key)) u.searchParams.set(key, "***");
+    });
     return u.toString();
   } catch {
-    return conn;
+    return MASKED_PLACEHOLDER;
   }
 }
 

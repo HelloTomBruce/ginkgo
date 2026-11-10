@@ -495,7 +495,8 @@ export function DatasourceSettings() {
                     </label>
                     <input
                       id="ds-conn"
-                      type="text"
+                      type="password"
+                      autoComplete="off"
                       value={form.connectionString}
                       onChange={(e) =>
                         setForm({ ...form, connectionString: e.target.value })
