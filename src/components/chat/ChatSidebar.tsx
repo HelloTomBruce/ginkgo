@@ -68,6 +68,8 @@ interface ChatSidebarProps {
   onToggleRawLang: () => void;
   /** 打开分析方法论查看弹窗 */
   onOpenMethodology: () => void;
+  /** 打开可视化组件查看弹窗 */
+  onOpenComponentCatalog: () => void;
 }
 
 export function ChatSidebar({
@@ -99,6 +101,7 @@ export function ChatSidebar({
   presetQueries,
   onToggleRawLang,
   onOpenMethodology,
+  onOpenComponentCatalog,
 }: ChatSidebarProps) {
   const [sidebarTab, setSidebarTab] = useState<
     "history" | "dashboards" | "presets"
@@ -334,6 +337,13 @@ export function ChatSidebar({
           >
             <BookOpen className="w-3.5 h-3.5" />
             <span>分析方法论</span>
+          </button>
+          <button
+            onClick={onOpenComponentCatalog}
+            className="w-full text-xs p-2 rounded-lg border border-border text-foreground-subtle hover:bg-muted transition-colors flex items-center gap-2"
+          >
+            <LayoutGrid className="w-3.5 h-3.5" />
+            <span>可视化组件</span>
           </button>
         </div>
       </div>

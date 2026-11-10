@@ -45,3 +45,6 @@ config
 data/
 .worktrees/
 .pnpm-store/
+
+# 浏览器验证产物（截图/下载）
+.dsh-browser/

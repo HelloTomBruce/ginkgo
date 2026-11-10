@@ -4,7 +4,8 @@
  * @openui-analytics/components —— OpenUI 规范展示组件库
  *
  * 分类目录（新增组件时按职能放入对应目录，文件内同时持有
- * React 组件与其 defineComponent 定义，最后在下方 library 清单注册一行）：
+ * React 组件与其 defineComponent 定义，最后在下方 CATALOG_GROUPS
+ * 对应分组注册一行——library 渲染清单与组件展示目录均由此派生）：
  *
  *   layout/      布局与模板    Root、MetricGrid + 布局模板（ReportLayout/FocusLayout/ComparisonLayout）
  *   metrics/     指标类        MetricCard、GaugeProgress
@@ -19,6 +20,7 @@
  */
 
 import { createLibrary } from "@openuidev/react-lang";
+import { CHART_TYPES } from "@openui-analytics/chart-spec";
 
 // layout
 import { RootComponent } from "./layout/Root";
@@ -49,32 +51,69 @@ import { ReactiveSimulator, ReactiveSimulatorDef } from "./interaction/ReactiveS
 import { PlanReviewCard, PlanReviewCardDef } from "./interaction/PlanReviewCard";
 
 /**
+ * 目录分组定义——组件注册的唯一事实来源：
+ * library 渲染清单与 componentCatalog 展示目录都从这份数据派生，
+ * 新增组件只需在此登记一次，不存在两份手工清单漂移的可能。
+ */
+const CATALOG_GROUPS = [
+  {
+    category: "布局与模板",
+    defs: [
+      RootComponent,
+      MetricGridDef,
+      ReportLayoutDef,
+      FocusLayoutDef,
+      ComparisonLayoutDef,
+    ],
+  },
+  {
+    category: "指标",
+    defs: [MetricCardDef, GaugeProgressDef],
+  },
+  {
+    category: "图表",
+    defs: [
+      AnalyticsChartDef,
+      SpecChartDef,
+      FunnelChartDef,
+      RadarChartDef,
+      ContributionHeatmapDef,
+    ],
+  },
+  {
+    category: "数据明细",
+    defs: [DataTableDef],
+  },
+  {
+    category: "洞察结论",
+    defs: [InsightBoxDef, ActionPlanCardDef],
+  },
+  {
+    category: "时间线",
+    defs: [ActivityTimelineDef],
+  },
+  {
+    category: "交互控件",
+    defs: [
+      AnalyticsFilterBarDef,
+      ActionButtonDef,
+      ReactiveSimulatorDef,
+      PlanReviewCardDef,
+    ],
+  },
+] as const;
+
+/** 组件可选子类型（按组件名声明；SpecChart 支持的图表类型派生自 CHART_TYPES） */
+const ENTRY_VARIANTS: Record<string, readonly string[]> = {
+  SpecChart: CHART_TYPES,
+};
+
+/**
  * OpenUI 组件库：传给 @openuidev/react-lang <Renderer library={...}/> 渲染。
- * root 固定为 "Root"。
+ * root 固定为 "Root"；组件清单由 CATALOG_GROUPS 派生（Root 首位）。
  */
 export const analyticsLibrary = createLibrary({
-  components: [
-    RootComponent,
-    MetricGridDef,
-    ReportLayoutDef,
-    FocusLayoutDef,
-    ComparisonLayoutDef,
-    MetricCardDef,
-    GaugeProgressDef,
-    AnalyticsChartDef,
-    SpecChartDef,
-    FunnelChartDef,
-    RadarChartDef,
-    ContributionHeatmapDef,
-    DataTableDef,
-    InsightBoxDef,
-    ActionPlanCardDef,
-    ActivityTimelineDef,
-    AnalyticsFilterBarDef,
-    ActionButtonDef,
-    ReactiveSimulatorDef,
-    PlanReviewCardDef,
-  ],
+  components: CATALOG_GROUPS.flatMap((g) => [...g.defs]),
   root: "Root",
 });
 
@@ -119,3 +158,42 @@ export {
 export { CHART_COLORS, resolveSeries, type SeriesConfig } from "./charts/chartShared";
 // 筛选联动总线（FilterBar 广播 → SpecChart 订阅自行物化）
 export { emitFilterChange, onFilterChange, type FilterChangeEvent } from "./charts/filterBus";
+
+// ===== 对外导出：组件目录（供「可视化组件」查看入口展示）=====
+
+/** 目录条目：名称与描述直接取自组件定义（Def），不重复维护文案 */
+export interface ComponentCatalogEntry {
+  /** OpenUI DSL 中的组件名（渲染标签名） */
+  name: string;
+  /** 组件职能描述 */
+  description?: string;
+  /** 可选子类型（如 SpecChart 支持的图表类型，派生自 CHART_TYPES） */
+  variants?: readonly string[];
+}
+
+export interface ComponentCatalogGroup {
+  /** 分类中文名 */
+  category: string;
+  components: readonly ComponentCatalogEntry[];
+}
+
+/** 最小投影：只取目录展示所需字段（Def 的 name/description 是唯一事实来源） */
+function toCatalogEntry(
+  def: { name: string; description?: string }
+): ComponentCatalogEntry {
+  const variants = ENTRY_VARIANTS[def.name];
+  return { name: def.name, description: def.description, ...(variants ? { variants } : {}) };
+}
+
+/**
+ * 组件目录：由 CATALOG_GROUPS 派生（与 analyticsLibrary 同一份注册数据），
+ * 新增组件只需在 CATALOG_GROUPS 登记一次，目录与渲染清单自动同步。
+ */
+export const componentCatalog: readonly ComponentCatalogGroup[] =
+  CATALOG_GROUPS.map((group) => ({
+    category: group.category,
+    components: group.defs.map((def) => toCatalogEntry(def)),
+  }));
+
+// 组件演示样例（可视化组件查看弹窗的条目实况预览；无演示的组件仅展示信息）
+export { componentDemos } from "./componentDemos";

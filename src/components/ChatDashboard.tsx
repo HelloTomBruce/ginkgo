@@ -27,6 +27,7 @@ import { useMethodologyPresets } from "@/components/chat/useMethodologyPresets";
 import { SettingsModal } from "@/components/chat/SettingsModal";
 import { DevToolsPanel } from "@/components/chat/DevToolsPanel";
 import { MethodologyModal } from "@/components/chat/MethodologyModal";
+import { ComponentCatalogModal } from "@/components/chat/ComponentCatalogModal";
 import { Toaster } from "@/components/Toaster";
 import { toast } from "@/lib/toast";
 
@@ -74,6 +75,8 @@ export default function ChatDashboard() {
   const [showDevTools, setShowDevTools] = useState(false);
   // 分析方法论查看入口（侧边栏底部按钮打开，弹窗内自取数）
   const [showMethodology, setShowMethodology] = useState(false);
+  // 可视化组件查看入口（侧边栏底部按钮打开，目录数据本地派生）
+  const [showComponentCatalog, setShowComponentCatalog] = useState(false);
   const [devToolsCode, setDevToolsCode] = useState(DEFAULT_SANDBOX_CODE);
   // 上下文用量兜底（仅在未收到 StreamData 时生效）
   const [fallbackPromptTokens, setFallbackPromptTokens] = useState<number | null>(null);
@@ -682,6 +685,7 @@ export default function ChatDashboard() {
         presetQueries={presetQueries}
         onToggleRawLang={handleToggleRawLang}
         onOpenMethodology={() => setShowMethodology(true)}
+        onOpenComponentCatalog={() => setShowComponentCatalog(true)}
         onCancelEdit={handleCancelRename}
       />
 
@@ -819,6 +823,12 @@ export default function ChatDashboard() {
       <MethodologyModal
         open={showMethodology}
         onClose={() => setShowMethodology(false)}
+      />
+
+      {/* 可视化组件查看（目录与组件库同源） */}
+      <ComponentCatalogModal
+        open={showComponentCatalog}
+        onClose={() => setShowComponentCatalog(false)}
       />
 
       {showSettings && (

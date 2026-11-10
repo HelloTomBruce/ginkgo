@@ -34,6 +34,7 @@ const baseProps = {
   onToggleDashboardTemplate: vi.fn(),
   onCreateDashboardFromTemplate: vi.fn(),
   onOpenMethodology: vi.fn(),
+  onOpenComponentCatalog: vi.fn(),
 };
 
 const SUMMARY: DashboardSummary = {
@@ -212,5 +213,13 @@ describe("ChatSidebar 底部功能栏", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "分析方法论" }));
     expect(props.onOpenMethodology).toHaveBeenCalledTimes(1);
+  });
+
+  it("「可视化组件」按钮触发 onOpenComponentCatalog", () => {
+    const props = { ...baseProps };
+    render(<ChatSidebar {...props} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "可视化组件" }));
+    expect(props.onOpenComponentCatalog).toHaveBeenCalledTimes(1);
   });
 });
