@@ -1,10 +1,17 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { ACCESS_TOKEN_STORAGE_KEY, authHeaders } from "@/lib/auth";
 import {
   findPreset,
   inferProviderByBaseURL,
+  type ConfiguredProvider,
+  normalizeModel,
+  getModelId,
+  createDefaultConfiguredProviders,
+  PROVIDERS_STORAGE_KEY,
+  ACTIVE_PROVIDER_STORAGE_KEY,
+  ACTIVE_MODEL_STORAGE_KEY,
 } from "@/lib/llmProviders";
 
 const STORAGE_KEYS = {
@@ -37,112 +44,391 @@ function readStored(key: string, fallback: string): string {
   return fallback;
 }
 
+function loadInitialProviders(): ConfiguredProvider[] {
+  if (typeof window === "undefined") {
+    return createDefaultConfiguredProviders();
+  }
+
+  const raw = localStorage.getItem(PROVIDERS_STORAGE_KEY);
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed as ConfiguredProvider[];
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  // 首次运行或老用户迁移：读取 legacy 键，与预设清单合并
+  const defaults = createDefaultConfiguredProviders();
+  const legacyKey = localStorage.getItem(STORAGE_KEYS.apiKey) || "";
+  const legacyBaseURL = localStorage.getItem(STORAGE_KEYS.baseURL);
+  const legacyModel = localStorage.getItem(STORAGE_KEYS.model) || DEFAULT_MODEL;
+  const legacyProtocol = (localStorage.getItem(STORAGE_KEYS.protocol) || DEFAULT_PROTOCOL) as "openai" | "anthropic";
+  const legacyProviderId =
+    localStorage.getItem(STORAGE_KEYS.provider) ||
+    (legacyBaseURL ? inferProviderByBaseURL(legacyBaseURL) : "deepseek");
+
+  if (legacyKey || legacyBaseURL) {
+    const existingIndex = defaults.findIndex((p) => p.id === legacyProviderId);
+    if (existingIndex >= 0) {
+      defaults[existingIndex] = {
+        ...defaults[existingIndex],
+        apiKey: legacyKey,
+        baseURL: legacyBaseURL || defaults[existingIndex].baseURL,
+        protocol: legacyProtocol,
+        models: Array.from(new Set([legacyModel, ...defaults[existingIndex].models])),
+        defaultModel: legacyModel,
+      };
+    } else {
+      defaults.unshift({
+        id: legacyProviderId || "custom",
+        name: legacyProviderId || "自定义",
+        type: "custom",
+        protocol: legacyProtocol,
+        baseURL: legacyBaseURL || DEFAULT_BASE_URL,
+        apiKey: legacyKey,
+        models: [legacyModel],
+        defaultModel: legacyModel,
+        enabled: true,
+      });
+    }
+  }
+
+  try {
+    localStorage.setItem(PROVIDERS_STORAGE_KEY, JSON.stringify(defaults));
+  } catch {
+    // ignore
+  }
+
+  return defaults;
+}
+
 /**
- * LLM / GitLab MCP 配置状态管理：惰性读取 localStorage，提供保存与 useChat body。
+ * LLM / 多 Provider 配置状态管理：
+ * - 维护已配置的提供商列表（支持多 provider、各 provider 下多模型）
+ * - 维护当前会话活跃的 provider 与 model
+ * - 兼容旧版 single-provider 接口与 localStorage 键
  */
 export function useLlmSettings() {
   const [showSettings, setShowSettings] = useState(false);
-  // Provider 预设：未存储时按已存 baseURL 反推（老用户配置无损迁移）
-  const [providerId, setProviderId] = useState(() =>
-    readStored(STORAGE_KEYS.provider, "") || inferProviderByBaseURL(
-      readStored(STORAGE_KEYS.baseURL, DEFAULT_BASE_URL)
-    )
+  const [providers, setProviders] = useState<ConfiguredProvider[]>(() =>
+    loadInitialProviders()
   );
-  const [apiKey, setApiKey] = useState(() => readStored(STORAGE_KEYS.apiKey, ""));
-  const [baseURL, setBaseURL] = useState(() =>
-    readStored(STORAGE_KEYS.baseURL, DEFAULT_BASE_URL)
-  );
-  const [model, setModel] = useState(() => readStored(STORAGE_KEYS.model, DEFAULT_MODEL));
-  // 部署模式访问令牌（对应服务端 OPENUI_API_AUTH_TOKEN；本地未配置时留空）
+
+  // 活跃 Provider ID：优先读取 ACTIVE_PROVIDER 键，次选 legacy 键，再选首个配置了 key 的 provider
+  const [activeProviderId, setActiveProviderId] = useState<string>(() => {
+    const storedActive = readStored(ACTIVE_PROVIDER_STORAGE_KEY, "");
+    if (storedActive) return storedActive;
+    const legacy = readStored(STORAGE_KEYS.provider, "");
+    if (legacy) return legacy;
+    const initialList = loadInitialProviders();
+    const withKey = initialList.find((p) => p.apiKey.trim().length > 0);
+    return withKey ? withKey.id : (initialList[0]?.id || "deepseek");
+  });
+
+  const activeProvider = useMemo(() => {
+    return providers.find((p) => p.id === activeProviderId) || providers[0];
+  }, [providers, activeProviderId]);
+
+  // 活跃 Model：优先读取 ACTIVE_MODEL 键，次选 legacy model，再选 activeProvider.defaultModel 或首模型
+  const [activeModel, setActiveModel] = useState<string>(() => {
+    const stored = readStored(ACTIVE_MODEL_STORAGE_KEY, "");
+    if (stored) return stored;
+    const legacy = readStored(STORAGE_KEYS.model, "");
+    if (legacy) return legacy;
+    const initialList = loadInitialProviders();
+    const active = initialList.find((p) => p.id === activeProviderId) || initialList[0];
+    const firstModel = active?.models?.[0];
+    return active?.defaultModel || (firstModel ? getModelId(firstModel) : DEFAULT_MODEL);
+  });
+
+  // 当前活跃模型的独立配置项（支持模型绑定的 contextWindow 与 maxTokens）
+  const activeModelConfig = useMemo(() => {
+    if (!activeProvider?.models) return undefined;
+    const list = activeProvider.models.map(normalizeModel);
+    return list.find((m) => m.id === activeModel) || list[0];
+  }, [activeProvider, activeModel]);
+
+  // 全局/通用参数
   const [accessToken, setAccessToken] = useState(() =>
     readStored(ACCESS_TOKEN_STORAGE_KEY, "")
   );
   const [temperature, setTemperature] = useState(() =>
     readStored(STORAGE_KEYS.temperature, DEFAULT_TEMPERATURE)
   );
-  // 最大输出 tokens：留空走服务端默认；推理型模型建议 32768+
   const [maxTokens, setMaxTokens] = useState(() =>
     readStored(STORAGE_KEYS.maxTokens, DEFAULT_MAX_TOKENS)
   );
-  // 最大步数上限（maxSteps）：留空走服务端默认 25 步（钳制 1–100）
   const [maxSteps, setMaxSteps] = useState(() =>
     readStored(STORAGE_KEYS.maxSteps, DEFAULT_MAX_STEPS)
   );
-  // 上下文窗口容量：留空自动按模型推断；支持自定义如 1024000
   const [contextWindow, setContextWindow] = useState(() =>
     readStored(STORAGE_KEYS.contextWindow, DEFAULT_CONTEXT_WINDOW)
   );
-  // 接口协议：openai 兼容（/chat/completions）或 anthropic（/v1/messages，如 Kimi Coding）
-  const [protocol, setProtocol] = useState<"openai" | "anthropic">(() =>
-    readStored(STORAGE_KEYS.protocol, DEFAULT_PROTOCOL) === "anthropic"
-      ? "anthropic"
-      : "openai"
+
+  // 保持单项状态受控（为了兼容现有单个 provider 字段或旧组件）
+  const [providerId, setProviderId] = useState(() => activeProvider?.id || "deepseek");
+  const [apiKey, setApiKey] = useState(() => activeProvider?.apiKey || "");
+  const [baseURL, setBaseURL] = useState(() => activeProvider?.baseURL || DEFAULT_BASE_URL);
+  const [protocol, setProtocol] = useState<"openai" | "anthropic">(
+    () => activeProvider?.protocol || "openai"
+  );
+  const [model, setModel] = useState(() => activeModel);
+
+  // 同步 activeProvider 变更到单项状态
+  const syncFromProvider = useCallback((p?: ConfiguredProvider, targetModel?: string) => {
+    if (!p) return;
+    setProviderId(p.id);
+    setApiKey(p.apiKey);
+    setBaseURL(p.baseURL);
+    setProtocol(p.protocol);
+    const chosenModel =
+      targetModel ||
+      p.defaultModel ||
+      (p.models[0] ? getModelId(p.models[0]) : DEFAULT_MODEL);
+    setModel(chosenModel);
+  }, []);
+
+  /**
+   * 会话中切换活跃模型：直接按 providerId 与 modelName 切换
+   */
+  const switchActiveModel = useCallback(
+    (nextProviderId: string, nextModel: string) => {
+      const targetProvider = providers.find((p) => p.id === nextProviderId);
+      if (!targetProvider) return;
+
+      setActiveProviderId(nextProviderId);
+      setActiveModel(nextModel);
+      syncFromProvider(targetProvider, nextModel);
+
+      if (typeof window !== "undefined") {
+        localStorage.setItem(ACTIVE_PROVIDER_STORAGE_KEY, nextProviderId);
+        localStorage.setItem(ACTIVE_MODEL_STORAGE_KEY, nextModel);
+        // 同步 legacy 键，保证外部单例或现有调用层无缝工作
+        localStorage.setItem(STORAGE_KEYS.provider, nextProviderId);
+        localStorage.setItem(STORAGE_KEYS.apiKey, targetProvider.apiKey);
+        localStorage.setItem(STORAGE_KEYS.baseURL, targetProvider.baseURL);
+        localStorage.setItem(STORAGE_KEYS.model, nextModel);
+        localStorage.setItem(STORAGE_KEYS.protocol, targetProvider.protocol);
+      }
+    },
+    [providers, syncFromProvider]
   );
 
   /**
-   * 选择 Provider 预设：联动填充协议 / baseURL / 默认模型。
-   * 自定义（custom）不动现有值，回退自由输入形态。
+   * 保存提供商（新增或更新已有）
    */
-  const applyProvider = (id: string) => {
-    setProviderId(id);
-    const preset = findPreset(id);
-    if (preset) {
-      setBaseURL(preset.baseURL);
-      setProtocol(preset.protocol);
-      setModel(preset.defaultModel);
-    }
-  };
+  const saveProvider = useCallback(
+    (provider: ConfiguredProvider) => {
+      setProviders((prev) => {
+        const index = prev.findIndex((p) => p.id === provider.id);
+        let next: ConfiguredProvider[];
+        if (index >= 0) {
+          next = [...prev];
+          next[index] = provider;
+        } else {
+          next = [...prev, provider];
+        }
+        if (typeof window !== "undefined") {
+          localStorage.setItem(PROVIDERS_STORAGE_KEY, JSON.stringify(next));
+        }
+        return next;
+      });
 
-  const saveSettings = () => {
-    localStorage.setItem(STORAGE_KEYS.provider, providerId);
-    localStorage.setItem(STORAGE_KEYS.apiKey, apiKey);
-    localStorage.setItem(STORAGE_KEYS.baseURL, baseURL);
-    localStorage.setItem(STORAGE_KEYS.model, model);
-    localStorage.setItem(STORAGE_KEYS.temperature, temperature);
-    localStorage.setItem(STORAGE_KEYS.maxTokens, maxTokens);
-    localStorage.setItem(STORAGE_KEYS.maxSteps, maxSteps);
-    localStorage.setItem(STORAGE_KEYS.contextWindow, contextWindow);
-    localStorage.setItem(STORAGE_KEYS.protocol, protocol);
-    localStorage.setItem(ACCESS_TOKEN_STORAGE_KEY, accessToken);
+      // 如果更新的是当前正在使用的 Provider，同步活跃状态
+      if (provider.id === activeProviderId) {
+        syncFromProvider(provider, activeModel);
+        if (typeof window !== "undefined") {
+          localStorage.setItem(STORAGE_KEYS.apiKey, provider.apiKey);
+          localStorage.setItem(STORAGE_KEYS.baseURL, provider.baseURL);
+          localStorage.setItem(STORAGE_KEYS.protocol, provider.protocol);
+        }
+      }
+    },
+    [activeProviderId, activeModel, syncFromProvider]
+  );
+
+  /**
+   * 删除提供商
+   */
+  const deleteProvider = useCallback(
+    (idToDelete: string) => {
+      setProviders((prev) => {
+        const next = prev.filter((p) => p.id !== idToDelete);
+        if (typeof window !== "undefined") {
+          localStorage.setItem(PROVIDERS_STORAGE_KEY, JSON.stringify(next));
+        }
+        return next;
+      });
+
+      // 若删除了当前活跃 Provider，切换至首个
+      if (idToDelete === activeProviderId) {
+        const remaining = providers.filter((p) => p.id !== idToDelete);
+        if (remaining.length > 0) {
+          const nextActive = remaining[0];
+          const nextModel =
+            nextActive.defaultModel ||
+            (nextActive.models[0] ? getModelId(nextActive.models[0]) : DEFAULT_MODEL);
+          switchActiveModel(nextActive.id, nextModel);
+        }
+      }
+    },
+    [activeProviderId, providers, switchActiveModel]
+  );
+
+  /**
+   * 预设切换旧逻辑保留（供旧兼容测试使用）
+   */
+  const applyProvider = useCallback(
+    (id: string) => {
+      setProviderId(id);
+      const preset = findPreset(id);
+      if (preset) {
+        setBaseURL(preset.baseURL);
+        setProtocol(preset.protocol);
+        setModel(preset.defaultModel);
+      }
+    },
+    []
+  );
+
+  const saveSettings = useCallback(() => {
+    // 1. 同步当前编辑的值更新到对应的 provider
+    setProviders((prev) => {
+      const idx = prev.findIndex((p) => p.id === providerId);
+      let next: ConfiguredProvider[];
+      if (idx >= 0) {
+        next = [...prev];
+        next[idx] = {
+          ...next[idx],
+          apiKey,
+          baseURL,
+          protocol,
+          models: Array.from(new Set([model, ...next[idx].models].filter(Boolean))),
+          defaultModel: model,
+        };
+      } else {
+        next = [
+          ...prev,
+          {
+            id: providerId || "custom",
+            name: providerId || "自定义",
+            type: "custom",
+            protocol,
+            baseURL,
+            apiKey,
+            models: [model].filter(Boolean),
+            defaultModel: model,
+            enabled: true,
+          },
+        ];
+      }
+      if (typeof window !== "undefined") {
+        localStorage.setItem(PROVIDERS_STORAGE_KEY, JSON.stringify(next));
+      }
+      return next;
+    });
+
+    // 2. 持久化全局与活跃键
+    if (typeof window !== "undefined") {
+      localStorage.setItem(ACTIVE_PROVIDER_STORAGE_KEY, providerId);
+      localStorage.setItem(ACTIVE_MODEL_STORAGE_KEY, model);
+      localStorage.setItem(STORAGE_KEYS.provider, providerId);
+      localStorage.setItem(STORAGE_KEYS.apiKey, apiKey);
+      localStorage.setItem(STORAGE_KEYS.baseURL, baseURL);
+      localStorage.setItem(STORAGE_KEYS.model, model);
+      localStorage.setItem(STORAGE_KEYS.temperature, temperature);
+      localStorage.setItem(STORAGE_KEYS.maxTokens, maxTokens);
+      localStorage.setItem(STORAGE_KEYS.maxSteps, maxSteps);
+      localStorage.setItem(STORAGE_KEYS.contextWindow, contextWindow);
+      localStorage.setItem(STORAGE_KEYS.protocol, protocol);
+      localStorage.setItem(ACCESS_TOKEN_STORAGE_KEY, accessToken);
+    }
+    setActiveProviderId(providerId);
+    setActiveModel(model);
     setShowSettings(false);
-  };
+  }, [
+    providerId,
+    apiKey,
+    baseURL,
+    protocol,
+    model,
+    temperature,
+    maxTokens,
+    maxSteps,
+    contextWindow,
+    accessToken,
+  ]);
+
+  const activeContextWindow = activeModelConfig?.contextWindow || contextWindow;
+  const activeMaxTokens = activeModelConfig?.maxTokens || maxTokens;
 
   const chatBody = useMemo(
     () => ({
-      apiKey: apiKey.trim() || undefined,
-      baseURL: baseURL.trim() || undefined,
-      model: model.trim() || undefined,
+      apiKey: (activeProvider?.apiKey || apiKey).trim() || undefined,
+      baseURL: (activeProvider?.baseURL || baseURL).trim() || undefined,
+      model: (activeModel || model).trim() || undefined,
       temperature: temperature.trim() || undefined,
-      maxTokens: maxTokens.trim() || undefined,
+      maxTokens: (activeModelConfig?.maxTokens || maxTokens).trim() || undefined,
       maxSteps: maxSteps.trim() || undefined,
-      contextWindow: contextWindow.trim() || undefined,
-      protocol,
+      contextWindow: (activeModelConfig?.contextWindow || contextWindow).trim() || undefined,
+      protocol: activeProvider?.protocol || protocol,
     }),
-    [apiKey, baseURL, model, temperature, maxTokens, maxSteps, contextWindow, protocol]
+    [
+      activeProvider?.apiKey,
+      activeProvider?.baseURL,
+      activeProvider?.protocol,
+      activeModelConfig?.maxTokens,
+      activeModelConfig?.contextWindow,
+      activeModel,
+      apiKey,
+      baseURL,
+      model,
+      temperature,
+      maxTokens,
+      maxSteps,
+      contextWindow,
+      protocol,
+    ]
   );
 
   return {
     showSettings,
     setShowSettings,
+    providers,
+    setProviders,
+    activeProviderId,
+    activeModel,
+    activeModelConfig,
+    activeContextWindow,
+    activeMaxTokens,
+    activeProvider,
+    switchActiveModel,
+    saveProvider,
+    deleteProvider,
+    // 保持对旧接口的兼容
     providerId,
     applyProvider,
-    apiKey,
+    apiKey: activeProvider?.apiKey || apiKey,
     setApiKey,
-    baseURL,
+    baseURL: activeProvider?.baseURL || baseURL,
     setBaseURL,
-    model,
+    model: activeModel || model,
     setModel,
     accessToken,
     setAccessToken,
     temperature,
     setTemperature,
-    maxTokens,
+    maxTokens: activeMaxTokens,
     setMaxTokens,
     maxSteps,
     setMaxSteps,
-    contextWindow,
+    contextWindow: activeContextWindow,
     setContextWindow,
-    protocol,
+    protocol: activeProvider?.protocol || protocol,
     setProtocol,
     authHeaders,
     saveSettings,

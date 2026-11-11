@@ -50,6 +50,7 @@ function toSummaryLocal(record: SessionRecord): SessionSummary {
       ? { enabledSources: record.enabledSources }
       : {}),
     ...(record.planMode !== undefined ? { planMode: record.planMode } : {}),
+    ...(record.context !== undefined ? { context: record.context } : {}),
     messageCount: record.messages.length,
   };
 }
@@ -199,7 +200,7 @@ export function useSessionManager(options?: UseSessionManagerOptions) {
     (
       newMessages: Message[],
       targetSessionId?: string,
-      options?: { silent?: boolean; keepalive?: boolean }
+      options?: { silent?: boolean; keepalive?: boolean; promptTokens?: number }
     ) => {
       const activeId = targetSessionId ?? currentSessionIdRef.current;
       if (!activeId || newMessages.length === 0) return;
@@ -224,6 +225,14 @@ export function useSessionManager(options?: UseSessionManagerOptions) {
         next[idx] = {
           ...prev[idx],
           ...(nextTitle ? { title: nextTitle } : {}),
+          ...(options?.promptTokens
+            ? {
+                context: {
+                  ...prev[idx].context,
+                  lastPromptTokens: options.promptTokens,
+                },
+              }
+            : {}),
           updatedAt: Date.now(),
           messageCount: newMessages.length,
         };
@@ -236,6 +245,9 @@ export function useSessionManager(options?: UseSessionManagerOptions) {
         {
           messages: newMessages as unknown as SessionRecord["messages"],
           ...(nextTitle ? { title: nextTitle } : {}),
+          ...(options?.promptTokens
+            ? { context: { lastPromptTokens: options.promptTokens } }
+            : {}),
         },
         options?.keepalive ? { keepalive: true } : undefined
       ).then((ok) => {

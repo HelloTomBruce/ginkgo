@@ -6,6 +6,7 @@ import { ArrowDown, ArrowUp, Loader2, Sparkles, FileCode, Printer, Star, GitFork
 import { OpenUIRenderer } from "@/components/OpenUIRenderer";
 import { Hint } from "@/components/ui/hint";
 import { Skeleton } from "@/components/ui/skeleton";
+import { MarkdownContent } from "./MarkdownContent";
 import { extractOpenUI } from "@/lib/extractOpenUI";
 import { captureDashboardQueries } from "@/lib/dashboardCapture";
 import { toast } from "@/lib/toast";
@@ -391,8 +392,10 @@ const MessageItem = React.memo(function MessageItem({
           return (
             <React.Fragment key={block.id}>
               {hasText ? (
-                <div className="no-print leading-relaxed whitespace-pre-wrap">
-                  {isStreaming && block.isLast ? block.textPart.trimStart() : block.textPart.trim()}
+                <div className="no-print leading-relaxed">
+                  <MarkdownContent
+                    content={isStreaming && block.isLast ? block.textPart.trimStart() : block.textPart.trim()}
+                  />
                   {isStreaming && block.isLast && !block.openuiPart && (
                     <span className="inline-block w-1.5 h-3.5 bg-info-solid animate-pulse ml-1 align-middle rounded-xs" />
                   )}

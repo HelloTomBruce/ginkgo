@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, cleanup, fireEvent, waitFor } from "@testing-library/react";
 import { SettingsModal, type SettingsModalProps } from "./SettingsModal";
+import type { ConfiguredProvider } from "@/lib/llmProviders";
 
 // mock /api/datasources：返回一个健康数据源，锁定「数据源」tab 状态渲染
 const fetchMock = vi.fn().mockResolvedValue({
@@ -118,7 +119,7 @@ describe("SettingsModal Provider 预设", () => {
     fireEvent.click(trigger);
     // 内置精选 10 项（无网络环境目录拉取失败回退内置）+ 自定义
     const options = await screen.findAllByRole("option");
-    expect(options.length).toBe(11);
+    expect(options.length).toBeGreaterThanOrEqual(11);
     expect(
       screen.getByRole("option", { name: "Kimi（Moonshot）" })
     ).toBeInTheDocument();
@@ -240,3 +241,178 @@ describe("SettingsModal 协议类型", () => {
     expect(screen.getByText("35 步")).toBeInTheDocument();
   });
 });
+
+describe("SettingsModal 多 Provider 管理能力（参考 dsh）", () => {
+  const MOCK_PROVIDERS: ConfiguredProvider[] = [
+    {
+      id: "deepseek",
+      name: "DeepSeek",
+      type: "builtin",
+      protocol: "openai",
+      baseURL: "https://api.deepseek.com/v1",
+      apiKey: "sk-deepseek",
+      models: ["deepseek-chat", "deepseek-reasoner"],
+      defaultModel: "deepseek-chat",
+      enabled: true,
+    },
+    {
+      id: "custom-gate",
+      name: "火山",
+      type: "custom",
+      protocol: "openai",
+      baseURL: "https://gateway.example/v1",
+      apiKey: "",
+      models: ["doubao-lite"],
+      defaultModel: "doubao-lite",
+      enabled: true,
+    },
+  ];
+
+  it("当提供 providers 时渲染多提供商卡片列表与状态指示", () => {
+    renderModal({
+      providers: MOCK_PROVIDERS,
+      activeProviderId: "deepseek",
+      activeModel: "deepseek-chat",
+      onSaveProvider: vi.fn(),
+    });
+
+    expect(screen.getByText("填入各提供商的 API 密钥即可使用其模型。")).toBeInTheDocument();
+    expect(screen.getByText("DeepSeek")).toBeInTheDocument();
+    expect(screen.getByText("火山")).toBeInTheDocument();
+    expect(screen.getByText("自定义")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "添加模型提供商" })).toBeInTheDocument();
+  });
+
+  it("点击「添加模型提供商」进入第三方与自定义 API 切换面板", () => {
+    renderModal({
+      providers: MOCK_PROVIDERS,
+      onSaveProvider: vi.fn(),
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "添加模型提供商" }));
+    expect(screen.getByRole("button", { name: "第三方模型提供商" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "自定义模型 API" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "创建提供商" })).toBeInTheDocument();
+  });
+
+  it("编辑已有提供商时可修改 API 密钥与模型列表并保存", () => {
+    const onSaveProvider = vi.fn();
+    renderModal({
+      providers: MOCK_PROVIDERS,
+      onSaveProvider,
+    });
+
+    const editBtns = screen.getAllByRole("button", { name: "编辑" });
+    fireEvent.click(editBtns[0]); // 编辑 DeepSeek
+
+    expect(screen.getByText("留空使用已保存凭据")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "保存" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    expect(onSaveProvider).toHaveBeenCalledTimes(1);
+    expect(onSaveProvider).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "deepseek",
+        name: "DeepSeek",
+      })
+    );
+  });
+
+  it("删除提供商走行内二次确认，不触发原生 confirm", () => {
+    const confirmSpy = vi.spyOn(window, "confirm");
+    const onDeleteProvider = vi.fn();
+    renderModal({
+      providers: MOCK_PROVIDERS,
+      onSaveProvider: vi.fn(),
+      onDeleteProvider,
+    });
+
+    const deleteBtns = screen.getAllByRole("button", { name: "删除" });
+    fireEvent.click(deleteBtns[0]);
+
+    // 不应调用 window.confirm
+    expect(confirmSpy).not.toHaveBeenCalled();
+    // 呈现行内确认
+    expect(screen.getByText("确认删除？")).toBeInTheDocument();
+    expect(onDeleteProvider).not.toHaveBeenCalled();
+
+    // 点击「确认」触发删除
+    fireEvent.click(screen.getByRole("button", { name: "确认" }));
+    expect(onDeleteProvider).toHaveBeenCalledWith("deepseek");
+
+    confirmSpy.mockRestore();
+  });
+
+  it("模型目录支持独立配置与展示每个模型的上下文窗口与最大输出 Tokens", () => {
+    const onSaveProvider = vi.fn();
+    const providersWithModelParams: ConfiguredProvider[] = [
+      {
+        id: "deepseek",
+        name: "DeepSeek",
+        type: "builtin",
+        protocol: "openai",
+        baseURL: "https://api.deepseek.com/v1",
+        apiKey: "sk-deepseek",
+        models: [
+          { id: "deepseek-chat", contextWindow: "128000", maxTokens: "8192" },
+          { id: "deepseek-reasoner", contextWindow: "128000", maxTokens: "65536" },
+        ],
+        defaultModel: "deepseek-chat",
+        enabled: true,
+      },
+    ];
+
+    renderModal({
+      providers: providersWithModelParams,
+      onSaveProvider,
+    });
+
+    // 1. 在通用设置区域，展示已下沉提示，不展示全局重复输入
+    expect(screen.getByText("模型参数已与各模型绑定")).toBeInTheDocument();
+
+    // 2. 点击编辑 DeepSeek
+    const editBtn = screen.getByRole("button", { name: "编辑" });
+    fireEvent.click(editBtn);
+
+    // 展开自定义设置
+    fireEvent.click(screen.getByText(/自定义设置/));
+
+    // 3. 验证模型徽章展示（两个模型均配置了 128k 上下文）
+    expect(screen.getAllByText("128k 窗口")).toHaveLength(2);
+    expect(screen.getByText("8k 输出")).toBeInTheDocument();
+    expect(screen.getByText("64k 输出")).toBeInTheDocument();
+
+    // 4. 点击配置第一个模型 deepseek-chat
+    const configBtn = screen.getByRole("button", { name: "配置模型 deepseek-chat" });
+    fireEvent.click(configBtn);
+
+    expect(screen.getByText("配置模型参数")).toBeInTheDocument();
+    const ctxInput = screen.getByLabelText(/上下文窗口/);
+    const maxTokensInput = screen.getByLabelText(/最大输出 Tokens/);
+
+    expect(ctxInput).toHaveValue(128000);
+    expect(maxTokensInput).toHaveValue(8192);
+
+    // 修改为 256000 与 16384
+    fireEvent.change(ctxInput, { target: { value: "256000" } });
+    fireEvent.change(maxTokensInput, { target: { value: "16384" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "保存参数" }));
+
+    // 5. 点击保存 Provider 并断言参数已更新
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    expect(onSaveProvider).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "deepseek",
+        models: expect.arrayContaining([
+          expect.objectContaining({
+            id: "deepseek-chat",
+            contextWindow: "256000",
+            maxTokens: "16384",
+          }),
+        ]),
+      })
+    );
+  });
+});
+

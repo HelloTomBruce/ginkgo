@@ -29,6 +29,7 @@ function toSummary(record: SessionRecord): SessionSummary {
       ? { enabledSources: record.enabledSources }
       : {}),
     ...(record.planMode !== undefined ? { planMode: record.planMode } : {}),
+    ...(record.context !== undefined ? { context: record.context } : {}),
     messageCount: record.messages.length,
   };
 }

@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useChat } from "@ai-sdk/react";
 import { TrendingUp, Code2, Settings, RefreshCw } from "lucide-react";
-import { resolveContextWindow } from "@openui-analytics/llm/context";
+import { resolveContextWindow, estimateMessagesTokens } from "@openui-analytics/llm/context";
 import { Hint } from "@/components/ui/hint";
 import { DEFAULT_SANDBOX_CODE } from "@/lib/presetQueries";
 import { DEFAULT_WELCOME_MESSAGE } from "@/lib/sessionStorage";
@@ -25,6 +25,7 @@ import { SourcePicker } from "@/components/chat/SourcePicker";
 import { useDatasourceList } from "@/components/chat/datasources/useDatasources";
 import { useMethodologyPresets } from "@/components/chat/useMethodologyPresets";
 import { SettingsModal } from "@/components/chat/SettingsModal";
+import { ModelSwitcher } from "@/components/chat/ModelSwitcher";
 import { DevToolsPanel } from "@/components/chat/DevToolsPanel";
 import { MethodologyModal } from "@/components/chat/MethodologyModal";
 import { ComponentCatalogModal } from "@/components/chat/ComponentCatalogModal";
@@ -48,8 +49,10 @@ function deriveContextUsage(
   data: unknown,
   fallbackPromptTokens: number | null,
   model: string,
-  contextWindowHint?: string | number
-): { promptTokens: number; window: number } | null {
+  contextWindowHint?: string | number,
+  sessionPromptTokens?: number | null,
+  messages?: unknown[]
+): { promptTokens: number; window: number } {
   const windowSize = resolveContextWindow(model, contextWindowHint);
   if (Array.isArray(data) && data.length > 0) {
     for (let i = data.length - 1; i >= 0; i--) {
@@ -67,7 +70,16 @@ function deriveContextUsage(
   if (typeof fallbackPromptTokens === "number" && fallbackPromptTokens > 0) {
     return { promptTokens: fallbackPromptTokens, window: windowSize };
   }
-  return null;
+  if (typeof sessionPromptTokens === "number" && sessionPromptTokens > 0) {
+    return { promptTokens: sessionPromptTokens, window: windowSize };
+  }
+  if (Array.isArray(messages) && messages.length > 1) {
+    const estimated = estimateMessagesTokens(messages);
+    if (estimated > 0) {
+      return { promptTokens: estimated, window: windowSize };
+    }
+  }
+  return { promptTokens: 0, window: windowSize };
 }
 
 export default function ChatDashboard() {
@@ -78,12 +90,21 @@ export default function ChatDashboard() {
   // 可视化组件查看入口（侧边栏底部按钮打开，目录数据本地派生）
   const [showComponentCatalog, setShowComponentCatalog] = useState(false);
   const [devToolsCode, setDevToolsCode] = useState(DEFAULT_SANDBOX_CODE);
-  // 上下文用量兜底（仅在未收到 StreamData 时生效）
-  const [fallbackPromptTokens, setFallbackPromptTokens] = useState<number | null>(null);
+  // 上下文用量兜底（仅在未收到 StreamData 时生效，按 sessionId 绑定）
+  const [fallbackPromptTokens, setFallbackPromptTokens] = useState<{
+    sessionId?: string;
+    tokens: number;
+  } | null>(null);
 
   const {
     showSettings,
     setShowSettings,
+    providers,
+    activeProviderId,
+    activeModel,
+    switchActiveModel,
+    saveProvider,
+    deleteProvider,
     providerId,
     applyProvider,
     apiKey,
@@ -143,7 +164,6 @@ export default function ChatDashboard() {
     handleDeleteSession,
     handleStartRename,
     handleSaveRename,
-    handleClearAllSessions,
     forkSession,
     rewindSession,
     planMode,
@@ -253,22 +273,44 @@ export default function ChatDashboard() {
       // 仅在仍持有流式会话标记时落盘——标记被清空（切换/新建已停流）说明
       // 这条 finish 属于旧会话，静默丢弃，防止把 A 会话内容写进 B。
       const targetId = streamingSessionIdRef.current;
-      if (targetId) {
-        saveCurrentSessionMessages(upsertMessage(getMessages(), message), targetId);
-      }
       // 上下文用量：记录兜底值（当 StreamData 可用时优先消费真实单步值）
       const promptTokens = options?.usage?.promptTokens;
-      if (typeof promptTokens === "number" && Number.isFinite(promptTokens)) {
-        setFallbackPromptTokens(promptTokens);
+      const validTokens =
+        typeof promptTokens === "number" && Number.isFinite(promptTokens) && promptTokens > 0
+          ? promptTokens
+          : undefined;
+      if (validTokens) {
+        setFallbackPromptTokens({ sessionId: targetId || currentSessionId || undefined, tokens: validTokens });
+      }
+      if (targetId) {
+        saveCurrentSessionMessages(
+          upsertMessage(getMessages(), message),
+          targetId,
+          validTokens ? { promptTokens: validTokens } : undefined
+        );
       }
     },
   });
 
-  // 上下文用量派生计算：
+  // 上下文用量派生计算：常驻保底展示（未发消息时为 0），无任何闪烁
   // 1. 优先从 data（服务端 StreamData 下发的最后一步真实单步 promptTokens）读取；
-  // 2. 其次回退到 onFinish 记录的 fallbackPromptTokens（兼容无 StreamData 场景）；
-  // 3. 实时轻量求值，零 useEffect 级联渲染
-  const contextUsage = deriveContextUsage(data, fallbackPromptTokens, model, contextWindow);
+  // 2. 其次回退到 onFinish 记录的 fallbackPromptTokens（兼容无 StreamData 场景，绑定当前会话）；
+  // 3. 再次回退到活跃会话持久化的 context.lastPromptTokens（跨会话切换与刷新恢复）；
+  // 4. 再次依据历史消息估算（estimateMessagesTokens）；
+  // 5. 新建空白会话保底为 0。
+  const effectiveFallbackTokens =
+    fallbackPromptTokens && (!fallbackPromptTokens.sessionId || fallbackPromptTokens.sessionId === currentSessionId)
+      ? fallbackPromptTokens.tokens
+      : null;
+
+  const contextUsage = deriveContextUsage(
+    data,
+    effectiveFallbackTokens,
+    model,
+    contextWindow,
+    activeSession?.context?.lastPromptTokens,
+    messages
+  );
 
   // useChat 就绪后注入 setMessages 与最新消息快照（均由 useSessionManager 内部持有）
   useEffect(() => {
@@ -689,7 +731,6 @@ export default function ChatDashboard() {
         onSaveRename={handleSaveRename}
         onDeleteSession={handleDeleteSession}
         onEditTitleChange={setEditingTitleText}
-        onClearAllSessions={handleClearAllSessions}
         onPresetSelect={handlePresetSelect}
         presetQueries={presetQueries}
         onToggleRawLang={handleToggleRawLang}
@@ -707,11 +748,14 @@ export default function ChatDashboard() {
             <span className="font-semibold truncate max-w-md">
               {activeSession?.title || "OpenUI 对话式数据分析看板"}
             </span>
-            {apiKey && (
-              <span className="text-[10px] bg-success-soft text-success-fg-strong px-2 py-0.5 rounded-full font-semibold border border-success-border shrink-0">
-                AI: {model}
-              </span>
-            )}
+            <ModelSwitcher
+              providers={providers}
+              activeProviderId={activeProviderId}
+              activeModel={activeModel}
+              onSwitchModel={switchActiveModel}
+              onOpenSettings={handleOpenSettings}
+              variant="header"
+            />
           </div>
           <div className="flex items-center gap-2">
             {IS_DEV && (
@@ -772,29 +816,27 @@ export default function ChatDashboard() {
           disabled={sourcesLocked}
         />
 
-        {/* 上下文用量条：最近一次响应的实测 promptTokens / 模型窗口；>70% 黄、>90% 红 */}
-        {contextUsage && (
-          <div className="px-6 pb-1.5 flex items-center gap-2 text-[10px] text-foreground-faint select-none">
-            <span className="shrink-0">上下文</span>
-            <div className="w-32 h-1 rounded-full bg-surface-raised overflow-hidden">
-              <div
-                className={`h-full rounded-full transition-all ${
-                  (contextUsage.promptTokens / contextUsage.window) > 0.9
-                    ? "bg-danger-solid"
-                    : (contextUsage.promptTokens / contextUsage.window) > 0.7
-                      ? "bg-warning-solid"
-                      : "bg-success-solid"
-                }`}
-                style={{
-                  width: `${Math.min(100, Math.round((contextUsage.promptTokens / contextUsage.window) * 100))}%`,
-                }}
-              />
-            </div>
-            <span className="shrink-0 tabular-nums">
-              {`${(contextUsage.promptTokens / 1000).toFixed(1)}k / ${Math.round(contextUsage.window / 1000)}k（${Math.round((contextUsage.promptTokens / contextUsage.window) * 100)}%）`}
-            </span>
+        {/* 上下文用量条：常驻展示当前会话 promptTokens / 模型窗口；>70% 黄、>90% 红 */}
+        <div className="px-6 pb-1.5 flex items-center gap-2 text-[10px] text-foreground-faint select-none">
+          <span className="shrink-0">上下文</span>
+          <div className="w-32 h-1 rounded-full bg-surface-raised overflow-hidden">
+            <div
+              className={`h-full rounded-full transition-all ${
+                (contextUsage.promptTokens / contextUsage.window) > 0.9
+                  ? "bg-danger-solid"
+                  : (contextUsage.promptTokens / contextUsage.window) > 0.7
+                    ? "bg-warning-solid"
+                    : "bg-success-solid"
+              }`}
+              style={{
+                width: `${Math.min(100, Math.round((contextUsage.promptTokens / contextUsage.window) * 100))}%`,
+              }}
+            />
           </div>
-        )}
+          <span className="shrink-0 tabular-nums">
+            {`${(contextUsage.promptTokens / 1000).toFixed(1)}k / ${Math.round(contextUsage.window / 1000)}k（${Math.round((contextUsage.promptTokens / contextUsage.window) * 100)}%）`}
+          </span>
+        </div>
 
         <ChatInput
           input={input}
@@ -805,6 +847,16 @@ export default function ChatDashboard() {
           onSubmit={handleChatSubmit}
           onPlanModeChange={setPlanMode}
           onStop={handleStop}
+          modelSwitcherNode={
+            <ModelSwitcher
+              providers={providers}
+              activeProviderId={activeProviderId}
+              activeModel={activeModel}
+              onSwitchModel={switchActiveModel}
+              onOpenSettings={handleOpenSettings}
+              variant="compact"
+            />
+          }
         />
       </main>
 
@@ -842,6 +894,12 @@ export default function ChatDashboard() {
 
       {showSettings && (
         <SettingsModal
+          providers={providers}
+          activeProviderId={activeProviderId}
+          activeModel={activeModel}
+          onSaveProvider={saveProvider}
+          onDeleteProvider={deleteProvider}
+          onSwitchActiveModel={switchActiveModel}
           providerId={providerId}
           apiKey={apiKey}
           baseURL={baseURL}

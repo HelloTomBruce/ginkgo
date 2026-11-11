@@ -61,7 +61,6 @@ interface ChatSidebarProps {
   onDeleteSession: (e: React.MouseEvent, sessionId: string) => void;
   onEditTitleChange: (text: string) => void;
   onCancelEdit: () => void;
-  onClearAllSessions: () => void;
   onPresetSelect: (preset: string) => void;
   /** 推荐列表：方法卡 presetQuery 生成（内置兜底 + /api/methodology 合并卡集） */
   presetQueries: PresetQuery[];
@@ -96,7 +95,6 @@ export function ChatSidebar({
   onDeleteSession,
   onEditTitleChange,
   onCancelEdit,
-  onClearAllSessions,
   onPresetSelect,
   presetQueries,
   onToggleRawLang,
@@ -218,17 +216,6 @@ export function ChatSidebar({
                 />
               ))
             )}
-          </div>
-
-          {/* 清空历史按钮 */}
-          <div className="pt-1 border-t border-border-subtle flex justify-end">
-            <button
-              onClick={onClearAllSessions}
-              className="text-[11px] text-foreground-faint hover:text-danger-fg py-1 transition-colors flex items-center gap-1"
-            >
-              <Trash2 className="w-3 h-3" />
-              <span>清空所有记录</span>
-            </button>
           </div>
         </div>
       )}

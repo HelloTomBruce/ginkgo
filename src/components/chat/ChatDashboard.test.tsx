@@ -164,6 +164,12 @@ describe("ChatDashboard 守护测试（重构行为锁定）", () => {
     });
   });
 
+  it("上下文用量条：初始状态常驻展示 0.0k 用量与当前模型窗口容量", async () => {
+    render(<ChatDashboard />);
+    await screen.findByText(/0\.0k \/ 128k（0%）/);
+    expect(screen.getByText("上下文")).toBeInTheDocument();
+  });
+
   it("上下文用量条：onFinish 实测 promptTokens 渲染百分比", async () => {
     render(<ChatDashboard />);
     await screen.findByText(/对话式数据分析助手/, { exact: false });

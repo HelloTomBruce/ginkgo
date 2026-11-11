@@ -14,6 +14,8 @@ interface ChatInputProps {
   onPlanModeChange: (next: boolean) => void;
   /** 中止/暂停当前生成 */
   onStop?: () => void;
+  /** 可选注入模型选择器控件 */
+  modelSwitcherNode?: React.ReactNode;
 }
 
 /** 自适应高度上限：约 6 行（24px 行高 + 余量），超出后内滚 */
@@ -27,6 +29,7 @@ export function ChatInput({
   onSubmit,
   onPlanModeChange,
   onStop,
+  modelSwitcherNode,
 }: ChatInputProps) {
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
 
@@ -78,23 +81,26 @@ export function ChatInput({
             className="w-full bg-transparent px-4 pt-3.5 pb-1 text-sm leading-6 placeholder:text-foreground-faint focus:outline-none resize-none disabled:opacity-50 overflow-y-auto"
             style={{ maxHeight: TEXTAREA_MAX_HEIGHT }}
           />
-          {/* 底部工具行：左「先出思路」无边框开关，右发送按钮 */}
+          {/* 底部工具行：左「先出思路」+ 模型切换，右发送按钮 */}
           <div className="flex items-center justify-between px-3 pb-2.5 pt-1">
-            <Hint label="开启后，新问题将先探查数据结构并给出分析思路与澄清问题，确认方向后再产出看板">
-              <button
-                type="button"
-                aria-pressed={planMode}
-                onClick={() => onPlanModeChange(!planMode)}
-                className={`flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium transition-colors select-none cursor-pointer ${
-                  planMode
-                    ? "bg-info-soft-strong text-info-fg-strong"
-                    : "text-foreground-faint hover:text-foreground-subtle"
-                }`}
-              >
-                <ClipboardList className="w-3.5 h-3.5" />
-                <span>先出思路</span>
-              </button>
-            </Hint>
+            <div className="flex items-center gap-1.5">
+              <Hint label="开启后，新问题将先探查数据结构并给出分析思路与澄清问题，确认方向后再产出看板">
+                <button
+                  type="button"
+                  aria-pressed={planMode}
+                  onClick={() => onPlanModeChange(!planMode)}
+                  className={`flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium transition-colors select-none cursor-pointer ${
+                    planMode
+                      ? "bg-info-soft-strong text-info-fg-strong"
+                      : "text-foreground-faint hover:text-foreground-subtle"
+                  }`}
+                >
+                  <ClipboardList className="w-3.5 h-3.5" />
+                  <span>先出思路</span>
+                </button>
+              </Hint>
+              {modelSwitcherNode}
+            </div>
             {isLoading ? (
               <button
                 type="button"

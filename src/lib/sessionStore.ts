@@ -68,7 +68,7 @@ export interface SessionRecord {
 }
 
 /** 列表摘要：不含 messages 全文 */
-export type SessionSummary = Omit<SessionRecord, "messages" | "context"> & {
+export type SessionSummary = Omit<SessionRecord, "messages"> & {
   messageCount: number;
 };
 
@@ -82,6 +82,7 @@ export function toSummary(record: SessionRecord): SessionSummary {
       ? { enabledSources: record.enabledSources }
       : {}),
     ...(record.planMode !== undefined ? { planMode: record.planMode } : {}),
+    ...(record.context !== undefined ? { context: record.context } : {}),
     messageCount: record.messages.length,
   };
 }
