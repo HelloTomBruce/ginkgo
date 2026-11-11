@@ -4,7 +4,7 @@ import React from "react";
 import { Crosshair } from "lucide-react";
 import { defineComponent } from "@openuidev/react-lang";
 import { z } from "zod";
-import { ComponentSafeWrapper } from "../internal/ComponentSafeWrapper";
+import { renderSafeLayout } from "../internal/layoutZone";
 
 /**
  * 深钻归因布局模板：页头 + 主区（2/3 宽）+ 侧栏（1/3 窄列洞察）+ 底部明细。
@@ -18,6 +18,7 @@ import { ComponentSafeWrapper } from "../internal/ComponentSafeWrapper";
 export interface FocusLayoutProps {
   title?: string;
   subtitle?: string;
+  controls?: React.ReactNode;
   main?: React.ReactNode;
   side?: React.ReactNode;
   detail?: React.ReactNode;
@@ -26,12 +27,13 @@ export interface FocusLayoutProps {
 export const FocusLayout: React.FC<FocusLayoutProps> = ({
   title,
   subtitle,
+  controls,
   main,
   side,
   detail,
 }) => {
   return (
-    <div className="space-y-4 w-full">
+    <div className="@container space-y-4 w-full">
       {/* 页头 */}
       {(title || subtitle) && (
         <div className="bg-card border border-border rounded-xl px-5 py-4 shadow-xs flex items-center justify-between gap-3">
@@ -54,11 +56,20 @@ export const FocusLayout: React.FC<FocusLayoutProps> = ({
         </div>
       )}
 
-      {/* 主区 + 侧栏：有侧栏时 2/3 + 1/3，无侧栏时主区占满 */}
+      {/* 控制区：筛选器/时间区间选择器 */}
+      {controls ? <div className="w-full">{controls}</div> : null}
+
+      {/* 主区 + 侧栏：有侧栏时 2/3 + 1/3，无侧栏时主区占满，支持容器查询 */}
       {main || side ? (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
+        <div className="grid grid-cols-1 lg:grid-cols-3 @lg:grid-cols-3 gap-4 items-start">
           {main ? (
-            <div className={side ? "lg:col-span-2 space-y-4" : "lg:col-span-3 space-y-4"}>
+            <div
+              className={
+                side
+                  ? "lg:col-span-2 @lg:col-span-2 space-y-4"
+                  : "lg:col-span-3 @lg:col-span-3 space-y-4"
+              }
+            >
               {main}
             </div>
           ) : null}
@@ -83,6 +94,7 @@ export const FocusLayoutDef = defineComponent({
     main: z.any().optional().describe("主分析区：核心趋势/对比图表数组"),
     side: z.any().optional().describe("侧栏洞察：InsightBox/GaugeProgress/MetricCard/ActionPlanCard 数组"),
     detail: z.any().optional().describe("底部全宽明细区：DataTable 数组"),
+    controls: z.any().optional().describe("全局控制区：AnalyticsFilterBar 等筛选组件"),
   }),
   component: ({
     props,
@@ -90,18 +102,19 @@ export const FocusLayoutDef = defineComponent({
   }: {
     props?: Record<string, unknown>;
     renderNode?: (node?: unknown) => React.ReactNode;
-  }) => {
-    const zone = (v: unknown) => (renderNode ? renderNode(v) : null);
-    return (
-      <ComponentSafeWrapper name="FocusLayout">
+  }) =>
+    renderSafeLayout(
+      "FocusLayout",
+      (zone) => (
         <FocusLayout
           title={props?.title ? String(props.title) : undefined}
           subtitle={props?.subtitle ? String(props.subtitle) : undefined}
-          main={zone(props?.main)}
-          side={zone(props?.side)}
-          detail={zone(props?.detail)}
+          controls={zone(props?.controls, "控制筛选")}
+          main={zone(props?.main, "主分析区")}
+          side={zone(props?.side, "侧栏洞察")}
+          detail={zone(props?.detail, "数据明细")}
         />
-      </ComponentSafeWrapper>
-    );
-  },
+      ),
+      renderNode
+    ),
 });

@@ -14,12 +14,12 @@ export const MetricGrid: React.FC<MetricGridProps> = ({
   columns = 3,
 }) => {
   const colClass = {
-    2: "grid-cols-1 sm:grid-cols-2",
-    3: "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3",
-    4: "grid-cols-1 sm:grid-cols-2 lg:grid-cols-4",
-  }[columns] || "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3";
+    2: "grid-cols-1 sm:grid-cols-2 @sm:grid-cols-2",
+    3: "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 @sm:grid-cols-2 @lg:grid-cols-3",
+    4: "grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 @sm:grid-cols-2 @lg:grid-cols-4",
+  }[columns] || "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 @sm:grid-cols-2 @lg:grid-cols-3";
 
-  return <div className={`grid gap-4 w-full min-w-0 ${colClass}`}>{children}</div>;
+  return <div className={`@container grid gap-4 w-full min-w-0 ${colClass}`}>{children}</div>;
 };
 
 // ===== OpenUI 组件库定义 =====

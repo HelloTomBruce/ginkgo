@@ -33,6 +33,18 @@ r = MetricCard("毛利率", "31.5%", "-0.6%", "down", "分销")
 v = InsightBox("success", "结论", "直营毛利率高出 6.7pct，建议加大直营投放")
 root = Root([ComparisonLayout("A/B 渠道对比", "口径：剔除退款", "直营", [l], "分销", [r], [v])])`,
 
+  MonitoringLayout: `
+b = InsightBox("warning", "告警摘要", "支付网关失败率达到 4.2%，超出健康阈值 1.5%")
+m1 = MetricCard("失败率", "4.2%", "+2.8%", "down", "较平日均值偏高")
+m2 = MetricCard("影响订单", "1,240 笔", "+340", "down", "主要集中在银联通道")
+root = Root([MonitoringLayout("支付网关异常率巡检", "近24小时异动排查", "critical", b, null, [m1, m2])])`,
+
+  CohortRetentionLayout: `
+k1 = MetricCard("次日留存", "42.8%", "+3.2%", "up", "新版上线提升")
+k2 = MetricCard("7日留存", "24.5%", "-0.6%", "down", "长周期衰减平稳")
+c = AnalyticsChart("line", "留存衰减走势", "", "day", [{"day":"Day 1","rate":42.8},{"day":"Day 3","rate":32.1},{"day":"Day 7","rate":24.5}], [{"key":"rate","label":"留存率(%)"}], 120)
+root = Root([CohortRetentionLayout("Q3 新客全周期留存追踪", "按注册首周观察", null, [k1, k2], null, c)])`,
+
   MetricCard: `
 c1 = MetricCard("月度 GMV", "¥1,284万", "+12.6%", "up", "环比上月")
 c2 = MetricCard("退款率", "2.1%", "+0.4%", "down", "高于阈值 2.0%")
@@ -47,6 +59,9 @@ root = Root([AnalyticsChart("area", "月度营收走势", "", "name", [{"name":"
   SpecChart: `
 root = Root([SpecChart("渠道销售额（bar）", {"chartType":"bar","dims":[{"field":"channel"}],"meas":[{"field":"amount","label":"销售额（万）"}]}, "", [{"channel":"直营","amount":420},{"channel":"平台","amount":312},{"channel":"直播","amount":250}], 150)])`,
 
+  ComboChart: `
+root = Root([ComboChart("月度销售额与转化率", "柱状图看销量，折线图看比率", "month", [{"month":"1月","sales":120,"rate":12},{"month":"2月","sales":210,"rate":18},{"month":"3月","sales":180,"rate":15}], [{"key":"sales","label":"销售额","type":"bar","yAxis":"left"},{"key":"rate","label":"转化率","type":"line","yAxis":"right","unit":"%"}], 150)])`,
+
   FunnelChart: `
 root = Root([FunnelChart("投放转化漏斗", "曝光到支付全链路", [{"name":"曝光","value":120000},{"name":"点击","value":18000,"conversion":"15.0%"},{"name":"下单","value":2340,"conversion":"13.0%"},{"name":"支付","value":1872,"conversion":"80.0%"}], "次")])`,
 
@@ -58,6 +73,9 @@ root = Root([ContributionHeatmap("提交活跃度", "近三周样本", [{"count"
 
   DataTable: `
 root = Root([DataTable("渠道明细", [{"key":"channel","label":"渠道"},{"key":"amount","label":"GMV（万）"},{"key":"ratio","label":"占比"}], [{"channel":"直营","amount":420,"ratio":"42.8%"},{"channel":"平台","amount":312,"ratio":"31.8%"},{"channel":"直播","amount":250,"ratio":"25.4%"}])])`,
+
+  RankingList: `
+root = Root([RankingList("获客渠道 Top 5", "按获客单量降序排列", [{"label":"自然搜索","value":45000,"secondary":"+12%"},{"label":"信息流广告","value":32000,"secondary":"+8%"},{"label":"短视频带货","value":28000},{"label":"邮件召回","value":15000},{"label":"渠道合作","value":9800}], 5, "number")])`,
 
   InsightBox: `
 b1 = InsightBox("success", "结论", "直营渠道毛利率领先 6.7pct，建议追加预算")

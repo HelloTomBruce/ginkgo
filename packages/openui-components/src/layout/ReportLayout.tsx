@@ -4,7 +4,7 @@ import React from "react";
 import { LayoutTemplate } from "lucide-react";
 import { defineComponent } from "@openuidev/react-lang";
 import { z } from "zod";
-import { ComponentSafeWrapper } from "../internal/ComponentSafeWrapper";
+import { renderSafeLayout } from "../internal/layoutZone";
 
 /**
  * BI 报表布局模板：页头 + KPI 横排区 + 双列图表区 + 全宽明细区 + 结论区。
@@ -19,6 +19,7 @@ import { ComponentSafeWrapper } from "../internal/ComponentSafeWrapper";
 export interface ReportLayoutProps {
   title?: string;
   subtitle?: string;
+  controls?: React.ReactNode;
   kpis?: React.ReactNode;
   charts?: React.ReactNode;
   detail?: React.ReactNode;
@@ -28,13 +29,14 @@ export interface ReportLayoutProps {
 export const ReportLayout: React.FC<ReportLayoutProps> = ({
   title,
   subtitle,
+  controls,
   kpis,
   charts,
   detail,
   insights,
 }) => {
   return (
-    <div className="space-y-4 w-full">
+    <div className="@container space-y-4 w-full">
       {/* 页头 */}
       {(title || subtitle) && (
         <div className="bg-card border border-border rounded-xl px-5 py-4 shadow-xs flex items-center justify-between gap-3">
@@ -57,12 +59,19 @@ export const ReportLayout: React.FC<ReportLayoutProps> = ({
         </div>
       )}
 
-      {/* KPI 横排区：手机 2 列，桌面 4 列 */}
-      {kpis ? <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 min-w-0">{kpis}</div> : null}
+      {/* 控制区：筛选器/时间区间选择器 */}
+      {controls ? <div className="w-full">{controls}</div> : null}
 
-      {/* 双列图表区：奇数个时末张占满整行 */}
+      {/* KPI 横排区：手机 2 列，桌面 4 列，支持容器查询自适应 */}
+      {kpis ? (
+        <div className="grid grid-cols-2 md:grid-cols-4 @sm:grid-cols-2 @md:grid-cols-4 gap-3 sm:gap-4 min-w-0">
+          {kpis}
+        </div>
+      ) : null}
+
+      {/* 双列图表区：奇数个时末张占满整行，支持容器查询 */}
       {charts ? (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:[&>*:nth-child(odd):last-child]:col-span-2">
+        <div className="grid grid-cols-1 lg:grid-cols-2 @lg:grid-cols-2 gap-4 lg:[&>*:nth-child(odd):last-child]:col-span-2 @lg:[&>*:nth-child(odd):last-child]:col-span-2">
           {charts}
         </div>
       ) : null}
@@ -88,6 +97,7 @@ export const ReportLayoutDef = defineComponent({
     charts: z.any().optional().describe("双列图表区：AnalyticsChart/FunnelChart/RadarChart 等数组"),
     detail: z.any().optional().describe("全宽明细区：DataTable 数组"),
     insights: z.any().optional().describe("结论区：InsightBox/ActionPlanCard 数组"),
+    controls: z.any().optional().describe("全局控制区：AnalyticsFilterBar 等筛选组件"),
   }),
   component: ({
     props,
@@ -95,19 +105,20 @@ export const ReportLayoutDef = defineComponent({
   }: {
     props?: Record<string, unknown>;
     renderNode?: (node?: unknown) => React.ReactNode;
-  }) => {
-    const zone = (v: unknown) => (renderNode ? renderNode(v) : null);
-    return (
-      <ComponentSafeWrapper name="ReportLayout">
+  }) =>
+    renderSafeLayout(
+      "ReportLayout",
+      (zone) => (
         <ReportLayout
           title={props?.title ? String(props.title) : undefined}
           subtitle={props?.subtitle ? String(props.subtitle) : undefined}
-          kpis={zone(props?.kpis)}
-          charts={zone(props?.charts)}
-          detail={zone(props?.detail)}
-          insights={zone(props?.insights)}
+          controls={zone(props?.controls, "控制筛选")}
+          kpis={zone(props?.kpis, "核心指标")}
+          charts={zone(props?.charts, "图表分析")}
+          detail={zone(props?.detail, "数据明细")}
+          insights={zone(props?.insights, "结论洞察")}
         />
-      </ComponentSafeWrapper>
-    );
-  },
+      ),
+      renderNode
+    ),
 });

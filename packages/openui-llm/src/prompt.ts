@@ -191,14 +191,18 @@ ${methodNamingSection(methodIndex)}
 ${crossSourceSection(activeSources)}
 ## Visual Component Kit (OpenUI Lang):
 You have a rich set of declarative components available:
-- **ReportLayout(title, subtitle?, kpis?, charts?, detail?, insights?)**: BI report layout template — page header + KPI strip + 2-col charts zone + full-width detail zone + insights zone. Use it for periodic comprehensive reviews (business/growth/iteration reports). Pass raw MetricCard arrays in kpis (NOT MetricGrid — the template grids them itself).
-- **FocusLayout(title, subtitle?, main, side?, detail?)**: deep-dive layout — wide main chart zone (2/3) + narrow sidebar insights (1/3) + optional bottom detail. Use it for single-topic root-cause analysis / attribution ("why did X rise/drop").
-- **ComparisonLayout(title, subtitle?, leftLabel, left, rightLabel, right, verdict?)**: side-by-side comparison layout with labeled panels + optional verdict zone. Use it for A/B tests or comparing two channels/repos/members/versions.
-- **MetricCard(title, value, change?, trend?, subtext?)**: KPI stats card.
+- **ReportLayout(title, subtitle?, kpis?, charts?, detail?, insights?, controls?)**: BI report layout template — page header + KPI strip + 2-col charts zone + full-width detail zone + insights zone + optional controls. Use it for periodic comprehensive reviews (business/growth/iteration reports). Pass raw MetricCard arrays in kpis (NOT MetricGrid — the template grids them itself).
+- **FocusLayout(title, subtitle?, main, side?, detail?, controls?)**: deep-dive layout — wide main chart zone (2/3) + narrow sidebar insights (1/3) + optional bottom detail + optional controls. Use it for single-topic root-cause analysis / attribution ("why did X rise/drop").
+- **ComparisonLayout(title, subtitle?, leftLabel, left, rightLabel, right, verdict?, controls?)**: side-by-side comparison layout with labeled panels + optional verdict zone + optional controls. Use it for A/B tests or comparing two channels/repos/members/versions.
+- **MonitoringLayout(title, subtitle?, status?, statusBanner?, controls?, anomalies?, details?, actions?)**: System health / stability inspection / alert triage layout with status indicator, anomaly metrics, logs/details, and mitigation plans.
+- **CohortRetentionLayout(title, subtitle?, controls?, kpis?, heatmapMatrix?, decayTrend?, verdict?)**: User cohort and lifecycle retention analysis template with headline metrics, retention matrix, decay curve, and verdict.
+- **MetricCard(title, value, change?, trend?, subtext?, sparkline?)**: KPI stats card with optional sparkline micro trend.
 - **MetricGrid(columns, [cards...])**: 2, 3, or 4 column grid container for MetricCards.
 - **AnalyticsChart(type, title?, description?, xAxisKey?, data, series?, height?)**: Bar, Line, Area, or Pie charts.
 - **SpecChart(title?, spec, table?, data?, height?)**: Declarative semantic chart — you declare a ChartSpec object (dims: category fields; meas: measures with aggregation sum/avg/count/min/max; chartType: "bar"|"stacked-bar"|"line"|"area"|"combo"|"pie"|"donut"|"scatter"|"table"; filters; sort; limit; style (thresholds: [{when:{field,op,value},color:"success"|"warning"|"danger"|"info"}] for conditional coloring; referenceLines: [{value,label?,color?}] for target/average lines); sourceId) instead of hand-building rendered rows. The system materializes the data and can refresh it later with ZERO LLM calls; changing spec.chartType switches the visual without changing the binding. PREFER SpecChart for source-table statistics. combo convention: bars = all measures except the last, line (right axis) = the last measure (e.g. counts + cumulative share for Pareto).
+- **ComboChart(title?, description?, xAxisKey?, data, series, height?, leftAxisUnit?, rightAxisUnit?)**: Dual-axis mixed chart (bars for left axis volume, lines for right axis rates/percentages/averages).
 - **DataTable(title?, columns?, data, searchable?)**: Searchable, sortable, exportable table.
+- **RankingList(title?, subtitle?, items, maxDisplay?, valueFormat?)**: High-density ranking leaderboard for Top N items with relative progress bars and rank badges.
 - **InsightBox(type, title?, content)**: Tip, Info, Warning, or Success callouts.
 - **AnalyticsFilterBar(title?, defaultChannel?, defaultMetric?, filterField?, filterName?)**: Interactive filter. DECLARATIVE MODE (preferred): pass filterField {sourceId, field, table, label?} where field is a dimension/filter field shared with same-page SpecCharts — options are pulled from the source's distinct values and picking one live-refreshes matching SpecCharts with ZERO LLM calls. Demo mode (no filterField): legacy three-control form that submits a re-analysis prompt.
 - **FunnelChart(title?, description?, stages, unit?)**: Marketing / sales pipeline conversion and drop-off funnel, or Story requirement lifecycle funnel.
@@ -232,10 +236,14 @@ Dashboards whose components bind directly to query results can be refreshed late
    - For management recommendations / risk mitigation -> **ActionPlanCard**
    - For commits / MRs / milestone delivery history -> **ActivityTimeline** or **ContributionHeatmap**
    - For multi-attribute profiles / member workload & capability comparison -> **RadarChart**
+   - For comparing absolute volume and rates/percentages on the same timeline -> **ComboChart**
+   - For Top 5 / Top 10 entity rankings (spend, conversions, workload, bug count) -> **RankingList**
    - For detailed lists of projects, bugs, stories, tasks -> **DataTable**
    - For periodic comprehensive reports (monthly/quarterly business, growth, or iteration review covering KPIs + charts + details + conclusions together) -> wrap the zones in **ReportLayout**
    - For single-topic root-cause analysis / attribution ("why did X change") -> **FocusLayout** (main chart + sidebar insights)
    - For A/B tests or comparing two entities (channels/repos/members/versions) side by side -> **ComparisonLayout** (labeled left/right panels + verdict)
+   - For system health / stability inspections / alert triage -> **MonitoringLayout**
+   - For user lifecycle retention / cohort decay -> **CohortRetentionLayout**
    - For simple single-topic answers -> place components directly under Root`;
 
   const promptOptions = {

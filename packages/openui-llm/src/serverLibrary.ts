@@ -22,6 +22,7 @@ export const serverReportLayout = defineComponent({
     charts: z.array(z.any()).optional().describe("双列图表区：AnalyticsChart/FunnelChart/RadarChart/GaugeProgress 等数组"),
     detail: z.array(z.any()).optional().describe("全宽明细区：DataTable 数组"),
     insights: z.array(z.any()).optional().describe("结论区：InsightBox/ActionPlanCard 数组"),
+    controls: z.any().optional().describe("全局控制区：AnalyticsFilterBar 等筛选组件"),
   }),
   component: () => null,
 });
@@ -36,6 +37,7 @@ export const serverFocusLayout = defineComponent({
     main: z.array(z.any()).optional().describe("主分析区：核心趋势/对比图表数组（AnalyticsChart/FunnelChart/RadarChart）"),
     side: z.array(z.any()).optional().describe("侧栏洞察：InsightBox/GaugeProgress/MetricCard/ActionPlanCard 数组"),
     detail: z.array(z.any()).optional().describe("底部全宽明细区：DataTable 数组"),
+    controls: z.any().optional().describe("全局控制区：AnalyticsFilterBar 等筛选组件"),
   }),
   component: () => null,
 });
@@ -52,19 +54,54 @@ export const serverComparisonLayout = defineComponent({
     rightLabel: z.string().optional().describe("右栏对比对象名，如：Google Ads"),
     right: z.array(z.any()).optional().describe("右栏内容数组"),
     verdict: z.array(z.any()).optional().describe("底部结论区：InsightBox 数组"),
+    controls: z.any().optional().describe("全局控制区：AnalyticsFilterBar 等筛选组件"),
+  }),
+  component: () => null,
+});
+
+export const serverMonitoringLayout = defineComponent({
+  name: "MonitoringLayout",
+  description:
+    "监控巡检与告警排查模板：包含健康状态指示、异动指标网格、异常日志/事件明细及应急处置建议，适用于系统稳定性复盘、流量异动告警排查",
+  props: z.object({
+    title: z.string().describe("巡检/告警主题标题"),
+    subtitle: z.string().optional().describe("检测范围或周期说明"),
+    status: z.enum(["normal", "warning", "critical"]).optional().describe("整体健康状态"),
+    statusBanner: z.any().optional().describe("顶部状态横幅或核心警报摘要（如 InsightBox）"),
+    controls: z.any().optional().describe("控制筛选区：AnalyticsFilterBar 等"),
+    anomalies: z.array(z.any()).optional().describe("异动指标网格：MetricCard 数组"),
+    details: z.any().optional().describe("异常明细区：DataTable 或 ActivityTimeline"),
+    actions: z.array(z.any()).optional().describe("应急预案与处置建议：ActionPlanCard 或 ActionButton 数组"),
+  }),
+  component: () => null,
+});
+
+export const serverCohortRetentionLayout = defineComponent({
+  name: "CohortRetentionLayout",
+  description:
+    "留存与队列流转分析模板：包含核心留存指标（次留/7日留存）、队列矩阵、衰减曲线及归因结论，适用于用户增长、版本次日/长周期留存复盘",
+  props: z.object({
+    title: z.string().describe("模板标题，如：用户全周期留存追踪"),
+    subtitle: z.string().optional().describe("口径说明或周期"),
+    controls: z.any().optional().describe("控制筛选区：AnalyticsFilterBar 等"),
+    kpis: z.array(z.any()).optional().describe("留存核心指标：次留/7留/30留 MetricCard 数组"),
+    heatmapMatrix: z.any().optional().describe("队列留存矩阵：DataTable 等组件"),
+    decayTrend: z.any().optional().describe("留存衰减趋势走势图：AnalyticsChart 或 ComboChart"),
+    verdict: z.array(z.any()).optional().describe("归因结论区：InsightBox 数组"),
   }),
   component: () => null,
 });
 
 export const serverMetricCard = defineComponent({
   name: "MetricCard",
-  description: "展示单个核心数据指标（KPI）、变化幅度及趋势徽章",
+  description: "展示单个核心数据指标（KPI）、变化幅度及趋势徽章，支持可选 sparkline 迷你走势图",
   props: z.object({
     title: z.string().describe("指标卡片标题"),
     value: z.union([z.string(), z.number()]).describe("指标核心数值"),
     change: z.string().optional().describe("环比或同比变化率"),
     trend: z.enum(["up", "down", "neutral"]).optional().describe("趋势方向"),
     subtext: z.string().optional().describe("补充说明文本"),
+    sparkline: z.array(z.number()).optional().describe("迷你走势图数值数组，如近7天数据"),
   }),
   component: () => null,
 });
@@ -109,6 +146,36 @@ export const serverSpecChart = defineComponent({
   component: () => null,
 });
 
+export const serverComboChart = defineComponent({
+  name: "ComboChart",
+  description:
+    "双轴量率复合图：支持柱状图（绝对量，归属左Y轴）与折线图（比率/均值，归属右Y轴）同屏展示，适用于既要看总量又要看转化率或同比的复合场景",
+  props: z.object({
+    title: z.string().optional().describe("图表标题"),
+    description: z.string().optional().describe("图表副标题或口径说明"),
+    xAxisKey: z.string().optional().default("name").describe("X轴对应的数据键名"),
+    data: z.array(z.record(z.string(), z.any())).describe("结构化图表数据数组"),
+    series: z
+      .array(
+        z.object({
+          key: z.string().describe("对应数据对象中的字段名"),
+          label: z.string().optional().describe("显示标签"),
+          type: z.enum(["bar", "line"]).describe("图形类型：bar 为柱状图，line 为折线图"),
+          yAxis: z
+            .enum(["left", "right"])
+            .optional()
+            .describe("所归属的 Y 轴（bar 默认 left，line 默认 right）"),
+          unit: z.string().optional().describe("单位，如 '%' 或 '万'"),
+        })
+      )
+      .describe("系列配置列表"),
+    height: z.number().optional().describe("高度（像素）"),
+    leftAxisUnit: z.string().optional().describe("左 Y 轴单位"),
+    rightAxisUnit: z.string().optional().describe("右 Y 轴单位"),
+  }),
+  component: () => null,
+});
+
 export const serverDataTable = defineComponent({
   name: "DataTable",
   description: "交互式明细数据表格，支持前端搜索、列排序和一键导出CSV",
@@ -123,6 +190,26 @@ export const serverDataTable = defineComponent({
     ).optional().describe("表头定义"),
     data: z.array(z.record(z.string(), z.any())).describe("行数据数组"),
     searchable: z.boolean().optional().describe("是否启用搜索框"),
+  }),
+  component: () => null,
+});
+
+export const serverRankingList = defineComponent({
+  name: "RankingList",
+  description: "高密排行榜组件，用于展示 Top N 核心实体、名次徽章及占比微进度条",
+  props: z.object({
+    title: z.string().optional().describe("排行榜标题"),
+    subtitle: z.string().optional().describe("副标题或统计周期"),
+    items: z.array(
+      z.object({
+        label: z.string().describe("实体名称或标签"),
+        value: z.union([z.string(), z.number()]).describe("核心数值"),
+        secondary: z.string().optional().describe("辅助说明，如环比变化"),
+        ratio: z.number().optional().describe("0~1 之间的归一化占比（缺省自动计算）"),
+      })
+    ).describe("排名项列表"),
+    maxDisplay: z.number().optional().describe("默认展示条数，默认 5"),
+    valueFormat: z.enum(["number", "currency", "percent", "duration", "text"]).optional().describe("数值格式化类型"),
   }),
   component: () => null,
 });
@@ -346,10 +433,14 @@ export const serverLibrary = createLibrary({
     serverReportLayout,
     serverFocusLayout,
     serverComparisonLayout,
+    serverMonitoringLayout,
+    serverCohortRetentionLayout,
     serverMetricCard,
     serverAnalyticsChart,
     serverSpecChart,
+    serverComboChart,
     serverDataTable,
+    serverRankingList,
     serverInsightBox,
     serverMetricGrid,
     serverAnalyticsFilterBar,

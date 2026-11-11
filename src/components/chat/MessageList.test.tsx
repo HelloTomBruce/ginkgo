@@ -853,4 +853,24 @@ describe("消息内容与工具执行按顺序交错渲染", () => {
       "请按上述已确认的分析思路开始执行，产出完整的分析报告与看板。"
     );
   });
+
+  it("就绪看板提供钉选画布按钮，点击触发 onPinDashboard 回调", () => {
+    const onPinDashboard = vi.fn();
+    const pinBoardMsg = {
+      id: "pin-1",
+      role: "assistant",
+      content: "分析报告\n```openui\nroot = Root([MetricCard(\"销售\", 100)])\n```",
+    } as unknown as Message;
+    render(
+      <MessageList
+        {...baseProps}
+        messages={[userMsg, pinBoardMsg]}
+        onPinDashboard={onPinDashboard}
+      />
+    );
+    const pinBtn = screen.getByRole("button", { name: /钉选看板/ });
+    expect(pinBtn).toBeInTheDocument();
+    fireEvent.click(pinBtn);
+    expect(onPinDashboard).toHaveBeenCalledWith("pin-1", expect.stringContaining("root = Root"));
+  });
 });

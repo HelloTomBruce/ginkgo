@@ -288,4 +288,23 @@ describe("DashboardPreviewModal 活看板刷新（P2-A）", () => {
     expect(screen.getByTestId("renderer")).toHaveTextContent("data = 99");
     expect(screen.getByText(/数据时间/)).toBeInTheDocument();
   });
+
+  it("点击钉选至画布触发 onPinToCanvas 并关闭弹窗", () => {
+    const onPinToCanvas = vi.fn();
+    const onClose = vi.fn();
+    renderModal({
+      dashboard: LIVE_RECORD,
+      onClose,
+      onPinToCanvas,
+    });
+
+    const pinBtn = screen.getByRole("button", { name: "钉选至画布" });
+    fireEvent.click(pinBtn);
+    expect(onPinToCanvas).toHaveBeenCalledWith(
+      LIVE_RECORD.id,
+      LIVE_RECORD.dsl,
+      LIVE_RECORD.title
+    );
+    expect(onClose).toHaveBeenCalled();
+  });
 });

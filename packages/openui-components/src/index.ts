@@ -28,17 +28,21 @@ import { MetricGrid, MetricGridDef } from "./layout/MetricGrid";
 import { ReportLayout, ReportLayoutDef } from "./layout/ReportLayout";
 import { FocusLayout, FocusLayoutDef } from "./layout/FocusLayout";
 import { ComparisonLayout, ComparisonLayoutDef } from "./layout/ComparisonLayout";
+import { MonitoringLayout, MonitoringLayoutDef } from "./layout/MonitoringLayout";
+import { CohortRetentionLayout, CohortRetentionLayoutDef } from "./layout/CohortRetentionLayout";
 // metrics
 import { MetricCard, MetricCardDef } from "./metrics/MetricCard";
 import { GaugeProgress, GaugeProgressDef } from "./metrics/GaugeProgress";
 // charts
 import { AnalyticsChart, AnalyticsChartDef } from "./charts/AnalyticsChart";
 import { SpecChart, SpecChartDef } from "./charts/SpecChart";
+import { ComboChart, ComboChartDef } from "./charts/ComboChart";
 import { FunnelChart, FunnelChartDef } from "./charts/FunnelChart";
 import { RadarChart, RadarChartDef } from "./charts/RadarChart";
 import { ContributionHeatmap, ContributionHeatmapDef } from "./charts/ContributionHeatmap";
 // data
 import { DataTable, DataTableDef } from "./data/DataTable";
+import { RankingList, RankingListDef } from "./data/RankingList";
 // insight
 import { InsightBox, InsightBoxDef } from "./insight/InsightBox";
 import { ActionPlanCard, ActionPlanCardDef } from "./insight/ActionPlanCard";
@@ -64,6 +68,8 @@ const CATALOG_GROUPS = [
       ReportLayoutDef,
       FocusLayoutDef,
       ComparisonLayoutDef,
+      MonitoringLayoutDef,
+      CohortRetentionLayoutDef,
     ],
   },
   {
@@ -75,6 +81,7 @@ const CATALOG_GROUPS = [
     defs: [
       AnalyticsChartDef,
       SpecChartDef,
+      ComboChartDef,
       FunnelChartDef,
       RadarChartDef,
       ContributionHeatmapDef,
@@ -82,7 +89,7 @@ const CATALOG_GROUPS = [
   },
   {
     category: "数据明细",
-    defs: [DataTableDef],
+    defs: [DataTableDef, RankingListDef],
   },
   {
     category: "洞察结论",
@@ -123,14 +130,18 @@ export {
   ReportLayout,
   FocusLayout,
   ComparisonLayout,
+  MonitoringLayout,
+  CohortRetentionLayout,
   MetricCard,
   GaugeProgress,
   AnalyticsChart,
   SpecChart,
+  ComboChart,
   FunnelChart,
   RadarChart,
   ContributionHeatmap,
   DataTable,
+  RankingList,
   InsightBox,
   ActionPlanCard,
   ActivityTimeline,
@@ -157,7 +168,15 @@ export {
 } from "./charts/registry";
 export { CHART_COLORS, resolveSeries, type SeriesConfig } from "./charts/chartShared";
 // 筛选联动总线（FilterBar 广播 → SpecChart 订阅自行物化）
-export { emitFilterChange, onFilterChange, type FilterChangeEvent } from "./charts/filterBus";
+export {
+  emitFilterChange,
+  onFilterChange,
+  resetFilterBus,
+  useDashboardScope,
+  DashboardScopeProvider,
+  DashboardScopeContext,
+  type FilterChangeEvent,
+} from "./charts/filterBus";
 
 // ===== 对外导出：组件目录（供「可视化组件」查看入口展示）=====
 

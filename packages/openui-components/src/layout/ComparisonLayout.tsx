@@ -4,7 +4,7 @@ import React from "react";
 import { Scale } from "lucide-react";
 import { defineComponent } from "@openuidev/react-lang";
 import { z } from "zod";
-import { ComponentSafeWrapper } from "../internal/ComponentSafeWrapper";
+import { renderSafeLayout } from "../internal/layoutZone";
 
 /**
  * 左右对比布局模板：页头 + 带标签的左右双栏面板 + 底部结论区。
@@ -18,6 +18,7 @@ import { ComponentSafeWrapper } from "../internal/ComponentSafeWrapper";
 export interface ComparisonLayoutProps {
   title?: string;
   subtitle?: string;
+  controls?: React.ReactNode;
   leftLabel?: string;
   left?: React.ReactNode;
   rightLabel?: string;
@@ -28,6 +29,7 @@ export interface ComparisonLayoutProps {
 export const ComparisonLayout: React.FC<ComparisonLayoutProps> = ({
   title,
   subtitle,
+  controls,
   leftLabel,
   left,
   rightLabel,
@@ -36,7 +38,7 @@ export const ComparisonLayout: React.FC<ComparisonLayoutProps> = ({
 }) => {
   const hasAnyColumn = left || right;
   return (
-    <div className="space-y-4 w-full">
+    <div className="@container space-y-4 w-full">
       {/* 页头 */}
       {(title || subtitle) && (
         <div className="bg-card border border-border rounded-xl px-5 py-4 shadow-xs flex items-center justify-between gap-3">
@@ -59,9 +61,12 @@ export const ComparisonLayout: React.FC<ComparisonLayoutProps> = ({
         </div>
       )}
 
-      {/* 左右双栏：各带对比对象标签头 */}
+      {/* 控制区：筛选器/时间区间选择器 */}
+      {controls ? <div className="w-full">{controls}</div> : null}
+
+      {/* 左右双栏：各带对比对象标签头，支持容器查询 */}
       {hasAnyColumn ? (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+        <div className="grid grid-cols-1 lg:grid-cols-2 @lg:grid-cols-2 gap-4 items-start">
           {/* 左栏：蓝色系 */}
           <section className="bg-card border border-border rounded-xl shadow-xs overflow-hidden">
             <header className="px-4 py-2.5 bg-info-soft border-b border-info-border">
@@ -103,6 +108,7 @@ export const ComparisonLayoutDef = defineComponent({
     rightLabel: z.any().optional().describe("右栏对比对象名，如：Google Ads"),
     right: z.any().optional().describe("右栏内容数组"),
     verdict: z.any().optional().describe("底部结论区：InsightBox 数组"),
+    controls: z.any().optional().describe("全局控制区：AnalyticsFilterBar 等筛选组件"),
   }),
   component: ({
     props,
@@ -110,20 +116,21 @@ export const ComparisonLayoutDef = defineComponent({
   }: {
     props?: Record<string, unknown>;
     renderNode?: (node?: unknown) => React.ReactNode;
-  }) => {
-    const zone = (v: unknown) => (renderNode ? renderNode(v) : null);
-    return (
-      <ComponentSafeWrapper name="ComparisonLayout">
+  }) =>
+    renderSafeLayout(
+      "ComparisonLayout",
+      (zone) => (
         <ComparisonLayout
           title={props?.title ? String(props.title) : undefined}
           subtitle={props?.subtitle ? String(props.subtitle) : undefined}
+          controls={zone(props?.controls, "控制筛选")}
           leftLabel={props?.leftLabel ? String(props.leftLabel) : undefined}
-          left={zone(props?.left)}
+          left={zone(props?.left, "左对比侧")}
           rightLabel={props?.rightLabel ? String(props.rightLabel) : undefined}
-          right={zone(props?.right)}
-          verdict={zone(props?.verdict)}
+          right={zone(props?.right, "右对比侧")}
+          verdict={zone(props?.verdict, "对比结论")}
         />
-      </ComponentSafeWrapper>
-    );
-  },
+      ),
+      renderNode
+    ),
 });

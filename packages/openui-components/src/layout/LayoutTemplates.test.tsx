@@ -36,6 +36,11 @@ describe("FocusLayout 深钻模板", () => {
     const { container } = render(<FocusLayout main={null} />);
     expect(container.querySelector("h2")).toBeNull();
   });
+
+  it("渲染可选的 controls 控制插槽", () => {
+    render(<FocusLayout title="带筛选" controls={<div data-testid="focus-controls">筛选组件</div>} />);
+    expect(screen.getByTestId("focus-controls")).toBeInTheDocument();
+  });
 });
 
 describe("ComparisonLayout 对比模板", () => {
@@ -79,5 +84,15 @@ describe("ComparisonLayout 对比模板", () => {
     );
     expect(screen.getByText("无结论对比")).toBeInTheDocument();
     expect(screen.queryByText("verdict")).toBeNull();
+  });
+
+  it("渲染可选的 controls 控制插槽", () => {
+    render(
+      <ComparisonLayout
+        title="带筛选对比"
+        controls={<div data-testid="comp-controls">筛选组件</div>}
+      />
+    );
+    expect(screen.getByTestId("comp-controls")).toBeInTheDocument();
   });
 });

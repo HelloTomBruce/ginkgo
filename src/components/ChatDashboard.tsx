@@ -29,6 +29,8 @@ import { ModelSwitcher } from "@/components/chat/ModelSwitcher";
 import { DevToolsPanel } from "@/components/chat/DevToolsPanel";
 import { MethodologyModal } from "@/components/chat/MethodologyModal";
 import { ComponentCatalogModal } from "@/components/chat/ComponentCatalogModal";
+import { AnalysisCanvas, type CanvasDashboardData } from "@/components/chat/AnalysisCanvas";
+import { extractOpenUI } from "@/lib/extractOpenUI";
 import { Toaster } from "@/components/Toaster";
 import { toast } from "@/lib/toast";
 
@@ -95,6 +97,10 @@ export default function ChatDashboard() {
     sessionId?: string;
     tokens: number;
   } | null>(null);
+
+  // 工作台双栏与分析画布状态（M3 协同工作台）
+  const [viewMode, setViewMode] = useState<"chat-only" | "split" | "canvas-only">("chat-only");
+  const [canvasData, setCanvasData] = useState<CanvasDashboardData | null>(null);
 
   const {
     showSettings,
@@ -535,6 +541,22 @@ export default function ChatDashboard() {
     null
   );
 
+  const handlePinDashboard = useCallback(
+    (messageId: string, dsl: string, title?: string) => {
+      const isCurrentlyPinned = canvasData?.id === messageId;
+      if (isCurrentlyPinned) {
+        setCanvasData(null);
+        setViewMode("chat-only");
+        toast("已取消画布钉选", "info");
+      } else {
+        setCanvasData({ id: messageId, title: title || "钉选看板", dsl });
+        setViewMode("split");
+        toast("已钉选至右侧协同画布", "success");
+      }
+    },
+    [canvasData?.id]
+  );
+
   const handlePreviewDashboard = useCallback(
     async (id: string) => {
       const record = await getDashboard(id);
@@ -546,6 +568,31 @@ export default function ChatDashboard() {
     },
     [getDashboard]
   );
+
+  const handleCanvasRefresh = useCallback(
+    async (id: string) => {
+      const res = await refreshDashboardData(id);
+      if (res.ok) {
+        const rec = await getDashboard(id);
+        if (rec) {
+          setCanvasData({
+            id: rec.id,
+            title: rec.title,
+            dsl: rec.dsl,
+            isLive: (rec.queries?.length ?? 0) > 0,
+          });
+        }
+        toast("画布数据已刷新", "success");
+      } else {
+        toast(res.error || "当前看板暂不支持自动重放刷新", "info");
+      }
+    },
+    [refreshDashboardData, getDashboard]
+  );
+
+  const handleCanvasPrint = useCallback(() => {
+    window.print();
+  }, []);
 
   // 看板模板（M3-4）：存为模板/取消模板；用模板新建（换源选择，多源时序号输入）
   const handleToggleDashboardTemplate = useCallback(
@@ -758,6 +805,64 @@ export default function ChatDashboard() {
             />
           </div>
           <div className="flex items-center gap-2">
+            {/* 视图模式切换（仅在桌面端显示） */}
+            <div className="hidden md:flex items-center bg-surface-sunken p-0.5 rounded-lg border border-border text-xs mr-1">
+              <button
+                type="button"
+                onClick={() => setViewMode("chat-only")}
+                className={`px-2 py-1 rounded-md transition-colors ${
+                  viewMode === "chat-only"
+                    ? "bg-card text-foreground font-medium shadow-xs"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+                title="纯对话视图"
+              >
+                对话
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setViewMode("split");
+                  if (!canvasData) {
+                    const lastBoard = [...messages]
+                      .reverse()
+                      .find((m) => m.role === "assistant" && /```openui/i.test(m.content || ""));
+                    if (lastBoard) {
+                      const extracted = extractOpenUI(lastBoard.content);
+                      if (extracted.openuiPart) {
+                        setCanvasData({
+                          id: lastBoard.id,
+                          title: "最新分析看板",
+                          dsl: extracted.openuiPart,
+                        });
+                      }
+                    }
+                  }
+                }}
+                className={`px-2 py-1 rounded-md transition-colors ${
+                  viewMode === "split"
+                    ? "bg-card text-foreground font-medium shadow-xs"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+                title="双栏协同工作台"
+              >
+                工作台
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode("canvas-only")}
+                disabled={!canvasData}
+                className={`px-2 py-1 rounded-md transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                  viewMode === "canvas-only"
+                    ? "bg-card text-foreground font-medium shadow-xs"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+                title="全屏画布视图"
+              >
+                画布
+              </button>
+            </div>
+
             {IS_DEV && (
               <button
                 onClick={handleOpenDevTools}
@@ -786,78 +891,124 @@ export default function ChatDashboard() {
           </div>
         </header>
 
-        {sessionsLoaded ? (
-          <MessageList
-            key={currentSessionId}
-            sessionId={currentSessionId}
-            messages={messages}
-            status={status}
-            error={error}
-            showRawLang={showRawLang}
-            activeSources={sessionSources}
-            onRendererAction={handleRendererAction}
-            onReload={reload}
-            onStop={handleStop}
-            favoritedMessageIds={favoritedMessageIds}
-            onFavoriteDashboard={handleFavoriteDashboard}
-            onForkMessage={handleForkMessage}
-            onRewindMessage={handleRewindMessage}
-          />
-        ) : (
-          <div className="flex-1 flex items-center justify-center text-sm text-foreground-faint">
-            正在加载会话…
-          </div>
-        )}
-
-        <SourcePicker
-          sources={enabledPickerSources}
-          selected={activeSession?.enabledSources}
-          onChange={handleSourcesChange}
-          disabled={sourcesLocked}
-        />
-
-        {/* 上下文用量条：常驻展示当前会话 promptTokens / 模型窗口；>70% 黄、>90% 红 */}
-        <div className="px-6 pb-1.5 flex items-center gap-2 text-[10px] text-foreground-faint select-none">
-          <span className="shrink-0">上下文</span>
-          <div className="w-32 h-1 rounded-full bg-surface-raised overflow-hidden">
+        {/* 工作台主体：支持纯对话、双栏协同与纯画布模式 */}
+        <div className="flex-1 flex min-h-0 overflow-hidden">
+          {/* 左侧对话工作流：在 canvas-only 模式下隐藏 */}
+          {viewMode !== "canvas-only" && (
             <div
-              className={`h-full rounded-full transition-all ${
-                (contextUsage.promptTokens / contextUsage.window) > 0.9
-                  ? "bg-danger-solid"
-                  : (contextUsage.promptTokens / contextUsage.window) > 0.7
-                    ? "bg-warning-solid"
-                    : "bg-success-solid"
+              className={`flex flex-col h-full min-w-0 transition-all duration-300 ${
+                viewMode === "split"
+                  ? "w-full md:w-1/2 lg:w-5/12 border-r border-border"
+                  : "w-full"
               }`}
-              style={{
-                width: `${Math.min(100, Math.round((contextUsage.promptTokens / contextUsage.window) * 100))}%`,
-              }}
-            />
-          </div>
-          <span className="shrink-0 tabular-nums">
-            {`${(contextUsage.promptTokens / 1000).toFixed(1)}k / ${Math.round(contextUsage.window / 1000)}k（${Math.round((contextUsage.promptTokens / contextUsage.window) * 100)}%）`}
-          </span>
-        </div>
+            >
+              {sessionsLoaded ? (
+                <MessageList
+                  key={currentSessionId}
+                  sessionId={currentSessionId}
+                  messages={messages}
+                  status={status}
+                  error={error}
+                  showRawLang={showRawLang}
+                  activeSources={sessionSources}
+                  onRendererAction={handleRendererAction}
+                  onReload={reload}
+                  onStop={handleStop}
+                  favoritedMessageIds={favoritedMessageIds}
+                  onFavoriteDashboard={handleFavoriteDashboard}
+                  onForkMessage={handleForkMessage}
+                  onRewindMessage={handleRewindMessage}
+                  pinnedMessageId={canvasData?.id}
+                  onPinDashboard={handlePinDashboard}
+                />
+              ) : (
+                <div className="flex-1 flex items-center justify-center text-sm text-foreground-faint">
+                  正在加载会话…
+                </div>
+              )}
 
-        <ChatInput
-          input={input}
-          isLoading={isLoading || !sessionsLoaded}
-          planMode={planMode}
-          // AI SDK 的 handleInputChange 只读 e.target.value，事件源类型安全收敛到 textarea
-          onChange={(e) => handleInputChange(e as unknown as React.ChangeEvent<HTMLInputElement>)}
-          onSubmit={handleChatSubmit}
-          onPlanModeChange={setPlanMode}
-          onStop={handleStop}
-          modelSwitcherNode={
-            <ModelSwitcher
-              providers={providers}
-              activeProviderId={activeProviderId}
-              activeModel={activeModel}
-              onSwitchModel={switchActiveModel}
-              onOpenSettings={handleOpenSettings}
-              variant="compact"
-            />
-          }
-        />
+              <SourcePicker
+                sources={enabledPickerSources}
+                selected={activeSession?.enabledSources}
+                onChange={handleSourcesChange}
+                disabled={sourcesLocked}
+              />
+
+              {/* 上下文用量条：常驻展示当前会话 promptTokens / 模型窗口；>70% 黄、>90% 红 */}
+              <div className="px-6 pb-1.5 flex items-center gap-2 text-[10px] text-foreground-faint select-none">
+                <span className="shrink-0">上下文</span>
+                <div className="w-32 h-1 rounded-full bg-surface-raised overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all ${
+                      contextUsage.promptTokens / contextUsage.window > 0.9
+                        ? "bg-danger-solid"
+                        : contextUsage.promptTokens / contextUsage.window > 0.7
+                        ? "bg-warning-solid"
+                        : "bg-success-solid"
+                    }`}
+                    style={{
+                      width: `${Math.min(
+                        100,
+                        Math.round((contextUsage.promptTokens / contextUsage.window) * 100)
+                      )}%`,
+                    }}
+                  />
+                </div>
+                <span className="shrink-0 tabular-nums">
+                  {`${(contextUsage.promptTokens / 1000).toFixed(1)}k / ${Math.round(
+                    contextUsage.window / 1000
+                  )}k（${Math.round((contextUsage.promptTokens / contextUsage.window) * 100)}%）`}
+                </span>
+              </div>
+
+              <ChatInput
+                input={input}
+                isLoading={isLoading || !sessionsLoaded}
+                planMode={planMode}
+                // AI SDK 的 handleInputChange 只读 e.target.value，事件源类型安全收敛到 textarea
+                onChange={(e) =>
+                  handleInputChange(e as unknown as React.ChangeEvent<HTMLInputElement>)
+                }
+                onSubmit={handleChatSubmit}
+                onPlanModeChange={setPlanMode}
+                onStop={handleStop}
+                modelSwitcherNode={
+                  <ModelSwitcher
+                    providers={providers}
+                    activeProviderId={activeProviderId}
+                    activeModel={activeModel}
+                    onSwitchModel={switchActiveModel}
+                    onOpenSettings={handleOpenSettings}
+                    variant="compact"
+                  />
+                }
+              />
+            </div>
+          )}
+
+          {/* 右侧分析画布：在 split 或 canvas-only 模式下展示 */}
+          {viewMode !== "chat-only" && (
+            <div
+              className={`flex flex-col h-full min-w-0 transition-all duration-300 ${
+                viewMode === "canvas-only" ? "w-full" : "hidden md:flex flex-1"
+              }`}
+            >
+              <AnalysisCanvas
+                data={canvasData}
+                onClose={() => setViewMode("chat-only")}
+                onAction={handleRendererAction}
+                onRefresh={handleCanvasRefresh}
+                onPrint={handleCanvasPrint}
+                isExpanded={viewMode === "canvas-only"}
+                onToggleExpand={() =>
+                  setViewMode((prev) =>
+                    prev === "canvas-only" ? "split" : "canvas-only"
+                  )
+                }
+              />
+            </div>
+          )}
+        </div>
       </main>
 
       {showDevTools && (
@@ -878,6 +1029,7 @@ export default function ChatDashboard() {
         onDelete={handleDeleteDashboard}
         onAction={handlePreviewAction}
         onRefresh={handleRefreshDashboard}
+        onPinToCanvas={handlePinDashboard}
       />
 
       {/* 分析方法论查看（合并卡集：内置 + 用户覆盖） */}

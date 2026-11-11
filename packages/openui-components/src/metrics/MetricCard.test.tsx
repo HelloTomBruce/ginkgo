@@ -85,4 +85,29 @@ describe("MetricCard 指标卡", () => {
     render(<MetricCard title="空指标" value={undefined as unknown as string} />);
     expect(screen.getByText("-")).toBeInTheDocument();
   });
+
+  it("当提供 sparkline 数组时，渲染迷你走势图 svg", () => {
+    render(
+      <MetricCard
+        title="日活走势"
+        value="88,200"
+        sparkline={[10, 25, 18, 30, 45, 40, 55]}
+        trend="up"
+      />
+    );
+    const sparkline = screen.getByTestId("metric-sparkline");
+    expect(sparkline).toBeInTheDocument();
+    expect(sparkline.querySelector("svg")).not.toBeNull();
+  });
+
+  it("当 sparkline 长度不足 2 或无效时，不渲染走势图", () => {
+    render(
+      <MetricCard
+        title="无走势"
+        value="100"
+        sparkline={[10]}
+      />
+    );
+    expect(screen.queryByTestId("metric-sparkline")).toBeNull();
+  });
 });

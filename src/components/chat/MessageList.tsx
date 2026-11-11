@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Message } from "@ai-sdk/react";
-import { ArrowDown, ArrowUp, Loader2, Sparkles, FileCode, Printer, Star, GitFork, RotateCcw, Square, Play, Brain, ListOrdered, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Loader2, Sparkles, FileCode, Printer, Star, GitFork, RotateCcw, Square, Play, Brain, ListOrdered, X, Pin } from "lucide-react";
 import { OpenUIRenderer } from "@/components/OpenUIRenderer";
 import { Hint } from "@/components/ui/hint";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -65,6 +65,9 @@ interface MessageItemProps {
   isFavorited?: boolean;
   isFavoritePending?: boolean;
   onFavoriteDashboard?: (messageId: string) => void;
+  /** 画布钉选：是否已钉选至右侧协同画布及触发回调 */
+  isPinned?: boolean;
+  onPinDashboard?: (messageId: string, dsl: string, title?: string) => void;
   /** 会话操作：从该消息分叉新会话；回滚到该用户消息重问（仅 user 消息展示） */
   onForkMessage?: (messageId: string) => void;
   onRewindMessage?: (messageId: string) => void;
@@ -179,6 +182,8 @@ const MessageItem = React.memo(function MessageItem({
   isFavorited = false,
   isFavoritePending = false,
   onFavoriteDashboard,
+  isPinned = false,
+  onPinDashboard,
   onForkMessage,
   onRewindMessage,
 }: MessageItemProps) {
@@ -453,6 +458,24 @@ const MessageItem = React.memo(function MessageItem({
                       )}
                     </div>
                     <div className="flex items-center gap-0.5">
+                      {onPinDashboard && (
+                        <Hint label={isPinned ? "已钉选在右侧画布" : "钉选到右侧画布协同查看"}>
+                          <button
+                            type="button"
+                            onClick={() => onPinDashboard(msg.id, block.openuiPart)}
+                            disabled={isStreaming}
+                            aria-label={isPinned ? `已钉选（消息 ${msg.id}）` : `钉选看板（消息 ${msg.id}）`}
+                            className={`flex items-center gap-1 text-[10px] normal-case tracking-normal px-1.5 py-0.5 rounded transition-colors disabled:opacity-40 disabled:pointer-events-none ${
+                              isPinned
+                                ? "text-info-fg bg-info-soft font-medium"
+                                : "text-foreground-faint hover:text-info-fg hover:bg-info-soft"
+                            }`}
+                          >
+                            <Pin className={`w-3 h-3 ${isPinned ? "fill-current" : ""}`} />
+                            <span>{isPinned ? "已钉选" : "钉选画布"}</span>
+                          </button>
+                        </Hint>
+                      )}
                       {onFavoriteDashboard && (
                         <button
                           type="button"
@@ -556,6 +579,9 @@ interface MessageListProps {
   onFavoriteDashboard?: (
     input: FavoriteDashboardInput
   ) => Promise<FavoriteResult>;
+  /** 画布钉选：当前钉选的消息 ID 与钉选回调 */
+  pinnedMessageId?: string | null;
+  onPinDashboard?: (messageId: string, dsl: string, title?: string) => void;
   /** 会话操作：从某条消息分叉新会话；回滚到某条用户消息重问 */
   onForkMessage?: (messageId: string) => void;
   onRewindMessage?: (messageId: string) => void;
@@ -577,6 +603,8 @@ export function MessageList({
   onReload,
   favoritedMessageIds,
   onFavoriteDashboard,
+  pinnedMessageId,
+  onPinDashboard,
   onForkMessage,
   onRewindMessage,
   onStop,
@@ -822,6 +850,8 @@ export function MessageList({
           onPrintDashboard={handlePrintDashboard}
           isFavorited={favoritedMessageIds?.has(msg.id) ?? false}
           isFavoritePending={pendingFavoriteId === msg.id}
+          isPinned={pinnedMessageId === msg.id}
+          onPinDashboard={onPinDashboard}
           onFavoriteDashboard={
             onFavoriteDashboard ? handleFavoriteDashboard : undefined
           }

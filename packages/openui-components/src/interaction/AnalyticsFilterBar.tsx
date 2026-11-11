@@ -1,7 +1,7 @@
 import React from "react";
 import { useSetFieldValue, useTriggerAction, defineComponent } from "@openuidev/react-lang";
 import { Filter, Play } from "lucide-react";
-import { emitFilterChange } from "../charts/filterBus";
+import { emitFilterChange, useDashboardScope } from "../charts/filterBus";
 import { z } from "zod";
 import { ComponentSafeWrapper } from "../internal/ComponentSafeWrapper";
 
@@ -38,6 +38,7 @@ const DeclarativeFilterBar: React.FC<{
   filterName?: string;
 }> = ({ title, filterField, filterName }) => {
   const setFieldValue = useSetFieldValue();
+  const scopeId = useDashboardScope();
   const [fetchedOptions, setFetchedOptions] = React.useState<FilterOption[]>([]);
   const [fetchNote, setFetchNote] = React.useState<string | null>(null);
   const [selectedValue, setSelectedValue] = React.useState<string>("");
@@ -75,7 +76,7 @@ const DeclarativeFilterBar: React.FC<{
     if (setFieldValue) {
       setFieldValue(undefined, "AnalyticsFilterBar", `$filter.${name}`, val);
     }
-    emitFilterChange({ field: filterField.field, value: val });
+    emitFilterChange({ field: filterField.field, value: val, scopeId });
   };
 
   const displayName = filterField.label || filterField.field;

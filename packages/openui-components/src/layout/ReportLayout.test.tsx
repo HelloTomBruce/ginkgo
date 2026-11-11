@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { render, screen, cleanup } from "@testing-library/react";
-import { ReportLayout } from "./ReportLayout";
+import { ReportLayout, ReportLayoutDef } from "./ReportLayout";
 
 // vitest 未开 globals，testing-library 的自动 cleanup 不会注册，需显式清理
 afterEach(cleanup);
@@ -37,5 +37,37 @@ describe("ReportLayout 报表模板", () => {
     const { container } = render(<ReportLayout kpis={null} />);
     // 仅剩区块容器，无页头标题结构
     expect(container.querySelector("h2")).toBeNull();
+  });
+
+  it("渲染可选的 controls 控制插槽", () => {
+    render(
+      <ReportLayout
+        title="带筛选的报表"
+        controls={<div data-testid="report-controls">筛选组件</div>}
+      />
+    );
+    expect(screen.getByTestId("report-controls")).toBeInTheDocument();
+  });
+
+  it("Def 级安全防护：当 renderNode 抛出错误时静默降级，不向外冒泡死循环", () => {
+    const Component = ReportLayoutDef.component;
+    const throwingRenderNode = () => {
+      throw new Error("模拟子节点 AST 解析中断");
+    };
+
+    // 不应抛出异常
+    expect(() => {
+      render(
+        <Component
+          props={{
+            title: "异常防御报表",
+            kpis: ["broken-node"],
+          }}
+          renderNode={throwingRenderNode}
+        />
+      );
+    }).not.toThrow();
+
+    expect(screen.getByText("异常防御报表")).toBeInTheDocument();
   });
 });

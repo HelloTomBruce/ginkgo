@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { X, RefreshCw, Edit3, Trash2, Check, Star, Download, Copy } from "lucide-react";
+import { X, RefreshCw, Edit3, Trash2, Check, Star, Download, Copy, Pin } from "lucide-react";
 import { OpenUIRenderer } from "@/components/OpenUIRenderer";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Hint } from "@/components/ui/hint";
@@ -28,6 +28,8 @@ interface DashboardPreviewModalProps {
   onAction: (actionPrompt: string) => void;
   /** 活看板数据刷新（零 LLM 重放 queries）；父层负责回写最新记录到 dashboard prop */
   onRefresh: (id: string) => Promise<PreviewRefreshResult>;
+  /** 钉选到协同画布 */
+  onPinToCanvas?: (id: string, dsl: string, title?: string) => void;
 }
 
 /**
@@ -43,6 +45,7 @@ export function DashboardPreviewModal({
   onDelete,
   onAction,
   onRefresh,
+  onPinToCanvas,
 }: DashboardPreviewModalProps) {
   // 行内重命名与删除确认的本地状态；换预览目标（id 变化）时在 render 期复位
   // （setState-during-render 官方模式，替代 effect 内同步 setState）
@@ -239,6 +242,22 @@ export function DashboardPreviewModal({
                 <span>重新分析</span>
               </button>
             </Hint>
+            {onPinToCanvas && (
+              <Hint label="钉选至右侧协同分析画布">
+                <button
+                  type="button"
+                  onClick={() => {
+                    onPinToCanvas(dashboard.id, dashboard.dsl, dashboard.title);
+                    onClose();
+                  }}
+                  aria-label="钉选至画布"
+                  className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border border-info-border text-info-fg hover:bg-info-soft transition-colors"
+                >
+                  <Pin className="w-3.5 h-3.5" />
+                  <span>钉选到画布</span>
+                </button>
+              </Hint>
+            )}
             <Hint label="下载 .openui.json 快照文件（可导入分享）">
               <button
                 onClick={handleExportSnapshot}

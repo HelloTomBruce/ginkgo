@@ -49,6 +49,14 @@ describe("ComponentCatalogModal 可视化组件查看（主从布局）", () => 
     // 切到 DataTable：预览出现表格标题
     fireEvent.click(screen.getByRole("button", { name: "DataTable" }));
     expect(screen.getByText("渠道明细")).toBeInTheDocument();
+
+    // 切到 ComboChart：预览出现双轴图标题
+    fireEvent.click(screen.getByRole("button", { name: "ComboChart" }));
+    expect(screen.getByText("月度销售额与转化率")).toBeInTheDocument();
+
+    // 切到 RankingList：预览出现排行榜标题
+    fireEvent.click(screen.getByRole("button", { name: "RankingList" }));
+    expect(screen.getByText("获客渠道 Top 5")).toBeInTheDocument();
   });
 
   it("SpecChart 条目显示图表类型 chips（派生自 CHART_TYPES）", () => {

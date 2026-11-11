@@ -7,7 +7,7 @@ import { z } from "zod";
 import { parseChartSpec, type ChartSpec } from "@openui-analytics/chart-spec";
 import { parseArrayProp } from "../internal/parseProp";
 import { ComponentSafeWrapper } from "../internal/ComponentSafeWrapper";
-import { onFilterChange } from "./filterBus";
+import { onFilterChange, useDashboardScope } from "./filterBus";
 import { getChartRenderer } from "./registry";
 
 /**
@@ -73,6 +73,7 @@ export const SpecChart: React.FC<SpecChartProps> = ({
   // 回填 key 经 ref 读取「响应到达时刻」的最新值：订阅期内数据版本变化时，
   // 闭包捕获的旧 currentKey 会令新筛选结果落库即失效
   const currentKeyRef = React.useRef(currentKey);
+  const scopeId = useDashboardScope();
   React.useEffect(() => {
     currentKeyRef.current = currentKey;
   }, [currentKey]);
@@ -111,11 +112,11 @@ export const SpecChart: React.FC<SpecChartProps> = ({
         .catch(() => {
           // 联动失败静默保留旧数据（与刷新 stale 降级同哲学）
         });
-    });
+    }, scopeId);
     return off;
     // specKey 稳定化：parsedSpec 对象每渲染重建，用序列化串做依赖
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [specKey, table]);
+  }, [specKey, table, scopeId]);
 
   const activeFilteredRows = filterState?.key === currentKey ? filterState.rows : null;
   const rows = parseArrayProp(activeFilteredRows ?? data);

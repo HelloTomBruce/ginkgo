@@ -42,7 +42,7 @@ next-env.d.ts
 .vitest/
 graphify-out
 config
-data/
+/data/
 .worktrees/
 .pnpm-store/
 
