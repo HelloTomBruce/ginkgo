@@ -365,11 +365,20 @@ export default function ChatDashboard() {
     isLoadingRef.current = isLoading;
   }, [isLoading]);
 
+  // 探测所需的最新回调快照：reload/nextModeBody/authHeaders 的 identity 在流式期间
+  // 随 messages 高频变化，若直接放进下方 effect 的 deps，每次重渲染都会重跑探测
+  // → GET /api/analyze 刷屏。探测只需在「会话装载完成」时执行一次，回调经 ref 取最新。
+  const probeDepsRef = useRef({ reload, nextModeBody, authHeaders });
+  useEffect(() => {
+    probeDepsRef.current = { reload, nextModeBody, authHeaders };
+  });
+
   useEffect(() => {
     if (!sessionsLoaded || !currentSessionId) return;
     let cancelled = false;
     (async () => {
       try {
+        const { reload, nextModeBody, authHeaders } = probeDepsRef.current;
         const res = await fetch(
           `/api/analyze?sessionId=${encodeURIComponent(currentSessionId)}`,
           { headers: { ...authHeaders() } }
@@ -388,7 +397,7 @@ export default function ChatDashboard() {
     return () => {
       cancelled = true;
     };
-  }, [sessionsLoaded, currentSessionId, isLoading, reload, nextModeBody, authHeaders]);
+  }, [sessionsLoaded, currentSessionId]);
 
   // 提交/追加消息时记录发起会话，供 onFinish 定向保存
   const handleChatSubmit = useCallback(

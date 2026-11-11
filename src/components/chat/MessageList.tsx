@@ -271,7 +271,7 @@ const MessageItem = React.memo(function MessageItem({
           isPrintTarget ? " print-target" : ""
         }`}
       >
-        <div className="max-w-4xl rounded-2xl p-4 text-sm bg-info-solid text-white rounded-br-xs">
+        <div className="ml-auto w-fit max-w-[60%] rounded-2xl p-3.5 text-sm bg-info-solid text-white rounded-br-xs">
           <div className="leading-relaxed whitespace-pre-wrap">{msg.content}</div>
         </div>
 
