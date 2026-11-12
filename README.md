@@ -70,6 +70,27 @@ pnpm dev        # http://localhost:3006
 - **安全边界**：`kind:"tool"` 查询在服务端经**只读白名单**复核后才重放（db 读工具 / 读语义工具名 / 禅道只读 action），写语义工具一律拒绝——queries 来自不可信的客户端落盘数据，刷新端点不提供任何写能力
 - **实现**：`src/lib/dashboardRefresh.ts` + `POST /api/dashboards/[id]/refresh` + `useDashboards.refreshOne(id)`；sql 查询走只读守卫，tool 查询走只读白名单 + MCP callTool
 
+## 语义图表与声明式看板体系
+
+- **ChartSpec 契约**：图表采用声明式 `ChartSpec`（`dims` 维度、`meas` 指标、`filters` 过滤、`chartType`），将图表表现层与底层数仓取数解耦。
+- **SpecChart 零 LLM 物化**：图表生成期可携带静态快照，二次交互或刷新时由服务端直接依据 `ChartSpec` 物化取数回填（`specMaterialize`），换图不换绑定，兼顾快照秒开与活数据刷新。
+- **动态时间宏（Time Macros）**：刷新支持智能日期推测与滚动宏（如 `TODAY - 30d` ~ `TODAY`），使周期性趋势看板随时间自动向前滑动，避免日期死编码。
+- **数仓中英双向语义映射**：内置 `BUSINESS_SYNONYM_MAP`（订单/退款/渠道等 18+ 常用数仓双向映射），让全中文自然语言提问能精准召回英文表名与度量列。
+
+## 筛选联动与事件总线（FilterBus）
+
+- **作用域事件总线 (`filterBus`)**：组件间通过轻量发布-订阅总线通信，支持看板级别 `scopeId` 隔离，多看板或同屏多个报表互不串扰。
+- **状态持久化与回放**：`filterBus` 维护作用域当前激活筛选字典（`getFilterState`），支持 `replayCurrent`；当组件（如 `DataTable` / `SpecChart`）二次挂载或工作台切栏时，无缝恢复已有筛选条件。
+- **交互组件**：
+  - `AnalyticsFilterBar`：支持声明模式（自动从数据源 distinct 端点拉取候选项）与参数调整演示模式。
+  - `DataTable`：纯前端轻量分页（默认 20 条，带翻页栏与计数）、列排序、实时关键词模糊搜索与 CSV 导出；具备严格的空值排他匹配守卫。
+
+## 渲染性能与流式平滑控制
+
+- **流式 AST 解析平滑节流**：在 LLM 高速 token 输出阶段，通过 `useStreamingThrottled` 将超高频 OpenUI AST 重解析降频至 ~8fps（约 120ms 一次），彻底释放主线程 CPU，流式结束后立即全量对齐最新内容。
+- **图表自适应死循环防御**：针对 Recharts 在 CSS Grid 双列排版下的 ResizeObserver 尺寸震荡，图表容器全量装配 `minWidth={0} debounce={50}` 与 `min-w-0`，杜绝页面卡死。
+- **消息流动画锁**：消息列表自动滚动采用 `requestAnimationFrame` 节流锁，防止高频 DOM 滚动重排引起的掉帧。
+
 ## 会话存储
 
 会话（消息历史、数据源选择、标题）持久化在**服务端** `data/sessions/`（单会话单 JSON 文件，原子写入），前端不再使用 localStorage 缓存——换浏览器、清缓存会话不丢，多浏览器可见同一份会话。接口：`GET/POST/PUT /api/sessions`（列表摘要 + 活跃指针 / 新建 / 设活跃）与 `GET/PUT/DELETE /api/sessions/:id`（详情含消息全文 / 局部更新 / 删除）。旧版本 localStorage 中的会话会在首次加载时**一次性自动迁移**到服务端（保留标题、消息与时间戳），迁移成功后旧键清除。

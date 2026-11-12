@@ -27,6 +27,7 @@ import {
   isValidTransformSpec,
   type TransformSpec,
 } from "./transforms";
+import { evaluateTimeMacros } from "./timeMacros";
 import type { DashboardRecord, DashboardQuery } from "./dashboardStore";
 
 /** 数据源网关（datasource manager 的结构子集，便于测试注入） */
@@ -93,8 +94,9 @@ async function replayQuery(
 ): Promise<Record<string, unknown>[] | null> {
   try {
     if (query.kind === "sql") {
-      assertReadOnlySql(query.payload);
-      const res = await conn.callTool("execute_sql", { sql: query.payload });
+      const sql = evaluateTimeMacros(query.payload);
+      assertReadOnlySql(sql);
+      const res = await conn.callTool("execute_sql", { sql });
       return extractQueryRows(parseMcpToolResult(res, `刷新重放 ${query.id}`));
     }
     const parsed: unknown = JSON.parse(query.payload);
@@ -106,7 +108,8 @@ async function replayQuery(
       console.warn(`[dashboardRefresh] 查询 ${query.id} payload 非法，跳过重放`);
       return null;
     }
-    const args = isPlainObject(parsed.args) ? parsed.args : {};
+    const rawArgs = isPlainObject(parsed.args) ? parsed.args : {};
+    const args = evaluateTimeMacros(rawArgs) as Record<string, unknown>;
     // 只读白名单复核：未命中 → 拒绝重放（不触达源），组件按 stale 降级
     if (!isReplayableTool(parsed.tool, args)) {
       console.warn(

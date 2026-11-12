@@ -69,9 +69,9 @@ export const ReportLayout: React.FC<ReportLayoutProps> = ({
         </div>
       ) : null}
 
-      {/* 双列图表区：奇数个时末张占满整行，支持容器查询 */}
+      {/* 双列图表区：奇数个时末张占满整行，支持容器查询，强制子卡片最小宽度为 0 避免 Recharts SVG 宽度震荡死循环 */}
       {charts ? (
-        <div className="grid grid-cols-1 lg:grid-cols-2 @lg:grid-cols-2 gap-4 lg:[&>*:nth-child(odd):last-child]:col-span-2 @lg:[&>*:nth-child(odd):last-child]:col-span-2">
+        <div className="grid grid-cols-1 lg:grid-cols-2 @lg:grid-cols-2 gap-4 lg:[&>*:nth-child(odd):last-child]:col-span-2 @lg:[&>*:nth-child(odd):last-child]:col-span-2 [&>*]:min-w-0">
           {charts}
         </div>
       ) : null}

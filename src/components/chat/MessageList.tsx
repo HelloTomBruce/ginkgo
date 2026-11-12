@@ -715,13 +715,25 @@ export function MessageList({
     prevMessagesLengthRef.current = messages.length;
   }, [messages.length, isLoading, scrollToBottom]);
 
-  // 2. 流式传输中（助手消息内容增量变化）：若用户原本就在底部，保持跟随滚动到最下方
+  // 2. 流式传输中（助手消息内容增量变化）：若用户原本就在底部，保持跟随滚动到最下方（RAF 帧级节流，防主线程抢占）
   const lastMessage = messages[messages.length - 1];
   const lastContent = lastMessage?.content;
+  const streamingScrollRafRef = useRef<number | null>(null);
   useEffect(() => {
     if (status === "streaming" && atBottom) {
-      scrollToBottom("auto");
+      if (streamingScrollRafRef.current === null) {
+        streamingScrollRafRef.current = requestAnimationFrame(() => {
+          scrollToBottom("auto");
+          streamingScrollRafRef.current = null;
+        });
+      }
     }
+    return () => {
+      if (streamingScrollRafRef.current !== null) {
+        cancelAnimationFrame(streamingScrollRafRef.current);
+        streamingScrollRafRef.current = null;
+      }
+    };
   }, [lastContent, status, atBottom, scrollToBottom]);
 
   /**

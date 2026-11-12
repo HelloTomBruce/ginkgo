@@ -327,4 +327,56 @@ describe("captureDashboardQueries 兼容与幂等", () => {
     const res = captureDashboardQueries(dsl, [sqlCall("pg1", "SELECT 1")], SOURCES);
     expect(res.bindings).toEqual({ chart: res.queries[0].id });
   });
+
+  it("支持显式血缘 queryId 属性，100% 确定性直接绑定", () => {
+    const candidateCall: CapturedToolCall = {
+      toolCallId: "c1",
+      state: "result",
+      toolName: "pg1_execute_sql",
+      args: { sql: "SELECT something_else FROM test" },
+      result: { rows: [{ something_else: 999 }] },
+    };
+    // 先获取该调用的候选 ID
+    const dummyDsl = [
+      'root = Root([chart])',
+      'chart = AnalyticsChart("bar", "标题", "副题", "channel", [{"something_else":999}], [])',
+    ].join("\n");
+    const pre = captureDashboardQueries(dummyDsl, [candidateCall], SOURCES);
+    expect(pre.queries).toHaveLength(1);
+    const targetQueryId = pre.queries[0].id;
+
+    // 当使用显式 queryId 时，即便组件的数据行被重命名或派生，依然直接确定性绑定
+    const explicitDsl = [
+      'root = Root([chart])',
+      `chart = AnalyticsChart("bar", "标题", "副题", "channel", [{"channel":"A","completely_different":1}], [], 280, "${targetQueryId}")`,
+    ].join("\n");
+    const res = captureDashboardQueries(explicitDsl, [candidateCall], SOURCES);
+    expect(res.bindings.chart).toBe(targetQueryId);
+  });
+
+  it("支持数据行携带 __originQueryId 隐式血缘元数据直接绑定", () => {
+    const candidateCall: CapturedToolCall = {
+      toolCallId: "c1",
+      state: "result",
+      toolName: "pg1_execute_sql",
+      args: { sql: "SELECT channel, deals FROM sales" },
+      result: { rows: [{ channel: "TikTok", deals: 10 }] },
+    };
+    // 即使在没有组件时，先获取 candidate id 测试
+    const cand = captureDashboardQueries(
+      'root = Root([c])\nc = DataTable("t", [], [{"channel":"TikTok","deals":10}])',
+      [candidateCall],
+      SOURCES
+    );
+    const targetQueryId = cand.queries[0].id;
+
+    // 当数据行即使被计算/改动，只要携带 __originQueryId，即可绑定
+    const dsl = [
+      'root = Root([c])',
+      `c = DataTable("t", [], [{"channel":"TikTok","custom_metric":999,"__originQueryId":"${targetQueryId}"}])`,
+    ].join("\n");
+    const res = captureDashboardQueries(dsl, [candidateCall], SOURCES);
+    expect(res.bindings.c).toBe(targetQueryId);
+  });
 });
+

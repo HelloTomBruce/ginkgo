@@ -3,6 +3,7 @@ import {
   buildSchemaCard,
   buildMcpToolCard,
   renderCardForPrompt,
+  scoreTableRelevance,
   collectSchemaCard,
   normalizeCellValue,
   CARD_RENDER_BUDGET_BYTES,
@@ -258,5 +259,50 @@ describe("collectSchemaCard（假探针）", () => {
     });
     const status = card.tables[0].columns.find((c) => c.name === "status")!;
     expect(status.cardinality).toBeUndefined();
+  });
+
+  it("scoreTableRelevance 相关度评分：命中表名与字段名得高分", () => {
+    const tableOrders = makeProfile({ name: "orders" });
+    const tableUsers = makeProfile({
+      name: "users",
+      columns: [{ column: "email", type: "text" }, { column: "username", type: "text" }],
+    });
+    const cardOrders = buildSchemaCard({ sourceId: "pg", profiles: [tableOrders] }).tables[0];
+    const cardUsers = buildSchemaCard({ sourceId: "pg", profiles: [tableUsers] }).tables[0];
+
+    const scoreForOrders = scoreTableRelevance(cardOrders, "查询近30天订单总金额 orders");
+    const scoreForUsers = scoreTableRelevance(cardUsers, "查询近30天订单总金额 orders");
+    expect(scoreForOrders).toBeGreaterThan(scoreForUsers);
+
+    // 纯中文提问命中英文 orders 表（同义词：订单 -> orders）
+    const scorePureChinese = scoreTableRelevance(cardOrders, "分析本月退款与成单总金额");
+    expect(scorePureChinese).toBeGreaterThan(0);
+
+    const scoreEmail = scoreTableRelevance(cardUsers, "用户 email 统计");
+    expect(scoreEmail).toBeGreaterThan(0);
+  });
+
+  it("renderCardForPrompt 支持 queryHint 优先重排核心表，并包含全库 L1 其余表清单", () => {
+    const table1 = makeProfile({ name: "audit_logs", rowCount: 1000000 });
+    const table2 = makeProfile({ name: "leads", rowCount: 50 });
+    const card = buildSchemaCard({
+      sourceId: "pg1",
+      profiles: [table1, table2],
+      allTables: ["audit_logs", "leads", "customers", "invoices", "payments"],
+    });
+
+    // 默认（无 queryHint）：按行数降序，audit_logs 在前
+    const defaultOut = renderCardForPrompt(card);
+    const auditIdx = defaultOut.indexOf("audit_logs");
+    const leadsIdx = defaultOut.indexOf("leads");
+    expect(auditIdx).toBeLessThan(leadsIdx);
+    expect(defaultOut).toContain("其余可用数据表清单");
+    expect(defaultOut).toContain("customers");
+
+    // 带 queryHint（提问与 leads 渠道相关）：leads 获得更高相关度排到首位
+    const relevantOut = renderCardForPrompt(card, { queryHint: "分析各个渠道 leads 转化率" });
+    const relAuditIdx = relevantOut.indexOf("audit_logs");
+    const relLeadsIdx = relevantOut.indexOf("leads");
+    expect(relLeadsIdx).toBeLessThan(relAuditIdx);
   });
 });

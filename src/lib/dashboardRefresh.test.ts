@@ -393,4 +393,33 @@ describe("refreshDashboard 降级语义", () => {
     const verdict = await refreshDashboard(record, makeGateway({}));
     expect(verdict).toMatchObject({ ok: false, reason: "dsl-invalid" });
   });
+
+  it("支持时间宏求值：刷新时将 {{$today - 7d}} 动态解析为当前实际日期", async () => {
+    let capturedArgs: unknown;
+    const callTool = vi.fn(async (_tool: string, args: Record<string, unknown>) => {
+      capturedArgs = args;
+      return mcpResult([{ id: 1, name: "issue 1" }]);
+    });
+    const gateway = makeGateway({ sources: ["gl1"], callTool });
+    const q = {
+      id: "q_macroroll",
+      sourceId: "gl1",
+      kind: "tool" as const,
+      payload: JSON.stringify({
+        tool: "list_issues",
+        args: { created_after: "{{$today - 7d}}" },
+      }),
+    };
+    const record = seedRecord({
+      dsl: 'root = Root([t])\nt = DataTable("x", [], [{"id":1,"name":"old"}])',
+      queries: [q],
+      bindings: { t: q.id },
+    });
+
+    const verdict = await refreshDashboard(record, gateway);
+    expect(verdict.ok).toBe(true);
+    expect(capturedArgs).toBeDefined();
+    expect((capturedArgs as { created_after: string }).created_after).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect((capturedArgs as { created_after: string }).created_after).not.toContain("{{$today");
+  });
 });

@@ -18,6 +18,7 @@ import { defineComponent } from "@openuidev/react-lang";
 import { z } from "zod";
 import { ComponentSafeWrapper } from "../internal/ComponentSafeWrapper";
 import { calculateDualNiceScales } from "../internal/niceScale";
+import { onFilterChange, useDashboardScope } from "./filterBus";
 
 export interface ComboSeriesConfig {
   key: string;
@@ -50,6 +51,40 @@ export const ComboChart: React.FC<ComboChartProps> = ({
   rightAxisUnit,
 }) => {
   const safeData = useMemo(() => parseArrayProp(data), [data]);
+
+  // 响应式筛选联动（响应 filterBus 广播）
+  const [filterValues, setFilterValues] = React.useState<Record<string, string>>({});
+  const scopeId = useDashboardScope();
+
+  React.useEffect(() => {
+    return onFilterChange((event) => {
+      setFilterValues((prev) => {
+        if (event.value === "") {
+          const next = { ...prev };
+          delete next[event.field];
+          return next;
+        }
+        return { ...prev, [event.field]: event.value };
+      });
+    }, scopeId);
+  }, [scopeId]);
+
+  const displayData = useMemo(() => {
+    const filterKeys = Object.keys(filterValues);
+    if (filterKeys.length === 0) return safeData;
+    return safeData.filter((row) => {
+      for (const key of filterKeys) {
+        if (row[key] === undefined || row[key] === null) {
+          return false;
+        }
+        if (String(row[key]) !== String(filterValues[key])) {
+          return false;
+        }
+      }
+      return true;
+    });
+  }, [safeData, filterValues]);
+
   const safeSeries: ComboSeriesConfig[] = useMemo(() => {
     const rawList = parseArrayProp(series);
     if (rawList.length > 0) {
@@ -63,8 +98,8 @@ export const ComboChart: React.FC<ComboChartProps> = ({
       }));
     }
     // 自动推断
-    if (safeData.length > 0 && typeof safeData[0] === "object") {
-      const keys = Object.keys(safeData[0]).filter((k) => k !== xAxisKey);
+    if (displayData.length > 0 && typeof displayData[0] === "object") {
+      const keys = Object.keys(displayData[0]).filter((k) => k !== xAxisKey);
       return keys.map((key, idx) => ({
         key,
         label: key,
@@ -73,7 +108,7 @@ export const ComboChart: React.FC<ComboChartProps> = ({
       }));
     }
     return [];
-  }, [series, safeData, xAxisKey]);
+  }, [series, displayData, xAxisKey]);
 
   // 判断是否启用了右 Y 轴
   const hasRightAxis = useMemo(() => {
@@ -82,7 +117,7 @@ export const ComboChart: React.FC<ComboChartProps> = ({
 
   // 双 Y 轴刻度归一与等分对齐（Nice Scales 算法）
   const { leftScale, rightScale } = useMemo(() => {
-    if (safeData.length === 0) return { leftScale: null, rightScale: null };
+    if (displayData.length === 0) return { leftScale: null, rightScale: null };
 
     const leftKeys = safeSeries.filter((s) => s.yAxis !== "right").map((s) => s.key);
     const rightKeys = safeSeries.filter((s) => s.yAxis === "right").map((s) => s.key);
@@ -90,7 +125,7 @@ export const ComboChart: React.FC<ComboChartProps> = ({
     const leftVals: number[] = [];
     const rightVals: number[] = [];
 
-    for (const row of safeData) {
+    for (const row of displayData) {
       for (const k of leftKeys) {
         const v = Number(row[k]);
         if (!isNaN(v)) leftVals.push(v);
@@ -103,10 +138,10 @@ export const ComboChart: React.FC<ComboChartProps> = ({
 
     const { left, right } = calculateDualNiceScales(leftVals, rightVals, 5);
     return { leftScale: left, rightScale: right };
-  }, [safeData, safeSeries]);
+  }, [displayData, safeSeries]);
 
   return (
-    <div className="bg-card border border-border rounded-xl p-4 sm:p-5 shadow-xs w-full">
+    <div className="bg-card border border-border rounded-xl p-4 sm:p-5 shadow-xs w-full min-w-0">
       {(title || description) && (
         <div className="mb-4">
           {title && <h3 className="text-sm font-semibold text-foreground">{title}</h3>}
@@ -116,14 +151,14 @@ export const ComboChart: React.FC<ComboChartProps> = ({
         </div>
       )}
 
-      <div style={{ width: "100%", height }}>
-        {safeData.length === 0 ? (
+      <div style={{ width: "100%", height, minWidth: 0 }}>
+        {displayData.length === 0 ? (
           <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
             暂无图表数据
           </div>
         ) : (
-          <ResponsiveContainer width="100%" height="100%">
-            <ComposedChart data={safeData} margin={{ top: 12, right: 16, left: 0, bottom: 4 }}>
+          <ResponsiveContainer width="100%" height="100%" minWidth={0} debounce={50}>
+            <ComposedChart data={displayData} margin={{ top: 12, right: 16, left: 0, bottom: 4 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" opacity={0.6} />
               <XAxis
                 dataKey={xAxisKey}

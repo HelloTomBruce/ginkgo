@@ -12,6 +12,7 @@
 import { createParser } from "@openuidev/react-lang";
 import { analyticsLibrary } from "@openui-analytics/components";
 import { inferTransform, type TransformSpec } from "./transforms";
+import { inferTimeMacrosInObject } from "./timeMacros";
 // 纯函数下沉到 queryRows（刷新端不经本模块间接引入 React 运行时）；
 // 此处再导出保持既有调用方（含测试） import 路径不变
 import { extractQueryRows, ROW_PROP_BY_TYPE } from "./queryRows";
@@ -113,7 +114,8 @@ function buildQueryCandidates(
     } else {
       kind = "tool";
       try {
-        payload = JSON.stringify({ tool: originalName, args: call.args ?? {} });
+        const macroArgs = inferTimeMacrosInObject(call.args ?? {});
+        payload = JSON.stringify({ tool: originalName, args: macroArgs });
       } catch {
         continue; // 参数不可序列化（理论上来自 JSON 流不会发生）
       }
@@ -142,6 +144,7 @@ interface ComponentNode {
   statementId: string;
   typeName: string;
   rows: Record<string, unknown>[];
+  explicitQueryId?: string;
 }
 
 /** 递归收集持行数组属性且有 statementId 的组件节点（内联组件无稳定标识，跳过） */
@@ -175,7 +178,23 @@ function collectComponentNodes(root: unknown): ComponentNode[] {
           raw.length > 0 &&
           raw.every(isPlainObject)
         ) {
-          found.push({ statementId, typeName: node.typeName as string, rows: raw as Record<string, unknown>[] });
+          const explicitQueryId =
+            typeof node.props.queryId === "string"
+              ? (node.props.queryId as string)
+              : typeof node.props.dataRef === "string"
+                ? (node.props.dataRef as string)
+                : typeof (raw[0] as Record<string, unknown>).__originQueryId === "string"
+                  ? ((raw[0] as Record<string, unknown>).__originQueryId as string)
+                  : typeof (raw[0] as Record<string, unknown>).__queryId === "string"
+                    ? ((raw[0] as Record<string, unknown>).__queryId as string)
+                    : undefined;
+
+          found.push({
+            statementId,
+            typeName: node.typeName as string,
+            rows: raw as Record<string, unknown>[],
+            explicitQueryId,
+          });
         }
       }
     }
@@ -264,6 +283,21 @@ export function captureDashboardQueries(
     const transforms: Record<string, TransformSpec> = {};
     const usedQueryIds = new Map<string, QueryCandidate>();
     for (const comp of components) {
+      // 第一优先级：显式血缘/查询声明（queryId / dataRef / __originQueryId）
+      if (comp.explicitQueryId) {
+        const matched = candidates.find(
+          (c) =>
+            c.id === comp.explicitQueryId ||
+            c.id.endsWith(comp.explicitQueryId!) ||
+            comp.explicitQueryId!.endsWith(c.id)
+        );
+        if (matched) {
+          bindings[comp.statementId] = matched.id;
+          usedQueryIds.set(matched.id, matched);
+          continue;
+        }
+      }
+
       const compRows = comp.rows.slice(0, MATCH_ROW_CAP);
       const compKeys = rowKeys(compRows);
       if (!compKeys) continue;

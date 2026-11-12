@@ -123,6 +123,7 @@ export const serverAnalyticsChart = defineComponent({
       })
     ).optional().describe("数据序列配置"),
     height: z.number().optional().describe("图表容器高度（像素）"),
+    queryId: z.string().optional().describe("数据查询绑定 ID"),
   }),
   component: () => null,
 });
@@ -190,6 +191,7 @@ export const serverDataTable = defineComponent({
     ).optional().describe("表头定义"),
     data: z.array(z.record(z.string(), z.any())).describe("行数据数组"),
     searchable: z.boolean().optional().describe("是否启用搜索框"),
+    queryId: z.string().optional().describe("数据查询绑定 ID"),
   }),
   component: () => null,
 });

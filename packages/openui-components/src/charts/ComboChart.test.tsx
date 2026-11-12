@@ -1,7 +1,8 @@
 import React from "react";
 import { describe, it, expect, afterEach, vi } from "vitest";
-import { render, screen, cleanup } from "@testing-library/react";
+import { render, screen, cleanup, act } from "@testing-library/react";
 import { ComboChart } from "./ComboChart";
+import { emitFilterChange, resetFilterBus } from "./filterBus";
 
 vi.mock("recharts", async (importOriginal) => {
   const mod = await importOriginal<typeof import("recharts")>();
@@ -15,7 +16,10 @@ vi.mock("recharts", async (importOriginal) => {
   };
 });
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  resetFilterBus();
+});
 
 describe("ComboChart 双轴复合图", () => {
   const testData = [
@@ -68,5 +72,28 @@ describe("ComboChart 双轴复合图", () => {
       />
     );
     expect(container.querySelector(".recharts-cartesian-grid")).toBeInTheDocument();
+  });
+
+  it("响应 filterBus 筛选事件，动态切片复合图数据", () => {
+    const { container } = render(
+      <ComboChart
+        data={testData}
+        xAxisKey="month"
+        series={[
+          { key: "sales", label: "销售额", type: "bar", yAxis: "left" },
+        ]}
+      />
+    );
+    expect(container.querySelector(".recharts-surface")).toBeInTheDocument();
+
+    act(() => {
+      emitFilterChange({ field: "month", value: "1月" });
+    });
+    expect(container.querySelector(".recharts-surface")).toBeInTheDocument();
+
+    act(() => {
+      emitFilterChange({ field: "month", value: "" });
+    });
+    expect(container.querySelector(".recharts-surface")).toBeInTheDocument();
   });
 });

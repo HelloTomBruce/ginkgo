@@ -37,6 +37,8 @@ export interface SchemaCard {
   /** db-like：真实表结构；mcp：http/stdio 源仅记工具摘要（不主动探查数据） */
   kind: "db-like" | "mcp";
   tables: SchemaCardTable[];
+  /** L1 全量表名目录（超出 CARD_MAX_TABLES 或供大库全库目录索引） */
+  allTables?: string[];
   toolSummaries?: SchemaCardToolSummary[];
   /** 内容因预算被截断（表/列/取值任一维度） */
   truncated: boolean;
@@ -90,6 +92,7 @@ export interface RawTableProfile {
 export function buildSchemaCard(input: {
   sourceId: string;
   profiles: RawTableProfile[];
+  allTables?: string[];
   generatedAt?: number;
 }): SchemaCard {
   let truncated = false;
@@ -133,6 +136,7 @@ export function buildSchemaCard(input: {
     generatedAt: input.generatedAt ?? Date.now(),
     kind: "db-like",
     tables,
+    ...(input.allTables && input.allTables.length > 0 ? { allTables: input.allTables } : {}),
     truncated,
   };
 
@@ -195,14 +199,113 @@ export function buildMcpToolCard(input: {
   };
 }
 
+export interface RenderCardOptions {
+  budgetBytes?: number;
+  queryHint?: string;
+}
+
+/** 常见数仓/业务实体中英文语义映射词典（双向赋能召回） */
+const BUSINESS_SYNONYM_MAP: Record<string, string[]> = {
+  order: ["订单", "交易", "工单", "成单"],
+  user: ["用户", "客户", "账号", "买家", "会员", "人群"],
+  customer: ["客户", "用户", "买家", "客群"],
+  member: ["会员", "vip", "用户"],
+  payment: ["支付", "付款", "结算", "收款"],
+  pay: ["支付", "付款", "结算"],
+  product: ["商品", "产品", "物料", "品类", "货品", "sku", "spu"],
+  item: ["商品", "条目", "明细", "项"],
+  refund: ["退款", "售后", "退货"],
+  lead: ["线索", "获客", "潜客", "商机"],
+  channel: ["渠道", "来源", "推广", "投放"],
+  amount: ["金额", "总额", "交易额", "钱", "数额"],
+  price: ["价格", "单价", "客单价", "售价"],
+  cost: ["成本", "费用", "支出", "开销", "cac"],
+  revenue: ["营收", "收入", "营业额", "gmv"],
+  log: ["日志", "记录", "轨迹", "埋点"],
+  event: ["事件", "行为", "动作"],
+  issue: ["缺陷", "问题", "bug", "任务", "故障"],
+  commit: ["提交", "代码", "变更"],
+};
+
+/**
+ * 依据用户提问相关度对表画像进行评分：
+ * 提问中命中的表排前；支持中英文同义词召回（如“订单”精准命中 orders 表）；
+ * 无提问提示时得分为 0（回退行数降序）。
+ */
+export function scoreTableRelevance(
+  table: SchemaCardTable,
+  queryHint?: string
+): number {
+  if (!queryHint || typeof queryHint !== "string") return 0;
+  const q = queryHint.toLowerCase().trim();
+  if (!q) return 0;
+
+  let score = 0;
+  const tblName = table.name.toLowerCase();
+
+  // 表名完全命中或子串包含
+  if (q.includes(tblName)) score += 30;
+  else if (tblName.includes(q)) score += 15;
+
+  // 单词分词匹配
+  const tokens = q
+    .split(/[\s,._/\\:;!?'"()#@%^&*+-]+/)
+    .map((w) => w.trim())
+    .filter((w) => w.length >= 2);
+
+  for (const token of tokens) {
+    if (tblName.includes(token)) score += 10;
+  }
+
+  // 中英同义词语义关联加分
+  for (const [enKey, cnList] of Object.entries(BUSINESS_SYNONYM_MAP)) {
+    const tableMatchesEn = tblName.includes(enKey);
+    const queryMatchesCn = cnList.some((cn) => q.includes(cn));
+    if (tableMatchesEn && queryMatchesCn) {
+      score += 25; // 中文提问命中英文表名（如：提问含“订单”，表名为 orders）
+    }
+
+    const tableMatchesCn = cnList.some((cn) => tblName.includes(cn));
+    const queryMatchesEn = q.includes(enKey);
+    if (tableMatchesCn && queryMatchesEn) {
+      score += 25; // 英文提问命中带中文表名
+    }
+  }
+
+  // 字段名命中
+  for (const col of table.columns) {
+    const colName = col.name.toLowerCase();
+    if (q.includes(colName)) score += 5;
+    for (const token of tokens) {
+      if (colName === token) score += 3;
+      else if (colName.includes(token)) score += 1;
+    }
+    // 字段同义词
+    for (const [enKey, cnList] of Object.entries(BUSINESS_SYNONYM_MAP)) {
+      if (colName.includes(enKey) && cnList.some((cn) => q.includes(cn))) {
+        score += 8;
+      }
+    }
+  }
+
+  return score;
+}
+
 /**
  * 结构卡 → prompt markdown 附录（预算 CARD_RENDER_BUDGET_BYTES）。
- * 行数多的表优先保留；超预算截断并标注。
+ * 支持提问上下文相关度优先重排，行数多的表次优保留；超预算截断并标注。
  */
 export function renderCardForPrompt(
   card: SchemaCard,
-  budgetBytes = CARD_RENDER_BUDGET_BYTES
+  budgetOrOptions: number | RenderCardOptions = CARD_RENDER_BUDGET_BYTES
 ): string {
+  const opts: RenderCardOptions =
+    typeof budgetOrOptions === "number"
+      ? { budgetBytes: budgetOrOptions }
+      : budgetOrOptions ?? {};
+  const budgetBytes = opts.budgetBytes ?? CARD_RENDER_BUDGET_BYTES;
+  const queryHint = opts.queryHint;
+
   const generatedAt = new Date(card.generatedAt).toISOString().slice(0, 16).replace("T", " ");
   const lines: string[] = [];
   const header =
@@ -216,10 +319,17 @@ export function renderCardForPrompt(
       lines.push(`- ${t.name}${t.description ? `：${t.description}` : ""}`);
     }
   } else {
-    const sorted = [...card.tables].sort(
-      (a, b) => (b.rowCount ?? 0) - (a.rowCount ?? 0)
-    );
+    // 排序策略：相关度优先，相关度相同时行数多的优先
+    const sorted = [...card.tables].sort((a, b) => {
+      const scoreA = scoreTableRelevance(a, queryHint);
+      const scoreB = scoreTableRelevance(b, queryHint);
+      if (scoreA !== scoreB) return scoreB - scoreA;
+      return (b.rowCount ?? 0) - (a.rowCount ?? 0);
+    });
+
+    const renderedTableNames = new Set<string>();
     for (const table of sorted) {
+      renderedTableNames.add(table.name);
       const cols = table.columns
         .map((c) => {
           let s = `${c.name} ${c.type}`;
@@ -239,6 +349,14 @@ export function renderCardForPrompt(
       const rows =
         table.rowCount !== undefined ? `约 ${table.rowCount.toLocaleString()} 行` : "";
       lines.push(`- ${table.name}${rows ? `（${rows}）` : ""}：${cols}`);
+    }
+
+    // L1 目录补充：若有未展开画像的其余可用表，附带紧凑清单（便于 LLM 知悉全库可用表）
+    if (card.allTables && card.allTables.length > 0) {
+      const remaining = card.allTables.filter((t) => !renderedTableNames.has(t));
+      if (remaining.length > 0) {
+        lines.push(`- 其余可用数据表清单（共 ${remaining.length} 张）：${remaining.join("、")}`);
+      }
     }
   }
   if (card.truncated) lines.push("（内容已按预算截断）");
@@ -363,6 +481,7 @@ export async function collectSchemaCard(input: {
   quoteIdent: (name: string) => string;
 }): Promise<SchemaCard> {
   const tables = await input.probe.listTables();
+  const allTables = tables.map((t) => t.table);
   const profiles: RawTableProfile[] = [];
   for (const t of tables.slice(0, CARD_MAX_TABLES)) {
     try {
@@ -381,5 +500,6 @@ export async function collectSchemaCard(input: {
   return buildSchemaCard({
     sourceId: input.sourceId,
     profiles,
+    allTables: allTables.length > profiles.length ? allTables : undefined,
   });
 }

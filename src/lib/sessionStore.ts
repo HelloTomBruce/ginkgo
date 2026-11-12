@@ -405,7 +405,7 @@ export function createSessionStore(opts: { dir: string }): SessionStore {
   /** 原子写：临时文件 + rename，崩溃不留半截 JSON */
   async function writeRecord(record: SessionRecord): Promise<void> {
     await fs.mkdir(dir, { recursive: true });
-    const tmp = `${fileFor(record.id)}.tmp-${process.pid}-${Date.now()}`;
+    const tmp = `${fileFor(record.id)}.tmp-${process.pid}-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;
     await fs.writeFile(tmp, JSON.stringify(record, null, 2), "utf-8");
     await fs.rename(tmp, fileFor(record.id));
   }

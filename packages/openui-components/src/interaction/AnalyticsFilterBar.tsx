@@ -1,7 +1,7 @@
 import React from "react";
 import { useSetFieldValue, useTriggerAction, defineComponent } from "@openuidev/react-lang";
 import { Filter, Play } from "lucide-react";
-import { emitFilterChange, useDashboardScope } from "../charts/filterBus";
+import { emitFilterChange, onFilterChange, useDashboardScope, getFilterState } from "../charts/filterBus";
 import { z } from "zod";
 import { ComponentSafeWrapper } from "../internal/ComponentSafeWrapper";
 
@@ -41,7 +41,19 @@ const DeclarativeFilterBar: React.FC<{
   const scopeId = useDashboardScope();
   const [fetchedOptions, setFetchedOptions] = React.useState<FilterOption[]>([]);
   const [fetchNote, setFetchNote] = React.useState<string | null>(null);
-  const [selectedValue, setSelectedValue] = React.useState<string>("");
+  const [selectedValue, setSelectedValue] = React.useState<string>(() => {
+    const current = getFilterState(scopeId);
+    return current[filterField.field] ?? "";
+  });
+
+  // 监听外部事件总线联动（如其他控件或工作台重置该字段时，同步更新自身状态）
+  React.useEffect(() => {
+    return onFilterChange((event) => {
+      if (event.field === filterField.field) {
+        setSelectedValue(event.value);
+      }
+    }, scopeId);
+  }, [scopeId, filterField.field]);
 
   React.useEffect(() => {
     let cancelled = false;

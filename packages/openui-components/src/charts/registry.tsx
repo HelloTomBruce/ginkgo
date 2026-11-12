@@ -492,6 +492,7 @@ const TableRenderer: React.FC<RegistryRenderProps> = ({
     <DataTable
       data={displayRows}
       columns={columns}
+      interactiveFilter={false}
       cellStyle={(row) => {
         const fill = thresholdCellFill(
           rawRowByDisplay.get(row) ?? row,

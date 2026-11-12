@@ -54,4 +54,9 @@ describe("componentDemos 组件演示样例", () => {
     renderDemo(componentDemos.MetricCard);
     expect(screen.getByText("月度 GMV")).toBeInTheDocument();
   });
+
+  it("ReportLayout 报表演示渲染通过", () => {
+    renderDemo(componentDemos.ReportLayout);
+    expect(screen.getByText("电商月度经营报告")).toBeInTheDocument();
+  });
 });

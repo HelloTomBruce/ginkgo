@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, cleanup, fireEvent, waitFor } from "@testing-library/react";
 import { AnalyticsFilterBar } from "./AnalyticsFilterBar";
-import { emitFilterChange, onFilterChange } from "../charts/filterBus";
+import { emitFilterChange, onFilterChange, resetFilterBus, getFilterState } from "../charts/filterBus";
 
 // 声明/演示子组件调用 useSetFieldValue / useTriggerAction（依赖 Renderer 上下文）：
 // 测试环境 mock 掉这两个 hook（其余 react-lang 导出保持原样）
@@ -16,6 +16,7 @@ vi.mock("@openuidev/react-lang", async (importOriginal) => {
 
 afterEach(() => {
   cleanup();
+  resetFilterBus();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
@@ -84,5 +85,38 @@ describe("filterBus", () => {
     off();
     emitFilterChange({ field: "f", value: "2" });
     expect(got).toEqual(["1"]);
+  });
+
+  it("维护并返回当前作用域的筛选状态字典（getFilterState）", () => {
+    emitFilterChange({ field: "channel", value: "TikTok", scopeId: "dash_1" });
+    emitFilterChange({ field: "region", value: "US", scopeId: "dash_1" });
+    emitFilterChange({ field: "globalCategory", value: "Electronics" });
+
+    // 作用域 dash_1 继承 global 并覆盖自身字段
+    expect(getFilterState("dash_1")).toEqual({
+      globalCategory: "Electronics",
+      channel: "TikTok",
+      region: "US",
+    });
+
+    // 独立作用域 dash_2 仅能读取 global
+    expect(getFilterState("dash_2")).toEqual({
+      globalCategory: "Electronics",
+    });
+
+    // 清空某一筛选条件
+    emitFilterChange({ field: "channel", value: "", scopeId: "dash_1" });
+    expect(getFilterState("dash_1")).toEqual({
+      globalCategory: "Electronics",
+      region: "US",
+    });
+  });
+
+  it("支持 replayCurrent 在订阅建立时立即回放已生效的筛选条件", () => {
+    emitFilterChange({ field: "status", value: "active", scopeId: "scope_a" });
+    const received: Array<{ field: string; value: string }> = [];
+
+    onFilterChange((e) => received.push({ field: e.field, value: e.value }), "scope_a", true);
+    expect(received).toEqual([{ field: "status", value: "active" }]);
   });
 });

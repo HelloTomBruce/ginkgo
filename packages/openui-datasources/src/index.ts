@@ -26,4 +26,6 @@ export {
   CARD_STORE_MAX_BYTES,
   LOW_CARDINALITY_THRESHOLD,
   renderCardForPrompt,
+  scoreTableRelevance,
+  type RenderCardOptions,
 } from "./schema/card";

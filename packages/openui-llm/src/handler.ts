@@ -44,11 +44,13 @@ export const SCHEMA_DIGEST_TOTAL_BUDGET_BYTES = 8 * 1024;
 
 /**
  * 组装启用源的结构卡摘要：逐源读卡（渲染职责在 datasources 包），
- * 按总量预算降序纳入，超限的源省略并标注。读卡失败静默跳过（不阻塞分析）。
+ * 依据用户提问相关度优先展开核心表，按总量预算降序纳入，超限的源省略并标注。
+ * 读卡失败静默跳过（不阻塞分析）。
  */
 async function buildSchemaDigest(
   datasources: DatasourceManager,
-  activeSources: ActiveSourceSummary[]
+  activeSources: ActiveSourceSummary[],
+  queryHint?: string
 ): Promise<string | undefined> {
   if (activeSources.length === 0) return undefined;
   const sections: string[] = [];
@@ -58,7 +60,7 @@ async function buildSchemaDigest(
     try {
       const got = await datasources.getSchemaCard(s.id);
       if (!got) continue;
-      const text = renderCardForPrompt(got.card);
+      const text = renderCardForPrompt(got.card, { queryHint });
       const bytes = Buffer.byteLength(text, "utf-8");
       if (used + bytes > SCHEMA_DIGEST_TOTAL_BUDGET_BYTES) {
         omitted++;
@@ -75,6 +77,25 @@ async function buildSchemaDigest(
     sections.push(`（另有 ${omitted} 个数据源的结构卡因总量预算省略，可用工具现场探查）`);
   }
   return sections.join("\n\n");
+}
+
+/** 提取对话历史中最后一条用户提问文本作为表画像召回提示词 */
+function extractLatestUserQuery(messages: unknown[]): string | undefined {
+  if (!Array.isArray(messages)) return undefined;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i] as { role?: unknown; content?: unknown } | null;
+    if (m && m.role === "user") {
+      if (typeof m.content === "string") return m.content;
+      if (Array.isArray(m.content)) {
+        return m.content
+          .map((p) =>
+            typeof p === "object" && p && "text" in p ? String(p.text) : ""
+          )
+          .join(" ");
+      }
+    }
+  }
+  return undefined;
 }
 
 /**
@@ -353,7 +374,8 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
       // 按阶段分派系统提示词：plan → 规划变体（探查边界 + PlanReviewCard 契约 + 选法指令）；
       // execute → base + 按已确认思路执行的增量约束 + 命中方法卡详情（按需注入）；
       // direct → base 直出看板 + 方法索引（常驻）
-      const schemaDigest = await buildSchemaDigest(datasources, summaries);
+      const userQueryHint = extractLatestUserQuery(messages);
+      const schemaDigest = await buildSchemaDigest(datasources, summaries, userQueryHint);
       const methodDetails =
         mode === "execute"
           ? buildMethodDetailsFromMessages(methodLibrary, messages)

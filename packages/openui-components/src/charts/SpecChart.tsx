@@ -53,30 +53,23 @@ export const SpecChart: React.FC<SpecChartProps> = ({
   }
 
   // ===== 筛选联动（M2-4）：订阅 filterBus，字段命中时自行重物化回填 =====
-  // filterState: 记录用户筛选后的物化行与对应 key。
-  // 通过 key 校验派生当前行，无需在 render 期调用 setState，彻底避免 React 级联重渲染与死循环。
+  // filterState: 记录用户筛选后的物化行与对应 baseData 引用及 specKey。
+  // 基于引用比对做纯函数式派生，彻底消除 render 期调用 setState 的坏味道与重渲染死循环隐患。
   const specKey = parsedSpec ? JSON.stringify(parsedSpec) : "";
-  // 数据版本：data 引用变化（dashboardRefresh 原地 mutate 后回填新数组）即递增，
-  // 并入 cache key——旧筛选行自动失效，回退展示新 data（防陈旧筛选结果）。
-  // 渲染期条件派生 state 的官方范式：props 变化触发即时重渲染，无提交闪烁。
-  const [dataIdentity, setDataIdentity] = React.useState({ data, version: 0 });
-  if (dataIdentity.data !== data) {
-    setDataIdentity({ data, version: dataIdentity.version + 1 });
-  }
-  const dataVersion = dataIdentity.version;
-  const currentKey = `${table || ""}:${specKey}#v${dataVersion}`;
   const [filterState, setFilterState] = React.useState<{
-    key: string;
+    baseData: Array<Record<string, unknown>>;
+    specKey: string;
     rows: Array<Record<string, unknown>>;
   } | null>(null);
 
-  // 回填 key 经 ref 读取「响应到达时刻」的最新值：订阅期内数据版本变化时，
-  // 闭包捕获的旧 currentKey 会令新筛选结果落库即失效
-  const currentKeyRef = React.useRef(currentKey);
+  const dataRef = React.useRef(data);
+  const specKeyRef = React.useRef(specKey);
   const scopeId = useDashboardScope();
+
   React.useEffect(() => {
-    currentKeyRef.current = currentKey;
-  }, [currentKey]);
+    dataRef.current = data;
+    specKeyRef.current = specKey;
+  }, [data, specKey]);
 
   React.useEffect(() => {
     if (!parsedSpec || !table) return;
@@ -106,7 +99,11 @@ export const SpecChart: React.FC<SpecChartProps> = ({
         .then((body: { rows?: Array<Record<string, unknown>> }) => {
           if (mySeq !== seq) return; // 已有更新的筛选请求，丢弃过期响应
           if (Array.isArray(body.rows)) {
-            setFilterState({ key: currentKeyRef.current, rows: body.rows });
+            setFilterState({
+              baseData: dataRef.current,
+              specKey: specKeyRef.current,
+              rows: body.rows,
+            });
           }
         })
         .catch(() => {
@@ -118,7 +115,11 @@ export const SpecChart: React.FC<SpecChartProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [specKey, table, scopeId]);
 
-  const activeFilteredRows = filterState?.key === currentKey ? filterState.rows : null;
+  // 当 data 引用变化（dashboardRefresh 回填新数组）或 specKey 变化时，陈旧筛选行自然失效并展示最新 data
+  const activeFilteredRows =
+    filterState && filterState.baseData === data && filterState.specKey === specKey
+      ? filterState.rows
+      : null;
   const rows = parseArrayProp(activeFilteredRows ?? data);
   const chartType = parsedSpec?.chartType;
 

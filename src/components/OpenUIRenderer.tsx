@@ -14,6 +14,53 @@ interface OpenUIRendererProps {
 }
 
 /**
+ * 流式内容平滑节流：在流式生成期间将超高频 AST 重解析降频到最高 ~8fps（约 120ms 一次），
+ * 彻底释放主线程 CPU，防止包含多图表的复杂报表在流式解析期导致整个页面卡死。
+ * 流式结束时（isStreaming=false）立即同步 100% 最新内容。
+ */
+function useStreamingThrottled(content: string, isStreaming: boolean, intervalMs = 120): string {
+  const [throttled, setThrottled] = React.useState(content);
+  const contentRef = React.useRef(content);
+  const lastUpdateRef = React.useRef(0);
+  const timerRef = React.useRef<NodeJS.Timeout | null>(null);
+
+  React.useEffect(() => {
+    contentRef.current = content;
+    if (!isStreaming) {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+      return;
+    }
+
+    const now = Date.now();
+    const elapsed = now - lastUpdateRef.current;
+
+    if (elapsed >= intervalMs) {
+      setThrottled(contentRef.current);
+      lastUpdateRef.current = now;
+    } else if (!timerRef.current) {
+      timerRef.current = setTimeout(() => {
+        setThrottled(contentRef.current);
+        lastUpdateRef.current = Date.now();
+        timerRef.current = null;
+      }, intervalMs - elapsed);
+    }
+
+    return () => {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+    };
+  }, [content, isStreaming, intervalMs]);
+
+  // 非流式状态下直接呈现最新内容，零副作用；流式状态下使用节流后的 AST 内容
+  return isStreaming ? throttled : content;
+}
+
+/**
  * OpenUI 官方声明式组件视觉渲染器
  * 集成：
  * 1. Client-Side ToolProvider (客户端本地工具)
@@ -27,6 +74,7 @@ export const OpenUIRenderer: React.FC<OpenUIRendererProps> = React.memo(function
   onAction,
   showObservabilityBadge = true,
 }) {
+  const renderContent = useStreamingThrottled(content, isStreaming);
   const onActionRef = useRef(onAction);
   React.useEffect(() => {
     onActionRef.current = onAction;
@@ -54,11 +102,11 @@ export const OpenUIRenderer: React.FC<OpenUIRendererProps> = React.memo(function
     }
   }, []);
 
-  if (!content || !content.trim()) return null;
+  if (!renderContent || !renderContent.trim()) return null;
 
   return (
-    // resetKey=content：流式中间态解析失败后，新 token 到达时自动复位重试
-    <ErrorBoundary name="OpenUIRenderer" resetKey={content}>
+    // resetKey=renderContent：流式中间态解析失败后，新 token 到达时自动复位重试
+    <ErrorBoundary name="OpenUIRenderer" resetKey={renderContent}>
       <div className="w-full space-y-3">
         {/* 流式生成进行中的 Loading 状态条 */}
         {isStreaming && (
@@ -75,7 +123,7 @@ export const OpenUIRenderer: React.FC<OpenUIRendererProps> = React.memo(function
 
         <Renderer
           library={analyticsLibrary}
-          response={content}
+          response={renderContent}
           isStreaming={isStreaming}
           toolProvider={clientTools}
           publishObservability={false}

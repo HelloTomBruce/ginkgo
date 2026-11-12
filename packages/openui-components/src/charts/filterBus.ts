@@ -26,9 +26,30 @@ interface ListenerEntry {
 }
 
 const listenerEntries = new Set<ListenerEntry>();
+const GLOBAL_SCOPE = "__global__";
+const scopeFilterState = new Map<string, Record<string, string>>();
+
+/** 获取当前作用域的所有激活筛选值（若提供 scopeId，则合并全局与该作用域的条件） */
+export function getFilterState(scopeId?: string): Record<string, string> {
+  const globalFilters = scopeFilterState.get(GLOBAL_SCOPE) || {};
+  if (!scopeId || scopeId === GLOBAL_SCOPE) {
+    return { ...globalFilters };
+  }
+  const scopedFilters = scopeFilterState.get(scopeId) || {};
+  return { ...globalFilters, ...scopedFilters };
+}
 
 /** 广播筛选值变化（AnalyticsFilterBar onChange 调用） */
 export function emitFilterChange(event: FilterChangeEvent): void {
+  const targetScope = event.scopeId || GLOBAL_SCOPE;
+  const current = { ...(scopeFilterState.get(targetScope) || {}) };
+  if (event.value === "" || event.value == null) {
+    delete current[event.field];
+  } else {
+    current[event.field] = event.value;
+  }
+  scopeFilterState.set(targetScope, current);
+
   for (const entry of Array.from(listenerEntries)) {
     // 作用域匹配逻辑：
     // 1. 若监听方未限定 scopeId，则接收所有事件
@@ -44,18 +65,35 @@ export function emitFilterChange(event: FilterChangeEvent): void {
   }
 }
 
-/** 订阅筛选变化；返回取消订阅函数（SpecChart useEffect cleanup 调用） */
-export function onFilterChange(cb: FilterChangeListener, scopeId?: string): () => void {
+/** 订阅筛选变化；返回取消订阅函数（SpecChart useEffect cleanup 调用）
+ * @param cb 回调函数
+ * @param scopeId 可选作用域
+ * @param replayCurrent 是否在订阅时立即回放当前作用域已生效的筛选条件（默认 false）
+ */
+export function onFilterChange(
+  cb: FilterChangeListener,
+  scopeId?: string,
+  replayCurrent = false
+): () => void {
   const entry: ListenerEntry = { cb, scopeId };
   listenerEntries.add(entry);
+
+  if (replayCurrent) {
+    const active = getFilterState(scopeId);
+    for (const [field, value] of Object.entries(active)) {
+      cb({ field, value, scopeId });
+    }
+  }
+
   return () => {
     listenerEntries.delete(entry);
   };
 }
 
-/** 清理所有订阅者（主要供单测隔离使用） */
+/** 清理所有订阅者与筛选状态（主要供单测隔离使用） */
 export function resetFilterBus(): void {
   listenerEntries.clear();
+  scopeFilterState.clear();
 }
 
 /** 看板/组件容器的作用域 Context */
