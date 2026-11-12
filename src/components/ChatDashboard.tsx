@@ -26,6 +26,7 @@ import { useDatasourceList } from "@/components/chat/datasources/useDatasources"
 import { useMethodologyPresets } from "@/components/chat/useMethodologyPresets";
 import { SettingsModal } from "@/components/chat/SettingsModal";
 import { ModelSwitcher } from "@/components/chat/ModelSwitcher";
+import { ContextUsageIndicator } from "@/components/chat/ContextUsageIndicator";
 import { DevToolsPanel } from "@/components/chat/DevToolsPanel";
 import { MethodologyModal } from "@/components/chat/MethodologyModal";
 import { ComponentCatalogModal } from "@/components/chat/ComponentCatalogModal";
@@ -760,8 +761,6 @@ export default function ChatDashboard() {
         currentSessionId={currentSessionId}
         editingSessionId={editingSessionId}
         editingTitleText={editingTitleText}
-        apiKey={apiKey}
-        model={model}
         showRawLang={showRawLang}
         dashboards={dashboardSummaries}
         onPreviewDashboard={handlePreviewDashboard}
@@ -795,14 +794,6 @@ export default function ChatDashboard() {
             <span className="font-semibold truncate max-w-md">
               {activeSession?.title || "OpenUI 对话式数据分析看板"}
             </span>
-            <ModelSwitcher
-              providers={providers}
-              activeProviderId={activeProviderId}
-              activeModel={activeModel}
-              onSwitchModel={switchActiveModel}
-              onOpenSettings={handleOpenSettings}
-              variant="header"
-            />
           </div>
           <div className="flex items-center gap-2">
             {/* 视图模式切换（仅在桌面端显示） */}
@@ -927,40 +918,6 @@ export default function ChatDashboard() {
                 </div>
               )}
 
-              <SourcePicker
-                sources={enabledPickerSources}
-                selected={activeSession?.enabledSources}
-                onChange={handleSourcesChange}
-                disabled={sourcesLocked}
-              />
-
-              {/* 上下文用量条：常驻展示当前会话 promptTokens / 模型窗口；>70% 黄、>90% 红 */}
-              <div className="px-6 pb-1.5 flex items-center gap-2 text-[10px] text-foreground-faint select-none">
-                <span className="shrink-0">上下文</span>
-                <div className="w-32 h-1 rounded-full bg-surface-raised overflow-hidden">
-                  <div
-                    className={`h-full rounded-full transition-all ${
-                      contextUsage.promptTokens / contextUsage.window > 0.9
-                        ? "bg-danger-solid"
-                        : contextUsage.promptTokens / contextUsage.window > 0.7
-                        ? "bg-warning-solid"
-                        : "bg-success-solid"
-                    }`}
-                    style={{
-                      width: `${Math.min(
-                        100,
-                        Math.round((contextUsage.promptTokens / contextUsage.window) * 100)
-                      )}%`,
-                    }}
-                  />
-                </div>
-                <span className="shrink-0 tabular-nums">
-                  {`${(contextUsage.promptTokens / 1000).toFixed(1)}k / ${Math.round(
-                    contextUsage.window / 1000
-                  )}k（${Math.round((contextUsage.promptTokens / contextUsage.window) * 100)}%）`}
-                </span>
-              </div>
-
               <ChatInput
                 input={input}
                 isLoading={isLoading || !sessionsLoaded}
@@ -980,6 +937,20 @@ export default function ChatDashboard() {
                     onSwitchModel={switchActiveModel}
                     onOpenSettings={handleOpenSettings}
                     variant="compact"
+                  />
+                }
+                sourcePickerNode={
+                  <SourcePicker
+                    sources={enabledPickerSources}
+                    selected={activeSession?.enabledSources}
+                    onChange={handleSourcesChange}
+                    disabled={sourcesLocked}
+                  />
+                }
+                contextUsageNode={
+                  <ContextUsageIndicator
+                    promptTokens={contextUsage.promptTokens}
+                    window={contextUsage.window}
                   />
                 }
               />

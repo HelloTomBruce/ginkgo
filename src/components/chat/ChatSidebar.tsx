@@ -9,7 +9,6 @@ import {
   Compass,
   Search,
   Trash2,
-  Bot,
   FileCode,
   Sparkles,
   LayoutGrid,
@@ -36,8 +35,6 @@ interface ChatSidebarProps {
   currentSessionId: string;
   editingSessionId: string | null;
   editingTitleText: string;
-  apiKey: string;
-  model: string;
   showRawLang: boolean;
   /** 看板收藏库（服务端存储，跨浏览器可用） */
   dashboards: DashboardSummary[];
@@ -76,8 +73,6 @@ export function ChatSidebar({
   currentSessionId,
   editingSessionId,
   editingTitleText,
-  apiKey,
-  model,
   showRawLang,
   dashboards,
   onPreviewDashboard,
@@ -297,42 +292,33 @@ export function ChatSidebar({
         </div>
       )}
 
-      {/* 底部功能栏与运行状态 */}
-      <div className="p-3 border-t border-border-subtle space-y-2 bg-surface-sunken/50">
-        <div className="flex items-center justify-between text-[11px] px-1 text-muted-foreground">
-          <div className="flex items-center gap-1.5 font-medium">
-            <Bot className="w-3.5 h-3.5 text-info-fg" />
-            <span>{apiKey ? model : "未配置 Key"}</span>
-          </div>
-        </div>
-
-        <div className="space-y-1.5 pt-1">
-          <button
-            onClick={onToggleRawLang}
-            className={`w-full text-xs p-2 rounded-lg border transition-colors flex items-center gap-2 ${
-              showRawLang
-                ? "bg-info-soft border-info-border text-info-fg font-medium"
-                : "border-border text-foreground-subtle hover:bg-muted"
-            }`}
-          >
-            <FileCode className="w-3.5 h-3.5" />
-            <span>{showRawLang ? "隐藏 OpenUI 源码" : "查看 OpenUI Lang 源码"}</span>
-          </button>
-          <button
-            onClick={onOpenMethodology}
-            className="w-full text-xs p-2 rounded-lg border border-border text-foreground-subtle hover:bg-muted transition-colors flex items-center gap-2"
-          >
-            <BookOpen className="w-3.5 h-3.5" />
-            <span>分析方法论</span>
-          </button>
-          <button
-            onClick={onOpenComponentCatalog}
-            className="w-full text-xs p-2 rounded-lg border border-border text-foreground-subtle hover:bg-muted transition-colors flex items-center gap-2"
-          >
-            <LayoutGrid className="w-3.5 h-3.5" />
-            <span>可视化组件</span>
-          </button>
-        </div>
+      {/* 底部功能栏 */}
+      <div className="p-3 border-t border-border-subtle space-y-1.5 bg-surface-sunken/50">
+        <button
+          onClick={onToggleRawLang}
+          className={`w-full text-xs p-2 rounded-lg border transition-colors flex items-center gap-2 ${
+            showRawLang
+              ? "bg-info-soft border-info-border text-info-fg font-medium"
+              : "border-border text-foreground-subtle hover:bg-muted"
+          }`}
+        >
+          <FileCode className="w-3.5 h-3.5" />
+          <span>{showRawLang ? "隐藏 OpenUI 源码" : "查看 OpenUI Lang 源码"}</span>
+        </button>
+        <button
+          onClick={onOpenMethodology}
+          className="w-full text-xs p-2 rounded-lg border border-border text-foreground-subtle hover:bg-muted transition-colors flex items-center gap-2"
+        >
+          <BookOpen className="w-3.5 h-3.5" />
+          <span>分析方法论</span>
+        </button>
+        <button
+          onClick={onOpenComponentCatalog}
+          className="w-full text-xs p-2 rounded-lg border border-border text-foreground-subtle hover:bg-muted transition-colors flex items-center gap-2"
+        >
+          <LayoutGrid className="w-3.5 h-3.5" />
+          <span>可视化组件</span>
+        </button>
       </div>
     </aside>
   );

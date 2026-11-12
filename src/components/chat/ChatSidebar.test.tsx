@@ -8,8 +8,6 @@ const baseProps = {
   currentSessionId: "s1",
   editingSessionId: null,
   editingTitleText: "",
-  apiKey: "",
-  model: "gpt-4o-mini",
   showRawLang: false,
   dashboards: [] as DashboardSummary[],
   onPreviewDashboard: vi.fn(),

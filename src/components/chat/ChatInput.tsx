@@ -16,6 +16,10 @@ interface ChatInputProps {
   onStop?: () => void;
   /** 可选注入模型选择器控件 */
   modelSwitcherNode?: React.ReactNode;
+  /** 可选注入数据源选择器控件 */
+  sourcePickerNode?: React.ReactNode;
+  /** 可选注入上下文用量指示器 */
+  contextUsageNode?: React.ReactNode;
 }
 
 /** 自适应高度上限：约 6 行（24px 行高 + 余量），超出后内滚 */
@@ -30,6 +34,8 @@ export function ChatInput({
   onPlanModeChange,
   onStop,
   modelSwitcherNode,
+  sourcePickerNode,
+  contextUsageNode,
 }: ChatInputProps) {
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
 
@@ -81,15 +87,15 @@ export function ChatInput({
             className="w-full bg-transparent px-4 pt-3.5 pb-1 text-sm leading-6 placeholder:text-foreground-faint focus:outline-none resize-none disabled:opacity-50 overflow-y-auto"
             style={{ maxHeight: TEXTAREA_MAX_HEIGHT }}
           />
-          {/* 底部工具行：左「先出思路」+ 模型切换，右发送按钮 */}
-          <div className="flex items-center justify-between px-3 pb-2.5 pt-1">
-            <div className="flex items-center gap-1.5">
+          {/* 底部工具行：左侧「先出思路」+ 模型切换 + 数据源切换 + 上下文进度，右发送按钮 */}
+          <div className="flex items-center justify-between px-3 pb-2.5 pt-1 gap-2">
+            <div className="flex items-center gap-1.5 flex-wrap min-w-0">
               <Hint label="开启后，新问题将先探查数据结构并给出分析思路与澄清问题，确认方向后再产出看板">
                 <button
                   type="button"
                   aria-pressed={planMode}
                   onClick={() => onPlanModeChange(!planMode)}
-                  className={`flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium transition-colors select-none cursor-pointer ${
+                  className={`flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium transition-colors select-none cursor-pointer shrink-0 ${
                     planMode
                       ? "bg-info-soft-strong text-info-fg-strong"
                       : "text-foreground-faint hover:text-foreground-subtle"
@@ -100,27 +106,31 @@ export function ChatInput({
                 </button>
               </Hint>
               {modelSwitcherNode}
+              {sourcePickerNode}
+              {contextUsageNode}
             </div>
-            {isLoading ? (
-              <button
-                type="button"
-                onClick={onStop}
-                aria-label="停止生成"
-                className="bg-danger-solid hover:bg-danger-solid-hover text-white rounded-xl px-4 py-2 text-sm font-medium transition-colors flex items-center gap-1.5 shadow-xs cursor-pointer select-none"
-              >
-                <Square className="w-3.5 h-3.5 fill-current" />
-                <span>停止</span>
-              </button>
-            ) : (
-              <button
-                type="submit"
-                disabled={!input.trim()}
-                className="bg-info-solid hover:bg-info-solid-hover text-white rounded-xl px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 shadow-xs"
-              >
-                <Send className="w-4 h-4" />
-                <span>发送</span>
-              </button>
-            )}
+            <div className="shrink-0">
+              {isLoading ? (
+                <button
+                  type="button"
+                  onClick={onStop}
+                  aria-label="停止生成"
+                  className="bg-danger-solid hover:bg-danger-solid-hover text-white rounded-xl px-4 py-2 text-sm font-medium transition-colors flex items-center gap-1.5 shadow-xs cursor-pointer select-none"
+                >
+                  <Square className="w-3.5 h-3.5 fill-current" />
+                  <span>停止</span>
+                </button>
+              ) : (
+                <button
+                  type="submit"
+                  disabled={!input.trim()}
+                  className="bg-info-solid hover:bg-info-solid-hover text-white rounded-xl px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 shadow-xs"
+                >
+                  <Send className="w-4 h-4" />
+                  <span>发送</span>
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </form>
