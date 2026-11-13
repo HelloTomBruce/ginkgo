@@ -216,3 +216,9 @@ export const componentCatalog: readonly ComponentCatalogGroup[] =
 
 // 组件演示样例（可视化组件查看弹窗的条目实况预览；无演示的组件仅展示信息）
 export { componentDemos } from "./componentDemos";
+
+// DashboardSpec 2.0 声明式渲染容器 (Data-View Separation)
+export {
+  DashboardSpecRenderer,
+  type DashboardSpecRendererProps,
+} from "./spec/DashboardSpecRenderer";

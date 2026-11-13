@@ -283,6 +283,7 @@ const LineRenderer: React.FC<RegistryRenderProps> = ({
           strokeWidth={2}
           dot={{ r: 3 }}
           activeDot={{ r: 5 }}
+          connectNulls
           isAnimationActive={false}
         />
       ))}
@@ -380,6 +381,7 @@ const ComboRenderer: React.FC<RegistryRenderProps> = ({
           strokeWidth={2}
           dot={{ r: 3 }}
           activeDot={{ r: 5 }}
+          connectNulls
           isAnimationActive={false}
         />
       )}

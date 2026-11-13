@@ -205,4 +205,14 @@ describe("SpecChart 筛选联动（M2-4）", () => {
     rerender(<SpecChart spec={spec} table="power_stats" data={refreshed} />);
     expect(screen.getByText("9")).toBeInTheDocument();
   });
+
+  it("支持大模型将 data 和 table 内联在 spec 对象内，无需外层显式传 data", () => {
+    const inlineSpec = {
+      ...spec,
+      table: "power_stats",
+      data: [{ province: "浙江", capacity: 25 }],
+    };
+    render(<SpecChart spec={inlineSpec} />);
+    expect(screen.queryByText("暂无图表数据")).not.toBeInTheDocument();
+  });
 });

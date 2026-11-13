@@ -40,39 +40,68 @@ export const SpecChart: React.FC<SpecChartProps> = ({
   data = EMPTY_DATA,
   height = 280,
 }) => {
-  // spec 可能是对象或 JSON 字符串（LLM 输出容错，与 parseArrayProp 同哲学）
-  let parsedSpec: ChartSpec | null = null;
-  if (typeof spec === "string") {
+  // spec 可能是对象或 JSON 字符串（LLM 输出容错，与 parseArrayProp 同哲学）。
+  // 按原始字符串形态 memo 解析结果：zod 解析（尤其内联 data 大数组）是热路径，
+  // 且解析产物的引用稳定性是筛选联动 baseData 比对的前提——每渲染重建会让
+  // effectiveData 引用漂移，inline-data 模式下筛选联动静默失效。
+  const specRawKey = typeof spec === "string" ? spec : JSON.stringify(spec);
+  const { parsedSpec, rawSpecObj } = React.useMemo(() => {
+    let parsed: ChartSpec | null = null;
+    let raw: Record<string, unknown> | null = null;
     try {
-      parsedSpec = parseChartSpec(JSON.parse(spec));
+      raw = typeof spec === "string" ? JSON.parse(spec) : (spec as Record<string, unknown>);
+      if (raw && typeof raw === "object") {
+        parsed = parseChartSpec(raw);
+      } else {
+        raw = null;
+      }
     } catch {
-      parsedSpec = null;
+      parsed = null;
+      raw = typeof spec === "string" ? null : (spec as Record<string, unknown>);
     }
-  } else if (spec && typeof spec === "object") {
-    parsedSpec = parseChartSpec(spec);
-  }
+    return { parsedSpec: parsed, rawSpecObj: raw };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [specRawKey]);
+
+  // 兜底支持大模型将 table 和 data 内联写在 spec 对象内的常见形态
+  const effectiveTable =
+    table ||
+    (typeof parsedSpec?.table === "string" ? parsedSpec.table : undefined) ||
+    (typeof rawSpecObj?.table === "string" ? (rawSpecObj.table as string) : undefined);
+
+  const effectiveData =
+    data && Array.isArray(data) && data.length > 0
+      ? data
+      : Array.isArray(parsedSpec?.data) && parsedSpec.data.length > 0
+        ? parsedSpec.data
+        : Array.isArray(rawSpecObj?.data) && rawSpecObj.data.length > 0
+          ? (rawSpecObj.data as Array<Record<string, unknown>>)
+          : EMPTY_DATA;
 
   // ===== 筛选联动（M2-4）：订阅 filterBus，字段命中时自行重物化回填 =====
   // filterState: 记录用户筛选后的物化行与对应 baseData 引用及 specKey。
   // 基于引用比对做纯函数式派生，彻底消除 render 期调用 setState 的坏味道与重渲染死循环隐患。
-  const specKey = parsedSpec ? JSON.stringify(parsedSpec) : "";
+  const specKey = React.useMemo(
+    () => (parsedSpec ? JSON.stringify(parsedSpec) : ""),
+    [parsedSpec]
+  );
   const [filterState, setFilterState] = React.useState<{
     baseData: Array<Record<string, unknown>>;
     specKey: string;
     rows: Array<Record<string, unknown>>;
   } | null>(null);
 
-  const dataRef = React.useRef(data);
+  const dataRef = React.useRef(effectiveData);
   const specKeyRef = React.useRef(specKey);
   const scopeId = useDashboardScope();
 
   React.useEffect(() => {
-    dataRef.current = data;
+    dataRef.current = effectiveData;
     specKeyRef.current = specKey;
-  }, [data, specKey]);
+  }, [effectiveData, specKey]);
 
   React.useEffect(() => {
-    if (!parsedSpec || !table) return;
+    if (!parsedSpec || !effectiveTable) return;
     const owns = new Set<string>([
       ...parsedSpec.dims.map((d) => d.field),
       ...(parsedSpec.filters ?? []).map((f) => f.field),
@@ -93,7 +122,7 @@ export const SpecChart: React.FC<SpecChartProps> = ({
       fetch("/api/dashboards/preview-query", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sourceId: merged.sourceId, table, spec: merged }),
+        body: JSON.stringify({ sourceId: merged.sourceId, table: effectiveTable, spec: merged }),
       })
         .then((r) => r.json())
         .then((body: { rows?: Array<Record<string, unknown>> }) => {
@@ -113,14 +142,14 @@ export const SpecChart: React.FC<SpecChartProps> = ({
     return off;
     // specKey 稳定化：parsedSpec 对象每渲染重建，用序列化串做依赖
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [specKey, table, scopeId]);
+  }, [specKey, effectiveTable, scopeId]);
 
   // 当 data 引用变化（dashboardRefresh 回填新数组）或 specKey 变化时，陈旧筛选行自然失效并展示最新 data
   const activeFilteredRows =
-    filterState && filterState.baseData === data && filterState.specKey === specKey
+    filterState && filterState.baseData === effectiveData && filterState.specKey === specKey
       ? filterState.rows
       : null;
-  const rows = parseArrayProp(activeFilteredRows ?? data);
+  const rows = parseArrayProp(activeFilteredRows ?? effectiveData);
   const chartType = parsedSpec?.chartType;
 
   const body = (() => {
@@ -203,13 +232,30 @@ export const SpecChartDef = defineComponent({
     height: z.any().optional().describe("图表高度（像素）"),
   }),
   component: ({ props }: { props: Record<string, unknown> }) => {
+    const title = props?.title ? String(props.title) : undefined;
+    const spec = props?.spec as SpecChartProps["spec"];
+    let table = props?.table !== undefined ? props.table : undefined;
+    const data = props?.data as Array<Record<string, unknown>> | undefined;
+    let height = typeof props?.height === "number" ? props.height : undefined;
+
+    // 容错：如果第三个位置 table 实际上是纯数字（LLM 误传 SpecChart(title, spec, height)）
+    // 已知代价：真实表名恰好是纯数字且落在 50..2000 区间时会被误判为高度——
+    // 该形态在业务库中极罕见，换取对 LLM 参数错位的健壮性。
+    if (typeof table === "number" || (typeof table === "string" && /^\d+$/.test(String(table).trim()))) {
+      const num = Number(table);
+      if (num >= 50 && num <= 2000) {
+        if (height === undefined) height = num;
+        table = undefined;
+      }
+    }
+
     return (
       <SpecChart
-        title={props?.title ? String(props.title) : undefined}
-        spec={props?.spec as SpecChartProps["spec"]}
-        table={props?.table ? String(props.table) : undefined}
-        data={props?.data as Array<Record<string, unknown>>}
-        height={typeof props?.height === "number" ? props.height : 280}
+        title={title}
+        spec={spec}
+        table={table ? String(table) : undefined}
+        data={data}
+        height={height ?? 280}
       />
     );
   },
