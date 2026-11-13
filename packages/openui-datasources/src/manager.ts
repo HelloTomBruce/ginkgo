@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
@@ -6,6 +7,10 @@ import { connectStdioMcp, probeStdioCli } from "./connectors/stdio";
 import { DIALECTS, type DbDialect, type DbDialectClient } from "./connectors/db/dialect";
 import { duckdbDialect } from "./connectors/db/duckdbDialect";
 import { createDbMcpServer } from "./connectors/db/dbMcpServer";
+import { QueryCacheManager } from "./gateway/queryCache";
+import { executeSqlWithGuards } from "./gateway/queryPipeline";
+import { McpGateway } from "./gateway/mcpGateway";
+import type { ExplainOptions } from "./gateway/types";
 import {
   readManifest,
   duckDbPath,
@@ -29,6 +34,8 @@ import {
   upsertSource,
   deleteSource,
   maskUrl,
+  maskHeaders,
+  maskParams,
   maskConnectionString,
   type DbSourceType,
   type DynamicSourceConfig,
@@ -48,8 +55,11 @@ export interface DataSourceDescriptor {
   tools: string[];
   enabled: boolean;
   dbType?: DbSourceType;
-  /** 永不回传明文凭证：token 只暴露存在性，url/连接串只暴露脱敏形态 */
+  /** 永不回传明文凭证：token/headers 只暴露存在性或脱敏形态，url/连接串只暴露脱敏形态 */
   hasToken?: boolean;
+  hasHeaders?: boolean;
+  maskedHeaders?: Record<string, string>;
+  params?: Record<string, string>;
   maskedUrl?: string;
   maskedConnectionString?: string;
   /** stdio 源的命令与参数非机密，可回传用于编辑展示 */
@@ -121,6 +131,12 @@ export interface DatasourceManager {
   getSchemaCard(id: string): Promise<{ card: SchemaCard; stale: boolean } | null>;
   /** 手动重建结构卡：按源串行排队，返回完成 promise（路由可 202 后不等待） */
   refreshSchemaCard(id: string): Promise<void>;
+  /** 获取底层方言客户端（供网关 EXPLAIN 成本探测使用） */
+  getDialectClient?(id: string): { client: DbDialectClient; dbType: string } | undefined;
+  /** 获取底层查询结果集缓存管理器 */
+  getQueryCache?(): QueryCacheManager<unknown>;
+  /** MCP 网关服务实例 */
+  gateway?: McpGateway;
 }
 
 const DB_SOURCE_TOOLS = ["execute_sql", "list_tables", "describe_table"];
@@ -144,16 +160,41 @@ interface ConnCacheEntry {
   connection: McpConnection;
   /** 已构建的工具绑定缓存：配置不变时零额外 listTools 往返（与旧 CacheEntry 同语义） */
   bindings?: McpToolBinding[];
+  /** 底层直连方言客户端（用于 Dry-run EXPLAIN 等能力） */
+  dialectClient?: {
+    client: DbDialectClient;
+    dbType: string;
+  };
 }
 
 /** 缓存键 = 完整配置的 JSON 形态；配置变更即视为不同连接 */
 function configKey(source: DynamicSourceConfig): string {
   if (source.kind === "http-mcp")
-    return JSON.stringify(["http-mcp", source.url, source.token ?? ""]);
+    return JSON.stringify([
+      "http-mcp",
+      source.url,
+      source.headers ?? {},
+      source.params ?? {},
+      source.token ?? "",
+    ]);
   if (source.kind === "db")
     return JSON.stringify(["db", source.dbType, source.connectionString]);
   if (source.kind === "file") return JSON.stringify(["file", source.id]);
   return JSON.stringify(["stdio-cli", source.command, source.args ?? []]);
+}
+
+/** 将 params 查询参数拼装入目标 URL */
+function buildTargetUrl(rawUrl: string, params?: Record<string, string>): string {
+  if (!params || Object.keys(params).length === 0) return rawUrl;
+  try {
+    const u = new URL(rawUrl);
+    for (const [key, value] of Object.entries(params)) {
+      u.searchParams.set(key, value);
+    }
+    return u.toString();
+  } catch {
+    return rawUrl;
+  }
 }
 
 function wrapClient(client: Pick<Client, "listTools" | "callTool" | "close">): McpConnection {
@@ -180,12 +221,14 @@ function wrapClient(client: Pick<Client, "listTools" | "callTool" | "close">): M
 async function connectHttpSource(
   source: Extract<DynamicSourceConfig, { kind: "http-mcp" }>
 ): Promise<McpConnection> {
-  const headers: Record<string, string> = source.token
-    ? { Authorization: `Bearer ${source.token}` }
-    : {};
+  const headers: Record<string, string> = {
+    ...(source.token ? { Authorization: `Bearer ${source.token}` } : {}),
+    ...(source.headers ?? {}),
+  };
+  const targetUrl = buildTargetUrl(source.url, source.params);
   const client = await connectHttpMcp(
     `openui-dynamic-${source.id}`,
-    source.url,
+    targetUrl,
     headers
   );
   return wrapClient(client);
@@ -248,32 +291,46 @@ async function connectDialectMcp(
 
 async function connectDbSource(
   source: Extract<DynamicSourceConfig, { kind: "db" }>
-): Promise<McpConnection> {
+): Promise<{
+  connection: McpConnection;
+  dialectClient: { client: DbDialectClient; dbType: string };
+}> {
   const dialect = DIALECTS[source.dbType];
   const dbClient = await dialect.connect(source.connectionString);
-  return connectDialectMcp(
+  const connection = await connectDialectMcp(
     dialect,
     dbClient,
     `openui-dynamic-${source.id}`,
     source.name
   );
+  return {
+    connection,
+    dialectClient: { client: dbClient, dbType: source.dbType },
+  };
 }
 
 async function connectFileSource(
   source: Extract<DynamicSourceConfig, { kind: "file" }>,
   filesDir: string
-): Promise<McpConnection> {
+): Promise<{
+  connection: McpConnection;
+  dialectClient: { client: DbDialectClient; dbType: string };
+}> {
   const manifest = await readManifest(filesDir, source.id);
   if (!manifest) {
     throw new Error(`文件数据源尚未上传文件: ${source.id}`);
   }
   const dbClient = await duckdbDialect.connect(duckDbPath(filesDir, source.id));
-  return connectDialectMcp(
+  const connection = await connectDialectMcp(
     duckdbDialect,
     dbClient,
     `openui-dynamic-${source.id}`,
     source.name
   );
+  return {
+    connection,
+    dialectClient: { client: dbClient, dbType: "duckdb" },
+  };
 }
 
 /** 配置 → 脱敏描述符（API 响应与列表共用） */
@@ -281,6 +338,9 @@ export function describeDynamicSource(
   config: DynamicSourceConfig
 ): DataSourceDescriptor {
   if (config.kind === "http-mcp") {
+    const hasHeaders = Boolean(
+      config.headers && Object.keys(config.headers).length > 0
+    );
     return {
       id: config.id,
       name: config.name,
@@ -288,6 +348,10 @@ export function describeDynamicSource(
       tools: [],
       enabled: config.enabled,
       hasToken: Boolean(config.token),
+      hasHeaders,
+      maskedHeaders: config.headers ? maskHeaders(config.headers) : undefined,
+      // params 同样可能携带凭证（api_key/token），按敏感键脱敏后下发
+      params: config.params ? maskParams(config.params) : undefined,
       maskedUrl: maskUrl(config.url),
     };
   }
@@ -341,8 +405,11 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   });
 }
 
-async function probeHttpMcp(url: string): Promise<void> {
-  const res = await fetch(url, { method: "GET" });
+async function probeHttpMcp(
+  url: string,
+  headers?: Record<string, string>
+): Promise<void> {
+  const res = await fetch(url, { method: "GET", headers });
   if (res.status >= 500) {
     throw new Error(`HTTP ${res.status}`);
   }
@@ -354,6 +421,12 @@ export function createDatasourceManager(opts: {
   filesDir?: string;
   /** Schema Card 落盘根目录；默认 <configPath 同级>/../data/schema-cards */
   schemaCardsDir?: string;
+  /** 查询结果集最大缓存条数（默认 500） */
+  maxCacheEntries?: number;
+  /** 查询结果集默认缓存 TTL（毫秒，默认 15 分钟） */
+  defaultCacheTtlMs?: number;
+  /** EXPLAIN 成本与全表扫描守卫配置 */
+  explainOptions?: ExplainOptions;
 }): DatasourceManager {
   const { configPath } = opts;
   const filesDir =
@@ -362,7 +435,12 @@ export function createDatasourceManager(opts: {
     opts.schemaCardsDir ??
     path.join(path.dirname(configPath), "..", "data", "schema-cards");
   let configCache: DatasourcesConfig | null = null;
+  let lastMtimeMs = 0;
   const connCache = new Map<string, ConnCacheEntry>();
+  const queryCache = new QueryCacheManager<unknown>({
+    maxEntries: opts.maxCacheEntries ?? 500,
+    defaultTtlMs: opts.defaultCacheTtlMs ?? 15 * 60 * 1000,
+  });
   /**
    * 按源 id 的灌库串行链：staging 目录名同源同进程相同，
    * 并发上传会互相抹除进行中构建并竞态交换，必须排队。
@@ -381,9 +459,9 @@ export function createDatasourceManager(opts: {
       source.kind === "http-mcp"
         ? await connectHttpSource(source)
         : source.kind === "db"
-          ? await connectDbSource(source)
+          ? (await connectDbSource(source)).connection
           : source.kind === "file"
-            ? await connectFileSource(source, filesDir)
+            ? (await connectFileSource(source, filesDir)).connection
             : await connectStdioSource(source);
     try {
       if (source.kind === "http-mcp" || source.kind === "stdio-cli") {
@@ -434,12 +512,27 @@ export function createDatasourceManager(opts: {
   };
 
   const readConfig = (): DatasourcesConfig => {
-    if (configCache === null) configCache = loadConfigFile(configPath);
+    try {
+      const stat = fs.statSync(configPath);
+      if (configCache === null || stat.mtimeMs !== lastMtimeMs) {
+        configCache = loadConfigFile(configPath);
+        lastMtimeMs = stat.mtimeMs;
+      }
+    } catch {
+      if (configCache === null) {
+        configCache = loadConfigFile(configPath);
+      }
+    }
     return configCache;
   };
 
   const syncConfig = (c: DatasourcesConfig): void => {
     configCache = c;
+    try {
+      lastMtimeMs = fs.statSync(configPath).mtimeMs;
+    } catch {
+      lastMtimeMs = 0;
+    }
   };
 
   const getOrConnectEntry = async (
@@ -460,15 +553,23 @@ export function createDatasourceManager(opts: {
       }
     }
 
-    const connection =
-      source.kind === "http-mcp"
-        ? await connectHttpSource(source)
-        : source.kind === "db"
-          ? await connectDbSource(source)
-          : source.kind === "file"
-            ? await connectFileSource(source, filesDir)
-            : await connectStdioSource(source);
-    const entry: ConnCacheEntry = { key, connection };
+    let connection: McpConnection;
+    let dialectClient: { client: DbDialectClient; dbType: string } | undefined;
+
+    if (source.kind === "http-mcp") {
+      connection = await connectHttpSource(source);
+    } else if (source.kind === "db") {
+      const res = await connectDbSource(source);
+      connection = res.connection;
+      dialectClient = res.dialectClient;
+    } else if (source.kind === "file") {
+      const res = await connectFileSource(source, filesDir);
+      connection = res.connection;
+      dialectClient = res.dialectClient;
+    } else {
+      connection = await connectStdioSource(source);
+    }
+    const entry: ConnCacheEntry = { key, connection, dialectClient };
     connCache.set(source.id, entry);
     // 配置变更后的重建：异步进行，不阻塞连接返回
     cardLifecycle.pumpIfDirty(source);
@@ -506,7 +607,7 @@ export function createDatasourceManager(opts: {
     }
   };
 
-  return {
+  const managerInstance: DatasourceManager = {
     readConfig,
     writeConfig(c) {
       writeConfigFile(c, configPath);
@@ -520,6 +621,7 @@ export function createDatasourceManager(opts: {
       return next;
     },
     delete(id) {
+      queryCache.invalidate(id);
       const next = deleteSource(readConfig(), id);
       writeConfigFile(next, configPath);
       syncConfig(next);
@@ -552,6 +654,50 @@ export function createDatasourceManager(opts: {
         inputSchema: t.inputSchema,
         call: async (args: Record<string, unknown>) => {
           console.log(`[${logPrefix}] execute ${t.name}:`, args);
+
+          // 核心拦截：对 SQL 执行类工具透明接入 MCP 网关流水线
+          const isSqlExecution =
+            (t.name === "execute_sql" || t.name === "read_query") &&
+            typeof args.sql === "string";
+
+          if (isSqlExecution) {
+            // SQL 执行透明接入共享守卫管线（与 McpGateway 同一实现，缓存同一实例）
+            const { data } = await executeSqlWithGuards({
+              sourceId: source.id,
+              sql: (args.sql as string).trim(),
+              params: Array.isArray(args.params)
+                ? (args.params as unknown[])
+                : undefined,
+              skipCache: Boolean(args.skipCache),
+              bypassExplain: Boolean(args.bypassExplain),
+              cacheTtlMs:
+                typeof args.cacheTtlMs === "number"
+                  ? (args.cacheTtlMs as number)
+                  : undefined,
+              dialectClient: connCache.get(source.id)?.dialectClient,
+              cache: queryCache,
+              explainOptions: opts.explainOptions,
+              logPrefix,
+              execute: async () => {
+                const { result: res } = await withSessionRetry(source, (conn) =>
+                  conn.callTool(t.name, args)
+                );
+                try {
+                  return parseMcpToolResult(res, `MCP tool ${t.name}`);
+                } catch (err) {
+                  const message =
+                    err instanceof Error ? err.message : String(err);
+                  if (SCHEMA_MISS_RE.test(message)) {
+                    cardLifecycle.invalidate(source);
+                  }
+                  throw err;
+                }
+              },
+            });
+            return data;
+          }
+
+          // 非 SQL 工具（如 list_tables, describe_table 等）标准执行
           const { result: res } = await withSessionRetry(source, (conn) =>
             conn.callTool(t.name, args)
           );
@@ -577,6 +723,7 @@ export function createDatasourceManager(opts: {
       return bindings;
     },
     async close(id) {
+      queryCache.invalidate(id);
       const entry = connCache.get(id);
       if (!entry) return;
       connCache.delete(id);
@@ -590,7 +737,12 @@ export function createDatasourceManager(opts: {
       const startedAt = Date.now();
       try {
         if (s.kind === "http-mcp") {
-          await withTimeout(probeHttpMcp(s.url), HEALTH_TIMEOUT_MS);
+          const headers: Record<string, string> = {
+            ...(s.token ? { Authorization: `Bearer ${s.token}` } : {}),
+            ...(s.headers ?? {}),
+          };
+          const targetUrl = buildTargetUrl(s.url, s.params);
+          await withTimeout(probeHttpMcp(targetUrl, headers), HEALTH_TIMEOUT_MS);
         } else if (s.kind === "db") {
           const dialect = DIALECTS[s.dbType];
           const client = await withTimeout(
@@ -653,6 +805,8 @@ export function createDatasourceManager(opts: {
       });
     },
     async ingestFiles(id, uploads) {
+      // 灌库使表数据更新，联动清空该源的所有查询缓存
+      queryCache.invalidate(id);
       // 校验在链外快速失败（只读配置，无共享状态）
       const source = readConfig().sources.find((s) => s.id === id);
       if (!source) throw new Error(`数据源不存在: ${id}`);
@@ -687,6 +841,7 @@ export function createDatasourceManager(opts: {
       return readManifest(filesDir, id);
     },
     removeFiles(id) {
+      queryCache.invalidate(id);
       return removeSourceFiles(filesDir, id);
     },
     async getSchemaCard(id) {
@@ -697,7 +852,27 @@ export function createDatasourceManager(opts: {
       if (!source) return Promise.reject(new Error(`数据源不存在: ${id}`));
       return cardLifecycle.refresh(source);
     },
+    getDialectClient(id) {
+      return connCache.get(id)?.dialectClient;
+    },
+    getQueryCache() {
+      return queryCache;
+    },
   };
+
+  // 共享同一查询缓存实例：delete/close/ingest/removeFiles 的失效对两条访问路径同时生效
+  const gateway = new McpGateway(
+    managerInstance,
+    {
+      maxCacheEntries: opts.maxCacheEntries,
+      defaultCacheTtlMs: opts.defaultCacheTtlMs,
+      explainOptions: opts.explainOptions,
+    },
+    queryCache
+  );
+  managerInstance.gateway = gateway;
+
+  return managerInstance;
 }
 
 /**

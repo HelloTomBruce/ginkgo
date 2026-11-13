@@ -434,8 +434,40 @@ describe("health 动态源扩展", () => {
     const result = await m.health(HTTP_SOURCE);
 
     expect(result.ok).toBe(true);
-    expect(fetchMock).toHaveBeenCalledWith("http://10.0.0.1:6000/mcp", {
-      method: "GET",
-    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://10.0.0.1:6000/mcp",
+      expect.objectContaining({ method: "GET" })
+    );
+  });
+
+  it("http-mcp 源支持通用 headers 与 params URL 查询参数拼接", async () => {
+    const fake = makeFakeMcpClient("custom_tool");
+    vi.mocked(connectHttpMcp).mockResolvedValue(fake as never);
+    const customSource = {
+      id: "custom-mcp",
+      name: "Custom MCP",
+      kind: "http-mcp" as const,
+      url: "http://api.example.com/mcp",
+      headers: {
+        "X-Custom-Auth": "secret-123",
+        "X-Tenant": "tenant-abc",
+      },
+      params: {
+        env: "prod",
+        version: "v2",
+      },
+      enabled: true,
+    };
+    const m = managerFor(JSON.stringify({ sources: [customSource] }));
+    await m.tools(customSource);
+
+    expect(connectHttpMcp).toHaveBeenCalledWith(
+      "openui-dynamic-custom-mcp",
+      "http://api.example.com/mcp?env=prod&version=v2",
+      {
+        "X-Custom-Auth": "secret-123",
+        "X-Tenant": "tenant-abc",
+      }
+    );
   });
 });

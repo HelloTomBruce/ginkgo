@@ -10,6 +10,9 @@ import {
   deleteSource,
   maskConnectionString,
   maskUrl,
+  maskHeaders,
+  maskParams,
+  normalizeStringRecord,
 } from "./config";
 
 function writeTempConfig(content: string): string {
@@ -255,5 +258,92 @@ describe("sqlite :memory: 拒绝（C3）", () => {
 
     const r2 = validateSourceConfig({ id: "db1", name: "N", kind: "db", dbType: "sqlite", connectionString: "file::memory:?cache=shared" });
     expect(r2.ok).toBe(false);
+  });
+});
+
+describe("http-mcp headers 与 params 配置", () => {
+  it("validateSourceConfig: 支持 JSON 字符串或对象的 headers 与 params", () => {
+    const res = validateSourceConfig({
+      id: "http-test",
+      name: "HTTP Test",
+      kind: "http-mcp",
+      url: "https://mcp.example.com",
+      headers: '{"Authorization": "Bearer tk", "X-Key": "abc"}',
+      params: { tenant: "t1", debug: true },
+    });
+    expect(res.ok).toBe(true);
+    if (res.ok && res.config.kind === "http-mcp") {
+      expect(res.config.headers).toEqual({
+        Authorization: "Bearer tk",
+        "X-Key": "abc",
+      });
+      expect(res.config.params).toEqual({
+        tenant: "t1",
+        debug: "true",
+      });
+    }
+  });
+
+  it("validateSourceConfig: 拒绝非合法的 headers 或 params", () => {
+    const badHeaders = validateSourceConfig({
+      id: "http-test",
+      name: "HTTP Test",
+      kind: "http-mcp",
+      url: "https://mcp.example.com",
+      headers: "not-json",
+    });
+    expect(badHeaders.ok).toBe(false);
+    if (!badHeaders.ok) {
+      expect(badHeaders.errors.join()).toContain("headers 必须是合法的 JSON 对象");
+    }
+
+    const badParams = validateSourceConfig({
+      id: "http-test",
+      name: "HTTP Test",
+      kind: "http-mcp",
+      url: "https://mcp.example.com",
+      params: ["array", "not", "object"],
+    });
+    expect(badParams.ok).toBe(false);
+    if (!badParams.ok) {
+      expect(badParams.errors.join()).toContain("params 必须是合法的键值对象或 JSON");
+    }
+  });
+
+  it("maskHeaders: 对 Authorization/Cookie/Token 等敏感字段脱敏", () => {
+    const masked = maskHeaders({
+      Authorization: "Bearer secret",
+      "X-Token": "topsecret",
+      "Content-Type": "application/json",
+      "X-Tenant": "acme",
+    });
+    expect(masked).toEqual({
+      Authorization: "***",
+      "X-Token": "***",
+      "Content-Type": "application/json",
+      "X-Tenant": "acme",
+    });
+  });
+
+  it("maskParams: 敏感查询参数键脱敏，普通键保留明文", () => {
+    const masked = maskParams({
+      api_key: "sk-live-123",
+      token: "t-abc",
+      tenant: "acme",
+      env: "prod",
+    });
+    expect(masked).toEqual({
+      api_key: "***",
+      token: "***",
+      tenant: "acme",
+      env: "prod",
+    });
+  });
+
+  it("normalizeStringRecord: 健壮解析 JSON 或对象", () => {
+    expect(normalizeStringRecord('{"a": "1", "b": 2}')).toEqual({ a: "1", b: "2" });
+    expect(normalizeStringRecord({ a: "1", b: true })).toEqual({ a: "1", b: "true" });
+    expect(normalizeStringRecord("not json")).toBeUndefined();
+    expect(normalizeStringRecord(null)).toBeUndefined();
   });
 });

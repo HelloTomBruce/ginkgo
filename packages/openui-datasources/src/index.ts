@@ -29,3 +29,15 @@ export {
   scoreTableRelevance,
   type RenderCardOptions,
 } from "./schema/card";
+
+// MCP 连接器网关 (Gateway)
+export * from "./gateway/types";
+export * from "./gateway/explainGuard";
+export * from "./gateway/queryCache";
+export * from "./gateway/queryPipeline";
+export * from "./gateway/mcpGateway";
+
+// Certified Queries 语义层与口径治理 (Certified)
+export * from "./certified/types";
+export * from "./certified/certifiedStore";
+export * from "./certified/semanticRouter";

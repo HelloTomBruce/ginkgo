@@ -11,7 +11,12 @@ export interface HttpMcpSourceConfig {
   name: string;
   kind: "http-mcp";
   url: string;
+  /** @deprecated 推荐使用 headers["Authorization"]，旧配置保留兼容 */
   token?: string;
+  /** 请求头配置（键值对，例如 Authorization、自定义标头等） */
+  headers?: Record<string, string>;
+  /** URL 查询参数配置（键值对，例如 tenant、env 等） */
+  params?: Record<string, string>;
   enabled: boolean;
 }
 
@@ -97,6 +102,34 @@ export function isDbType(v: unknown): v is DbSourceType {
   );
 }
 
+export function normalizeStringRecord(
+  input: unknown
+): Record<string, string> | undefined {
+  if (!input) return undefined;
+  let obj = input;
+  if (typeof obj === "string") {
+    const trimmed = obj.trim();
+    if (!trimmed) return undefined;
+    try {
+      obj = JSON.parse(trimmed);
+    } catch {
+      return undefined;
+    }
+  }
+  if (!obj || typeof obj !== "object" || Array.isArray(obj)) return undefined;
+  const res: Record<string, string> = {};
+  for (const [key, val] of Object.entries(obj as Record<string, unknown>)) {
+    if (typeof val === "string") {
+      res[key] = val;
+    } else if (typeof val === "number" || typeof val === "boolean") {
+      res[key] = String(val);
+    } else {
+      return undefined;
+    }
+  }
+  return res;
+}
+
 /** 单个 source 条目规范化，不合法条目丢弃（不抛错） */
 function normalizeSourceEntry(entry: unknown): DynamicSourceConfig | null {
   if (!entry || typeof entry !== "object") return null;
@@ -106,12 +139,16 @@ function normalizeSourceEntry(entry: unknown): DynamicSourceConfig | null {
   if (!id || !name) return null;
   const enabled = o.enabled === undefined ? true : Boolean(o.enabled);
   if (o.kind === "http-mcp" && typeof o.url === "string" && o.url) {
+    const headers = normalizeStringRecord(o.headers);
+    const params = normalizeStringRecord(o.params);
     return {
       id,
       name,
       kind: "http-mcp",
       url: o.url,
-      token: typeof o.token === "string" ? o.token : "",
+      ...(typeof o.token === "string" ? { token: o.token } : {}),
+      ...(headers && Object.keys(headers).length > 0 ? { headers } : {}),
+      ...(params && Object.keys(params).length > 0 ? { params } : {}),
       enabled,
     };
   }
@@ -180,6 +217,20 @@ export function validateSourceConfig(input: unknown): ValidateResult {
     if (!URL_PATTERN.test(url)) {
       errors.push("url 必须以 http:// 或 https:// 开头");
     }
+    let headers: Record<string, string> | undefined;
+    if (o.headers !== undefined && o.headers !== null && o.headers !== "") {
+      headers = normalizeStringRecord(o.headers);
+      if (!headers) {
+        errors.push("headers 必须是合法的 JSON 对象");
+      }
+    }
+    let params: Record<string, string> | undefined;
+    if (o.params !== undefined && o.params !== null && o.params !== "") {
+      params = normalizeStringRecord(o.params);
+      if (!params) {
+        errors.push("params 必须是合法的键值对象或 JSON");
+      }
+    }
     if (errors.length === 0) {
       return {
         ok: true,
@@ -188,8 +239,10 @@ export function validateSourceConfig(input: unknown): ValidateResult {
           name,
           kind: "http-mcp",
           url,
-          token: typeof o.token === "string" ? o.token : "",
           enabled,
+          ...(typeof o.token === "string" ? { token: o.token } : {}),
+          ...(headers && Object.keys(headers).length > 0 ? { headers } : {}),
+          ...(params && Object.keys(params).length > 0 ? { params } : {}),
         },
       };
     }
@@ -267,8 +320,43 @@ export function deleteSource(
 const SENSITIVE_QUERY_KEYS =
   /^(?:pass(?:word)?|pwd|secret|token|access_?key|api_?key|auth)$/i;
 
+/** header 中视为机密的名称（大小写不敏感） */
+const SENSITIVE_HEADER_KEYS =
+  /^(?:authorization|cookie|proxy-authorization)$|token|secret|api[_-]?key|password|pwd/i;
+
 /** 无法解析的连接串统一回显的占位符；客户端以含 *** 判定「未变更」 */
 export const MASKED_PLACEHOLDER = "***";
+
+/**
+ * 脱敏 headers：敏感标头（Authorization、Token 等）值替换为 ***。
+ */
+export function maskHeaders(
+  headers: Record<string, string>
+): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const [k, v] of Object.entries(headers)) {
+    if (SENSITIVE_HEADER_KEYS.test(k)) {
+      result[k] = MASKED_PLACEHOLDER;
+    } else {
+      result[k] = v;
+    }
+  }
+  return result;
+}
+
+/**
+ * 脱敏 params：URL 查询参数同样常携带凭证（api_key/token 等），
+ * 按 SENSITIVE_QUERY_KEYS 规则脱敏，与 maskUrl 的口径一致。
+ */
+export function maskParams(
+  params: Record<string, string>
+): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const [k, v] of Object.entries(params)) {
+    result[k] = SENSITIVE_QUERY_KEYS.test(k) ? MASKED_PLACEHOLDER : v;
+  }
+  return result;
+}
 
 /**
  * 脱敏连接串：隐藏 userinfo 密码与 password 类 query 参数。

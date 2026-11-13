@@ -9,7 +9,9 @@
     "./schema/card": "./src/schema/card.ts",
     "./schema/store": "./src/schema/store.ts",
     "./sqlGuard": "./src/connectors/db/sqlGuard.ts",
-    "./parseToolResult": "./src/parseToolResult.ts"
+    "./parseToolResult": "./src/parseToolResult.ts",
+    "./gateway": "./src/gateway/mcpGateway.ts",
+    "./certified": "./src/certified/certifiedStore.ts"
   },
   "scripts": {
     "test": "vitest run"
