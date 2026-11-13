@@ -1,8 +1,21 @@
 import path from "node:path";
-import { createDatasourceManager } from "@openui-analytics/datasources";
+import {
+  createDatasourceManager,
+  type DatasourceManager,
+} from "@openui-analytics/datasources";
 
-/** 应用级单例：配置与文件落盘位置由应用注入（包不内置业务目录） */
-export const datasources = createDatasourceManager({
-  configPath: path.join(process.cwd(), "config", "datasources.json"),
-  filesDir: path.join(process.cwd(), "data", "files"),
-});
+const globalForDatasources = globalThis as unknown as {
+  __openui_datasources__?: DatasourceManager;
+};
+
+/** 应用级单例：挂载在 globalThis 防止 Next.js 开发环境热重载与路由分包产生多实例 */
+export const datasources =
+  globalForDatasources.__openui_datasources__ ??
+  createDatasourceManager({
+    configPath: path.join(process.cwd(), "config", "datasources.json"),
+    filesDir: path.join(process.cwd(), "data", "files"),
+  });
+
+if (process.env.NODE_ENV !== "production") {
+  globalForDatasources.__openui_datasources__ = datasources;
+}

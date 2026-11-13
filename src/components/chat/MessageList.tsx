@@ -2,8 +2,16 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Message } from "@ai-sdk/react";
-import { ArrowDown, ArrowUp, Loader2, Sparkles, FileCode, Printer, Star, GitFork, RotateCcw, Square, Play, Brain, ListOrdered, X, Pin } from "lucide-react";
+import { ArrowDown, ArrowUp, Loader2, Sparkles, FileCode, Printer, Star, GitFork, RotateCcw, Square, Play, Brain, ListOrdered, X, Pin, CheckCircle2, AlertTriangle } from "lucide-react";
 import { OpenUIRenderer } from "@/components/OpenUIRenderer";
+import {
+  dedupeContentBlocks,
+  type ContentBlock,
+  type ToolInvocationState,
+} from "./contentBlocks";
+
+// 供既有引用方继续从 MessageList 导入（类型已下沉至 contentBlocks）
+export type { ToolInvocationState } from "./contentBlocks";
 import { Hint } from "@/components/ui/hint";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MarkdownContent } from "./MarkdownContent";
@@ -12,14 +20,6 @@ import { captureDashboardQueries } from "@/lib/dashboardCapture";
 import { toast } from "@/lib/toast";
 import type { FavoriteDashboardInput, FavoriteResult } from "@/hooks/useDashboards";
 
-export interface ToolInvocationState {
-  state: "call" | "result" | "partial-call";
-  toolCallId: string;
-  toolName: string;
-  args?: { sql?: string; [key: string]: unknown };
-  result?: unknown;
-}
-
 interface UIPart {
   type: string;
   text?: string;
@@ -27,29 +27,6 @@ interface UIPart {
   reasoning?: string;
   [key: string]: unknown;
 }
-
-type TextBlock = {
-  type: "text";
-  id: string;
-  textPart: string;
-  openuiPart: string;
-  isLast: boolean;
-};
-
-type ToolsBlock = {
-  type: "tools";
-  id: string;
-  tools: ToolInvocationState[];
-};
-
-type ReasoningBlock = {
-  type: "reasoning";
-  id: string;
-  reasoning: string;
-  isLast: boolean;
-};
-
-type ContentBlock = TextBlock | ToolsBlock | ReasoningBlock;
 
 interface MessageItemProps {
   msg: Message;
@@ -98,21 +75,40 @@ const ReasoningViewer = React.memo(function ReasoningViewer({
   reasoning,
   isStreaming,
   isLast,
+  defaultOpen = false,
 }: {
   reasoning: string;
   isStreaming: boolean;
   isLast: boolean;
+  defaultOpen?: boolean;
 }) {
   const isActivelyThinking = isStreaming && isLast;
   const [userToggled, setUserToggled] = useState<boolean | null>(null);
-  const isOpen = userToggled !== null ? userToggled : isActivelyThinking;
+  const isOpen = userToggled !== null ? userToggled : (isActivelyThinking || defaultOpen);
   const contentRef = useRef<HTMLDivElement>(null);
+  const scrollRafRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (isActivelyThinking && contentRef.current) {
-      contentRef.current.scrollTop = contentRef.current.scrollHeight;
+      if (scrollRafRef.current === null) {
+        scrollRafRef.current = requestAnimationFrame(() => {
+          if (contentRef.current) {
+            contentRef.current.scrollTop = contentRef.current.scrollHeight;
+          }
+          scrollRafRef.current = null;
+        });
+      }
     }
   }, [reasoning, isActivelyThinking]);
+
+  useEffect(() => {
+    return () => {
+      if (scrollRafRef.current !== null) {
+        cancelAnimationFrame(scrollRafRef.current);
+        scrollRafRef.current = null;
+      }
+    };
+  }, []);
 
   return (
     <details
@@ -224,12 +220,13 @@ const MessageItem = React.memo(function MessageItem({
         } else {
           flushTools();
           if (part.type === "text" && typeof part.text === "string") {
-            const { textPart, openuiPart } = extractOpenUI(part.text);
+            const { textPart, openuiPart, isClosed } = extractOpenUI(part.text);
             result.push({
               type: "text",
               id: `text-${idx}`,
               textPart,
               openuiPart,
+              isClosed,
               isLast: idx === parts.length - 1,
             });
           } else if (part.type === "reasoning" && typeof part.reasoning === "string") {
@@ -243,11 +240,13 @@ const MessageItem = React.memo(function MessageItem({
         }
       });
       flushTools();
-      return result;
+
+      // ===== 消息内冗余去重与防御（纯函数，见 contentBlocks.ts）：避免单条回复渲染两套一模一样的报告与看板 =====
+      return dedupeContentBlocks(result);
     }
 
     // 2. 兜底回退：兼容无 parts 消息（历史会话或非流式消息）
-    const { textPart, openuiPart } = extractOpenUI(rawContent);
+    const { textPart, openuiPart, isClosed } = extractOpenUI(rawContent);
     const result: ContentBlock[] = [];
     if (toolInvocations && toolInvocations.length > 0) {
       result.push({
@@ -262,6 +261,7 @@ const MessageItem = React.memo(function MessageItem({
         id: "fallback-text",
         textPart,
         openuiPart,
+        isClosed,
         isLast: true,
       });
     }
@@ -329,6 +329,26 @@ const MessageItem = React.memo(function MessageItem({
           blocks[blocks.length - 2]?.type === "tools")
     );
 
+  const finishTaskTool = toolInvocations?.find(
+    (t) => t.toolName === "finish_task"
+  );
+  const finishSummary =
+    finishTaskTool &&
+    typeof finishTaskTool.args === "object" &&
+    finishTaskTool.args &&
+    "summary" in finishTaskTool.args
+      ? String(finishTaskTool.args.summary)
+      : undefined;
+
+  const hasMainContent = blocks.some(
+    (b) =>
+      b.type === "text" &&
+      (Boolean(b.textPart && b.textPart.trim()) || Boolean(b.openuiPart))
+  );
+  const hasOpenuiPart = blocks.some(
+    (b) => b.type === "text" && Boolean(b.openuiPart)
+  );
+
   return (
     <div
       id={`message-${msg.id}`}
@@ -378,12 +398,14 @@ const MessageItem = React.memo(function MessageItem({
           }
 
           if (block.type === "reasoning") {
+            const shouldDefaultOpen = !isStreaming && block.isLast && !hasMainContent;
             return (
               <ReasoningViewer
                 key={block.id}
                 reasoning={block.reasoning}
                 isStreaming={isStreaming}
                 isLast={block.isLast}
+                defaultOpen={shouldDefaultOpen}
               />
             );
           }
@@ -400,6 +422,7 @@ const MessageItem = React.memo(function MessageItem({
                 <div className="no-print leading-relaxed">
                   <MarkdownContent
                     content={isStreaming && block.isLast ? block.textPart.trimStart() : block.textPart.trim()}
+                    isStreaming={isStreaming && block.isLast}
                   />
                   {isStreaming && block.isLast && !block.openuiPart && (
                     <span className="inline-block w-1.5 h-3.5 bg-info-solid animate-pulse ml-1 align-middle rounded-xs" />
@@ -450,6 +473,10 @@ const MessageItem = React.memo(function MessageItem({
                         <span className="text-[10px] text-info-fg font-normal lowercase flex items-center gap-1">
                           <span className="w-1.5 h-1.5 rounded-full bg-info-solid animate-ping"></span>
                           streaming...
+                        </span>
+                      ) : !isStreaming && block.isClosed === false ? (
+                        <span className="text-[10px] bg-warning-soft text-warning-fg-strong px-1.5 py-0.5 rounded font-normal">
+                          输出已截断
                         </span>
                       ) : (
                         <span className="text-[10px] bg-success-soft text-success-fg px-1.5 py-0.5 rounded font-normal">
@@ -527,11 +554,68 @@ const MessageItem = React.memo(function MessageItem({
                     isStreaming={isStreaming && block.isLast}
                     onAction={onRendererAction}
                   />
+
+                  {/* 截断兜底引导：由于达到 Token 长度限制中途截断时，提示用户并提供一键续写按钮 */}
+                  {!isStreaming && block.isClosed === false && (
+                    <div className="no-print mt-2 p-3 rounded-xl border border-warning-border bg-warning-soft/30 space-y-2">
+                      <div className="flex items-center gap-2 text-xs font-semibold text-warning-fg-strong">
+                        <AlertTriangle className="w-4 h-4 text-warning-fg shrink-0" />
+                        <span>动态看板代码由于达到模型单次输出上限中途截断，未完整闭合</span>
+                      </div>
+                      <div className="text-xs text-foreground-subtle leading-relaxed">
+                        大模型已完成底层数据探查与文字报告，但在绘制图表时达到单次 Token 长度上限。点击下方按钮即可让模型继续输出剩余看板代码并完成渲染：
+                      </div>
+                      <div className="pt-1 flex items-center justify-end">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            onRendererAction(
+                              "上面的 ```openui 看板代码由于达到长度上限被截断未闭合。请继续输出未完成的看板代码，确保完整闭合并渲染。"
+                            )
+                          }
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-info-solid text-white hover:opacity-90 transition-opacity shadow-xs cursor-pointer select-none"
+                        >
+                          <Play className="w-3.5 h-3.5 fill-current" />
+                          <span>继续生成完整看板</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </React.Fragment>
           );
         })}
+
+        {/* 终态闭环兜底：当模型执行了 finish_task 或完成全量取数，但遗漏 ```openui 看板代码块时，渲染数据就绪总结与一键生成看板按钮 */}
+        {!hasOpenuiPart && !isStreaming && finishSummary && (
+          <div className="no-print mt-3 p-3.5 rounded-xl border border-success-border bg-success-soft/30 space-y-2.5">
+            <div className="flex items-center gap-2 text-xs font-semibold text-success-fg">
+              <CheckCircle2 className="w-4 h-4 text-success-fg shrink-0" />
+              <span>数据取数与分析计算已全部完成</span>
+            </div>
+            <div className="text-xs text-foreground-subtle leading-relaxed">
+              {finishSummary}
+            </div>
+            <div className="pt-2 flex items-center justify-between border-t border-success-border/40">
+              <span className="text-[11px] text-foreground-faint">
+                未检测到可视化看板代码，点击一键产出深度分析报告与图表看板：
+              </span>
+              <button
+                type="button"
+                onClick={() =>
+                  onRendererAction(
+                    "数据取数与计算已全部完成。请立即基于上述结果，输出完整的 Markdown 深度分析报告以及 ```openui 可视化动态看板代码块。"
+                  )
+                }
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-info-solid text-white hover:opacity-90 transition-opacity shadow-xs cursor-pointer select-none"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>立即生成报告与看板</span>
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* 如果工具刚执行完，模型正在构思下一段文本/OpenUI组件 */}
         {isWaitingAfterTools && (
@@ -728,13 +812,16 @@ export function MessageList({
         });
       }
     }
+  }, [lastContent, status, atBottom, scrollToBottom]);
+
+  useEffect(() => {
     return () => {
       if (streamingScrollRafRef.current !== null) {
         cancelAnimationFrame(streamingScrollRafRef.current);
         streamingScrollRafRef.current = null;
       }
     };
-  }, [lastContent, status, atBottom, scrollToBottom]);
+  }, []);
 
   /**
    * 看板打印状态机：标记目标消息 → body 加 print-mode → 下一帧 window.print()

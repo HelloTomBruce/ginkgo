@@ -873,4 +873,121 @@ describe("消息内容与工具执行按顺序交错渲染", () => {
     fireEvent.click(pinBtn);
     expect(onPinDashboard).toHaveBeenCalledWith("pin-1", expect.stringContaining("root = Root"));
   });
+
+  it("当模型调用 finish_task 但未产出 openui 看板时，展示取数完成卡片与立即生成报告按钮并可点击触发", () => {
+    const onRendererAction = vi.fn();
+    const finishTaskMsg = {
+      id: "a-finish-task",
+      role: "assistant",
+      content: "",
+      parts: [
+        { type: "reasoning", reasoning: "正在总结分析结果..." },
+      ],
+      toolInvocations: [
+        {
+          toolCallId: "call-finish",
+          toolName: "finish_task",
+          state: "result",
+          args: {
+            status: "completed",
+            summary: "已完成 GitLab 活跃项目盘点，Top5 贡献 80.3% 活动量。",
+          },
+          result: {
+            message: "已调用 finish_task",
+          },
+        },
+      ],
+    } as unknown as Message;
+
+    render(
+      <MessageList
+        {...baseProps}
+        messages={[userMsg, finishTaskMsg]}
+        onRendererAction={onRendererAction}
+      />
+    );
+
+    expect(screen.getByText("数据取数与分析计算已全部完成")).toBeInTheDocument();
+    expect(
+      screen.getByText("已完成 GitLab 活跃项目盘点，Top5 贡献 80.3% 活动量。")
+    ).toBeInTheDocument();
+
+    const generateBtn = screen.getByRole("button", { name: "立即生成报告与看板" });
+    expect(generateBtn).toBeInTheDocument();
+    fireEvent.click(generateBtn);
+    expect(onRendererAction).toHaveBeenCalledWith(
+      "数据取数与计算已全部完成。请立即基于上述结果，输出完整的 Markdown 深度分析报告以及 ```openui 可视化动态看板代码块。"
+    );
+  });
+
+  it("当模型输出由于 Token 上限截断未闭合时，展示输出已截断状态与继续生成按钮并可点击触发", () => {
+    const onRendererAction = vi.fn();
+    const truncatedMsg = {
+      id: "a-truncated",
+      role: "assistant",
+      content:
+        "## 分析报告\n数据如下...\n```openui\nroot = Root([dash])\ndash = FocusLayout(\"项目\", \"副标\", main, side, detail)\ndailyChart = AnalyticsChart(\"bar\", \"提交节奏\"",
+    } as unknown as Message;
+
+    render(
+      <MessageList
+        {...baseProps}
+        messages={[userMsg, truncatedMsg]}
+        onRendererAction={onRendererAction}
+      />
+    );
+
+    expect(screen.getByText("输出已截断")).toBeInTheDocument();
+    expect(
+      screen.getByText("动态看板代码由于达到模型单次输出上限中途截断，未完整闭合")
+    ).toBeInTheDocument();
+
+    const resumeBtn = screen.getByRole("button", { name: "继续生成完整看板" });
+    expect(resumeBtn).toBeInTheDocument();
+    fireEvent.click(resumeBtn);
+    expect(onRendererAction).toHaveBeenCalledWith(
+      "上面的 ```openui 看板代码由于达到长度上限被截断未闭合。请继续输出未完成的看板代码，确保完整闭合并渲染。"
+    );
+  });
+
+  it("当同一条消息的多个 parts 重复输出相同看板与相同大标题报告时，自动去重仅渲染单个看板", () => {
+    const duplicatePartsMsg = {
+      id: "a-duplicate",
+      role: "assistant",
+      content: "",
+      parts: [
+        {
+          type: "text",
+          text: "数据全部就绪。\n\n# 📈 经营复盘报告\n\n核心结论：业绩良好。\n\n```openui\nroot = Root([MetricCard(\"MRR\", \"$100k\")])\n```",
+        },
+        {
+          type: "tool-invocation",
+          toolInvocation: {
+            state: "result",
+            toolCallId: "call_finish",
+            toolName: "finish_task",
+            args: { status: "completed" },
+            result: { terminated: true },
+          },
+        },
+        {
+          type: "text",
+          text: "# 📈 经营复盘报告\n\n核心结论：业绩良好。\n\n```openui\nroot = Root([MetricCard(\"MRR\", \"$100k\")])\n```\n交付闭环 ✅",
+        },
+      ],
+    } as unknown as Message;
+
+    render(
+      <MessageList
+        {...baseProps}
+        messages={[userMsg, duplicatePartsMsg]}
+        onRendererAction={vi.fn()}
+      />
+    );
+
+    // 看板标题栏仅出现 1 次，绝不重复出现 2 个看板
+    const openuiHeaders = screen.getAllByText("OpenUI 动态看板");
+    expect(openuiHeaders).toHaveLength(1);
+    expect(screen.getByText("已就绪")).toBeInTheDocument();
+  });
 });

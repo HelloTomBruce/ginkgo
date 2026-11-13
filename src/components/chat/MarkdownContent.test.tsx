@@ -69,4 +69,14 @@ SELECT channel, COUNT(*) as cnt FROM users GROUP BY channel;
     expect(link).toHaveAttribute("target", "_blank");
     expect(link).toHaveAttribute("rel", "noopener noreferrer");
   });
+
+  it("流式传输中支持 isStreaming 平滑渲染", () => {
+    const { rerender } = render(<MarkdownContent content="初始文本" isStreaming={true} />);
+    expect(screen.getByText("初始文本")).toBeInTheDocument();
+
+    rerender(<MarkdownContent content="初始文本 增量内容" isStreaming={true} />);
+    // 即使在流式中，组件也能稳定渲染且最终完成时直接呈现
+    rerender(<MarkdownContent content="初始文本 增量内容 最终完成" isStreaming={false} />);
+    expect(screen.getByText("初始文本 增量内容 最终完成")).toBeInTheDocument();
+  });
 });

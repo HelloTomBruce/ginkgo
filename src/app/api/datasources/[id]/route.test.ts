@@ -137,6 +137,51 @@ describe("PATCH /api/datasources/:id", () => {
     );
     expect(res.status).toBe(404);
   });
+
+  it("拒绝值为脱敏占位符 *** 的 headers/params（防凭证被占位值覆盖）", async () => {
+    vi.mocked(datasources.get).mockReturnValueOnce({ ...EXISTING_HTTP });
+
+    const res = await PATCH(
+      new Request(`${BASE}/jira`, {
+        method: "PATCH",
+        body: JSON.stringify({ headers: { Authorization: "***", "X-Env": "prod" } }),
+      }),
+      makeContext("jira")
+    );
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toContain("脱敏占位值");
+    expect(datasources.upsert).not.toHaveBeenCalled();
+
+    vi.mocked(datasources.get).mockReturnValueOnce({ ...EXISTING_HTTP });
+    const res2 = await PATCH(
+      new Request(`${BASE}/jira`, {
+        method: "PATCH",
+        body: JSON.stringify({ params: { api_key: "***" } }),
+      }),
+      makeContext("jira")
+    );
+    expect(res2.status).toBe(400);
+    expect(datasources.upsert).not.toHaveBeenCalled();
+  });
+
+  it("正常 headers 更新不受影响", async () => {
+    vi.mocked(datasources.get).mockReturnValueOnce({ ...EXISTING_HTTP });
+
+    const res = await PATCH(
+      new Request(`${BASE}/jira`, {
+        method: "PATCH",
+        body: JSON.stringify({ headers: { Authorization: "Bearer real-token" } }),
+      }),
+      makeContext("jira")
+    );
+    expect(res.status).toBe(200);
+    expect(datasources.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        headers: { Authorization: "Bearer real-token" },
+      })
+    );
+  });
 });
 
 describe("DELETE /api/datasources/:id", () => {

@@ -190,6 +190,14 @@ export function useDatasources() {
       id: string,
       patch: Record<string, unknown>
     ): Promise<MutationResult> => {
+      if (snapshot && typeof patch.enabled === "boolean") {
+        publishData({
+          ...snapshot,
+          sources: snapshot.sources.map((s) =>
+            s.id === id ? { ...s, enabled: patch.enabled as boolean } : s
+          ),
+        });
+      }
       const { status, body } = await requestDatasources(
         `/api/datasources/${id}`,
         { method: "PATCH", body: JSON.stringify(patch) }
@@ -198,6 +206,7 @@ export function useDatasources() {
         await list.refresh();
         return { ok: true };
       }
+      await list.refresh();
       return { ok: false, errors: extractErrors(body, "更新失败") };
     },
     [list]
@@ -205,8 +214,22 @@ export function useDatasources() {
 
   const removeSource = useCallback(
     async (id: string): Promise<void> => {
-      await requestDatasources(`/api/datasources/${id}`, { method: "DELETE" });
-      await list.refresh();
+      const { status } = await requestDatasources(`/api/datasources/${id}`, {
+        method: "DELETE",
+      });
+      // 204 (成功删除) 或 404 (原本已不存在) 均更新并同步
+      if (status === 204 || status === 404) {
+        if (snapshot) {
+          publishData({
+            ...snapshot,
+            sources: snapshot.sources.filter((s) => s.id !== id),
+          });
+        }
+        await list.refresh();
+      } else {
+        await list.refresh();
+        throw new Error("删除数据源失败");
+      }
     },
     [list]
   );

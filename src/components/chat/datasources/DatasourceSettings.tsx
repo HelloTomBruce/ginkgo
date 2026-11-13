@@ -1,7 +1,16 @@
 "use client";
 
-import React, { useState } from "react";
-import { Database, Loader2, Pencil, Plus, Power, Trash2 } from "lucide-react";
+import React, { useRef, useState } from "react";
+import {
+  Database,
+  FileSpreadsheet,
+  Loader2,
+  Pencil,
+  Plus,
+  Power,
+  Trash2,
+  Upload,
+} from "lucide-react";
 import { Hint } from "@/components/ui/hint";
 import {
   Dialog,
@@ -11,14 +20,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import type { DataSourceDescriptor } from "@openui-analytics/datasources";
+import { authHeaders } from "@/lib/auth";
+import { toast } from "@/lib/toast";
 import { useDatasources } from "./useDatasources";
 import { FileSourcePanel } from "./FileSourcePanel";
 import { SchemaCardStatus } from "./SchemaCardStatus";
@@ -31,13 +35,18 @@ interface FormState {
   name: string;
   kind: SourceKind;
   url: string;
-  token: string;
+  token?: string;
+  headersJson: string;
+  paramsJson: string;
   dbType: "postgres" | "mysql" | "sqlite" | "clickhouse";
   connectionString: string;
   hasExistingToken: boolean;
+  hasExistingHeaders: boolean;
   /** 编辑模式下展示脱敏预览（真实凭证永不回填表单） */
   urlPreview: string;
   connPreview: string;
+  headersPreview: string;
+  paramsPreview: string;
   command: string;
   /** 空格分隔的参数原文，提交时解析为数组 */
   argsRaw: string;
@@ -45,11 +54,74 @@ interface FormState {
 
 const CLOSED_FORM: null = null;
 
+/** 解析 JSON 键值对字段：返回解析值或用户可读错误 */
+function parseJsonObjectField(
+  raw: string,
+  label: string
+): { value: Record<string, unknown> } | { error: string } {
+  try {
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return { error: `${label} 必须是合法的 JSON 对象` };
+    }
+    return { value: parsed as Record<string, unknown> };
+  } catch {
+    return { error: `${label} 格式不合法，请输入标准的 JSON 格式` };
+  }
+}
+
+/**
+ * 创建模式下解析可选 JSON 字段（headers/params）：空 → 不提交；非法 → error。
+ */
+function resolveJsonFieldCreate(
+  raw: string,
+  label: string
+): { value?: Record<string, unknown>; error?: string } {
+  const cur = raw.trim();
+  if (!cur) return {};
+  const parsed = parseJsonObjectField(cur, label);
+  if ("error" in parsed) return { error: parsed.error };
+  return { value: parsed.value };
+}
+
+/**
+ * 编辑模式下计算 JSON 字段补丁：未修改 → 不提交；清空 → {} 显式清除；
+ * 含脱敏星号或非法 JSON → error（脱敏值不得写回覆盖真实凭证）。
+ */
+function resolveJsonFieldPatch(
+  current: string,
+  maskedPreview: string,
+  label: string
+): { value?: Record<string, unknown>; error?: string } {
+  const cur = current.trim();
+  const orig = maskedPreview.trim();
+  if (!cur) return orig ? { value: {} } : {};
+  if (cur === orig) return {};
+  if (cur.includes("***")) {
+    return {
+      error: `${label} 包含脱敏星号(***)，若修改 ${label} 请填入完整的值`,
+    };
+  }
+  const parsed = parseJsonObjectField(cur, label);
+  if ("error" in parsed) return { error: parsed.error };
+  return { value: parsed.value };
+}
+
+const DB_CONNECTION_PLACEHOLDERS: Record<FormState["dbType"], string> = {
+  postgres: "postgresql://user:pass@host:5432/db",
+  mysql: "mysql://user:pass@host:3306/db",
+  sqlite: "/path/to/database.sqlite 或 ./data/app.db",
+  clickhouse: "http://default:pass@host:8123/default",
+};
+
 function kindBadge(source: DataSourceDescriptor): string {
   if (source.kind === "stdio-cli") return "本地 CLI";
   if (source.kind === "file") return "文件";
   if (source.kind === "db") {
-    return source.dbType === "mysql" ? "MySQL" : "PostgreSQL";
+    if (source.dbType === "mysql") return "MySQL";
+    if (source.dbType === "sqlite") return "SQLite";
+    if (source.dbType === "clickhouse") return "ClickHouse";
+    return "PostgreSQL";
   }
   return "HTTP MCP";
 }
@@ -68,6 +140,9 @@ export function DatasourceSettings() {
   const { sources, health, loading, refreshing, createSource, updateSource, removeSource } =
     useDatasources();
   const [form, setForm] = useState<FormState | typeof CLOSED_FORM>(CLOSED_FORM);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [dragOver, setDragOver] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [errors, setErrors] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   /** 行内操作 pending：启停/删除涉及 PATCH + 全量探活刷新，秒级耗时必须有反馈 */
@@ -76,8 +151,30 @@ export function DatasourceSettings() {
     action: "toggle" | "delete";
   } | null>(null);
 
+  const handleFilesSelected = (files: File[]) => {
+    setSelectedFiles((prev) => [...prev, ...files]);
+    if (files.length > 0 && form) {
+      const first = files[0];
+      const baseName = first.name.replace(/\.[^/.]+$/, "");
+      const safeId = baseName
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "");
+      setForm((curr) => {
+        if (!curr) return curr;
+        return {
+          ...curr,
+          name: curr.name || baseName,
+          id: curr.id || (safeId ? `file-${safeId}` : `file-${Date.now().toString(36)}`),
+        };
+      });
+    }
+  };
+
   const openCreate = () => {
     setErrors([]);
+    setSelectedFiles([]);
+    setDragOver(false);
     setForm({
       mode: "create",
       id: "",
@@ -85,11 +182,16 @@ export function DatasourceSettings() {
       kind: "http-mcp",
       url: "",
       token: "",
+      headersJson: "",
+      paramsJson: "",
       dbType: "postgres",
       connectionString: "",
       hasExistingToken: false,
+      hasExistingHeaders: false,
       urlPreview: "",
       connPreview: "",
+      headersPreview: "",
+      paramsPreview: "",
       command: "",
       argsRaw: "",
     });
@@ -98,6 +200,14 @@ export function DatasourceSettings() {
   const openEdit = (s: DataSourceDescriptor) => {
     setErrors([]);
     const maskedConn = s.kind === "db" ? (s.maskedConnectionString ?? "") : "";
+    const headersStr =
+      s.kind === "http-mcp" && s.maskedHeaders
+        ? JSON.stringify(s.maskedHeaders, null, 2)
+        : "";
+    const paramsStr =
+      s.kind === "http-mcp" && s.params
+        ? JSON.stringify(s.params, null, 2)
+        : "";
     setForm({
       mode: "edit",
       id: s.id,
@@ -105,12 +215,17 @@ export function DatasourceSettings() {
       kind: s.kind,
       url: "",
       token: "",
+      headersJson: headersStr,
+      paramsJson: paramsStr,
       dbType: s.dbType ?? "postgres",
       // db 连接串支持回显已配置的连接串（含脱敏串），方便查看与编辑
       connectionString: maskedConn,
       hasExistingToken: Boolean(s.hasToken),
+      hasExistingHeaders: Boolean(s.hasHeaders),
       urlPreview: s.kind === "http-mcp" ? (s.maskedUrl ?? "") : "",
       connPreview: maskedConn,
+      headersPreview: headersStr,
+      paramsPreview: paramsStr,
       command: s.kind === "stdio-cli" ? (s.command ?? "") : "",
       argsRaw:
         s.kind === "stdio-cli" && Array.isArray(s.args)
@@ -122,6 +237,8 @@ export function DatasourceSettings() {
   const closeForm = () => {
     setForm(CLOSED_FORM);
     setErrors([]);
+    setSelectedFiles([]);
+    setDragOver(false);
     setSaving(false);
   };
 
@@ -137,7 +254,20 @@ export function DatasourceSettings() {
         };
         if (form.kind === "http-mcp") {
           body.url = form.url.trim();
-          if (form.token.trim()) body.token = form.token.trim();
+          const headers = resolveJsonFieldCreate(form.headersJson, "Headers");
+          if (headers.error) {
+            setErrors([headers.error]);
+            setSaving(false);
+            return;
+          }
+          if (headers.value) body.headers = headers.value;
+          const params = resolveJsonFieldCreate(form.paramsJson, "参数配置");
+          if (params.error) {
+            setErrors([params.error]);
+            setSaving(false);
+            return;
+          }
+          if (params.value) body.params = params.value;
         } else if (form.kind === "db") {
           body.dbType = form.dbType;
           body.connectionString = form.connectionString.trim();
@@ -145,10 +275,38 @@ export function DatasourceSettings() {
           body.command = form.command.trim();
           body.args = form.argsRaw.split(/\s+/).filter(Boolean);
         }
-        // file：仅 id/name/kind，文件创建后在列表中上传
+        // file：若选择了文件，创建完成后立即上传
         const result = await createSource(body);
-        if (result.ok) closeForm();
-        else setErrors(result.errors ?? ["创建失败"]);
+        if (result.ok) {
+          if (form.kind === "file" && selectedFiles.length > 0) {
+            try {
+              const formData = new FormData();
+              for (const f of selectedFiles) formData.append("files", f);
+              const uploadRes = await fetch(`/api/datasources/${body.id}/file`, {
+                method: "POST",
+                headers: { ...authHeaders() },
+                body: formData,
+              });
+              if (!uploadRes.ok) {
+                const errBody = (await uploadRes.json().catch(() => null)) as {
+                  error?: string;
+                } | null;
+                setErrors([
+                  errBody?.error ?? "数据源已创建，但文件解析上传失败，请在列表中重试",
+                ]);
+                setSaving(false);
+                return;
+              }
+            } catch (err) {
+              setErrors([err instanceof Error ? err.message : "文件上传失败"]);
+              setSaving(false);
+              return;
+            }
+          }
+          closeForm();
+        } else {
+          setErrors(result.errors ?? ["创建失败"]);
+        }
         return;
       }
 
@@ -159,7 +317,29 @@ export function DatasourceSettings() {
       const patch: Record<string, unknown> = { name: form.name.trim() };
       if (form.kind === "http-mcp") {
         if (form.url.trim()) patch.url = form.url.trim();
-        if (form.token.trim()) patch.token = form.token.trim();
+        const headers = resolveJsonFieldPatch(
+          form.headersJson,
+          form.headersPreview,
+          "Headers"
+        );
+        if (headers.error) {
+          setErrors([headers.error]);
+          setSaving(false);
+          return;
+        }
+        if (headers.value) patch.headers = headers.value;
+
+        const params = resolveJsonFieldPatch(
+          form.paramsJson,
+          form.paramsPreview,
+          "参数配置"
+        );
+        if (params.error) {
+          setErrors([params.error]);
+          setSaving(false);
+          return;
+        }
+        if (params.value) patch.params = params.value;
       } else if (form.kind === "db") {
         patch.dbType = form.dbType;
         const conn = form.connectionString.trim();
@@ -199,6 +379,9 @@ export function DatasourceSettings() {
     setPending({ id, action: "delete" });
     try {
       await removeSource(id);
+    } catch (err) {
+      // removeSource 失败时抛错，必须接住并反馈，避免 unhandled rejection 静默失败
+      toast(err instanceof Error ? err.message : "删除数据源失败", "error");
     } finally {
       setPending(null);
     }
@@ -443,21 +626,48 @@ export function DatasourceSettings() {
                     />
                   </div>
                   <div>
-                    <label htmlFor="ds-token" className={labelClass}>
-                      Token（可选，Bearer）
-                    </label>
-                    <input
-                      id="ds-token"
-                      type="password"
-                      value={form.token}
-                      onChange={(e) => setForm({ ...form, token: e.target.value })}
-                      placeholder={
-                        form.mode === "edit" && form.hasExistingToken
-                          ? "留空保持不变"
-                          : "可选"
+                    <div className="flex items-center justify-between mb-1">
+                      <label htmlFor="ds-headers" className={labelClass}>
+                        Headers 配置（JSON 格式）
+                      </label>
+                      <span className="text-[10px] text-muted-foreground">可选</span>
+                    </div>
+                    <textarea
+                      id="ds-headers"
+                      rows={3}
+                      value={form.headersJson}
+                      onChange={(e) =>
+                        setForm({ ...form, headersJson: e.target.value })
                       }
-                      className={inputClass}
+                      placeholder={
+                        '{\n  "Authorization": "Bearer your-token",\n  "X-Custom-Header": "value"\n}'
+                      }
+                      className={`${inputClass} resize-y leading-relaxed`}
                     />
+                    <div className="text-[10px] text-foreground-faint mt-1">
+                      以 JSON 键值对形式配置，如 Authorization、自定义标头等
+                    </div>
+                  </div>
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label htmlFor="ds-params" className={labelClass}>
+                        参数配置（Params，JSON 格式）
+                      </label>
+                      <span className="text-[10px] text-muted-foreground">可选</span>
+                    </div>
+                    <textarea
+                      id="ds-params"
+                      rows={2}
+                      value={form.paramsJson}
+                      onChange={(e) =>
+                        setForm({ ...form, paramsJson: e.target.value })
+                      }
+                      placeholder={'{\n  "tenant": "acme",\n  "env": "prod"\n}'}
+                      className={`${inputClass} resize-y leading-relaxed`}
+                    />
+                    <div className="text-[10px] text-foreground-faint mt-1">
+                      可选，请求时自动拼装至目标 URL 的查询参数
+                    </div>
                   </div>
                 </>
               )}
@@ -468,30 +678,29 @@ export function DatasourceSettings() {
                     <label htmlFor="ds-dbtype" className={labelClass}>
                       数据库类型
                     </label>
-                    <Select
-                      value={form.dbType}
-                      onValueChange={(v) =>
-                        setForm({ ...form, dbType: v as FormState["dbType"] })
-                      }
+                    <select
+                      id="ds-dbtype"
                       name="ds-dbtype"
+                      value={form.dbType}
+                      onChange={(e) =>
+                        setForm({
+                          ...form,
+                          dbType: e.target.value as FormState["dbType"],
+                        })
+                      }
+                      className="w-full p-2.5 rounded-lg border border-border bg-surface-sunken text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-border-strong cursor-pointer"
                     >
-                      <SelectTrigger
-                        id="ds-dbtype"
-                        className="w-full h-auto py-2.5 text-xs bg-surface-sunken border-border"
-                      >
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent className="text-xs">
-                        <SelectItem value="postgres">PostgreSQL</SelectItem>
-                        <SelectItem value="mysql">MySQL</SelectItem>
-                        <SelectItem value="sqlite">SQLite（文件路径）</SelectItem>
-                        <SelectItem value="clickhouse">ClickHouse</SelectItem>
-                      </SelectContent>
-                    </Select>
+                      <option value="postgres">PostgreSQL</option>
+                      <option value="mysql">MySQL</option>
+                      <option value="sqlite">SQLite（文件路径）</option>
+                      <option value="clickhouse">ClickHouse</option>
+                    </select>
                   </div>
                   <div>
                     <label htmlFor="ds-conn" className={labelClass}>
-                      连接串（URL 形式，强制只读查询）
+                      {form.dbType === "sqlite"
+                        ? "连接串 / 数据库路径（本地 SQLite 文件，强制只读查询）"
+                        : "连接串（URL 形式，强制只读查询）"}
                     </label>
                     <input
                       id="ds-conn"
@@ -504,7 +713,7 @@ export function DatasourceSettings() {
                       placeholder={
                         form.mode === "edit" && form.connPreview
                           ? `${form.connPreview}（留空保持不变）`
-                          : "postgresql://user:pass@host:5432/db"
+                          : DB_CONNECTION_PLACEHOLDERS[form.dbType] || "postgresql://user:pass@host:5432/db"
                       }
                       className={inputClass}
                     />
@@ -517,13 +726,105 @@ export function DatasourceSettings() {
               )}
 
               {form.kind === "file" && (
-                <div className="text-[11px] text-foreground-faint flex items-center gap-1.5 p-2 rounded-lg bg-surface-sunken border border-border">
-                  <Database className="w-3.5 h-3.5 shrink-0" />
-                  <span>
-                    {form.mode === "create"
-                      ? "创建后在数据源列表中上传 CSV/Excel/Parquet/JSON 文件（≤50MB），即可用自然语言查询"
-                      : "文件在数据源列表的上传区管理；重新上传将完全覆盖现有表"}
-                  </span>
+                <div className="space-y-3">
+                  {form.mode === "edit" ? (
+                    <div className="border border-border rounded-lg p-3 bg-surface-sunken space-y-2">
+                      <div className="text-xs font-medium text-foreground">文件数据与表格管理</div>
+                      <FileSourcePanel sourceId={form.id} />
+                    </div>
+                  ) : (
+                    <div>
+                      <div className={labelClass}>
+                        选择数据表格文件（支持 CSV / Excel / Parquet / JSON）
+                      </div>
+                      <div
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          setDragOver(true);
+                        }}
+                        onDragLeave={() => setDragOver(false)}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          setDragOver(false);
+                          if (e.dataTransfer.files?.length) {
+                            handleFilesSelected(Array.from(e.dataTransfer.files));
+                          }
+                        }}
+                        onClick={() => fileInputRef.current?.click()}
+                        className={`border-2 border-dashed rounded-lg p-4 text-center cursor-pointer transition-colors ${
+                          dragOver
+                            ? "border-primary bg-primary/5"
+                            : "border-border hover:border-border-strong bg-surface-sunken"
+                        }`}
+                      >
+                        <input
+                          ref={fileInputRef}
+                          type="file"
+                          multiple
+                          accept=".csv,.tsv,.xlsx,.xls,.parquet,.json"
+                          className="hidden"
+                          onChange={(e) => {
+                            if (e.target.files?.length) {
+                              handleFilesSelected(Array.from(e.target.files));
+                            }
+                          }}
+                        />
+                        <div className="flex flex-col items-center gap-1.5 text-muted-foreground">
+                          <Upload className="w-5 h-5 text-foreground-faint" />
+                          <span className="text-xs font-medium text-foreground">
+                            点击选择文件 或 拖拽文件到此处
+                          </span>
+                          <span className="text-[11px] text-foreground-faint">
+                            支持 .csv、.xlsx、.xls、.parquet、.json（可多选，单个 ≤50MB）
+                          </span>
+                        </div>
+                      </div>
+
+                      {selectedFiles.length > 0 && (
+                        <div className="mt-2.5 space-y-1.5">
+                          <div className="text-[11px] font-medium text-foreground-subtle">
+                            已选择待上传文件 ({selectedFiles.length})：
+                          </div>
+                          <div className="max-h-28 overflow-y-auto space-y-1">
+                            {selectedFiles.map((file, idx) => (
+                              <div
+                                key={`${file.name}-${idx}`}
+                                className="flex items-center justify-between p-2 rounded bg-card border border-border text-[11px]"
+                              >
+                                <div className="flex items-center gap-1.5 truncate">
+                                  <FileSpreadsheet className="w-3.5 h-3.5 text-success-fg shrink-0" />
+                                  <span className="truncate text-foreground">{file.name}</span>
+                                  <span className="text-foreground-faint shrink-0">
+                                    ({(file.size / 1024).toFixed(1)} KB)
+                                  </span>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedFiles((prev) =>
+                                      prev.filter((_, i) => i !== idx)
+                                    );
+                                  }}
+                                  className="text-foreground-faint hover:text-danger-fg ml-2 shrink-0 p-0.5"
+                                  title="移除"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="text-[11px] text-foreground-faint flex items-center gap-1.5 pt-1.5">
+                        <Database className="w-3.5 h-3.5 shrink-0" />
+                        <span>
+                          文件将由内置 DuckDB 引擎解析为关系型库表，支持高速只读 SQL 与对话分析
+                        </span>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 

@@ -49,8 +49,15 @@ const SOURCES = [
     kind: "http-mcp",
     tools: [],
     enabled: true,
-    
     hasToken: true,
+    hasHeaders: true,
+    maskedHeaders: {
+      Authorization: "***",
+      "X-Env": "prod",
+    },
+    params: {
+      tenant: "acme",
+    },
     maskedUrl: "http://10.0.0.1:6000/mcp",
   },
   {
@@ -74,8 +81,11 @@ const HEALTH = {
 };
 
 function mockGetAll() {
-  fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+  fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
+    if (init?.method === "POST") {
+      return jsonResponse({ source: { id: "ok", name: "ok" }, manifest: { tables: [] } }, 201);
+    }
     if (url.includes("/api/datasources") && url.indexOf("/api/datasources/") === -1) {
       return jsonResponse({ sources: SOURCES, health: HEALTH });
     }
@@ -128,8 +138,36 @@ describe("DatasourceSettings", () => {
     fireEvent.change(screen.getByLabelText(/名称/), { target: { value: "报表库" } });
     fireEvent.click(screen.getByLabelText(/数据库连接/));
     await screen.findByLabelText(/连接串/);
-    // 数据库类型默认 postgres（shadcn Select，受控值由表单状态持有）
+    // 数据库类型默认 postgres
     expect(screen.getByLabelText(/数据库类型/)).toHaveTextContent(/PostgreSQL/);
+    expect(screen.getByLabelText(/连接串/)).toHaveAttribute(
+      "placeholder",
+      "postgresql://user:pass@host:5432/db"
+    );
+
+    // 切换为 MySQL，占位符联动为 mysql://
+    fireEvent.change(screen.getByLabelText(/数据库类型/), { target: { value: "mysql" } });
+    expect(screen.getByLabelText(/连接串/)).toHaveAttribute(
+      "placeholder",
+      "mysql://user:pass@host:3306/db"
+    );
+
+    // 切换为 SQLite，占位符联动为 sqlite 路径
+    fireEvent.change(screen.getByLabelText(/数据库类型/), { target: { value: "sqlite" } });
+    expect(screen.getByLabelText(/连接串/)).toHaveAttribute(
+      "placeholder",
+      expect.stringContaining("sqlite")
+    );
+
+    // 切换为 ClickHouse，占位符联动为 http://
+    fireEvent.change(screen.getByLabelText(/数据库类型/), { target: { value: "clickhouse" } });
+    expect(screen.getByLabelText(/连接串/)).toHaveAttribute(
+      "placeholder",
+      "http://default:pass@host:8123/default"
+    );
+
+    // 切回 postgres
+    fireEvent.change(screen.getByLabelText(/数据库类型/), { target: { value: "postgres" } });
     fireEvent.change(screen.getByLabelText(/连接串/), {
       target: { value: "postgres://u:p@h:5432/reports" },
     });
@@ -462,6 +500,38 @@ describe("DatasourceSettings", () => {
     });
   });
 
+  it("添加文件源时支持直接选择文件并完成上传", async () => {
+    renderSettings();
+    await openCreateForm();
+
+    fireEvent.click(screen.getByLabelText(/文件（CSV\/Excel\/Parquet\/JSON）/));
+    expect(screen.getByText(/点击选择文件 或 拖拽文件到此处/)).toBeInTheDocument();
+
+    const file = new File(["a,b\n1,2"], "orders.csv", { type: "text/csv" });
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    expect(fileInput).toBeInTheDocument();
+
+    // 选中文件后自动以文件名填充名称与 id
+    fireEvent.change(fileInput, { target: { files: [file] } });
+    expect(screen.getByText("orders.csv")).toBeInTheDocument();
+    expect(screen.getByLabelText(/名称/)).toHaveValue("orders");
+
+    fireEvent.click(screen.getByRole("button", { name: /保存/ }));
+
+    await waitFor(() => {
+      // 验证先调用了 POST /api/datasources
+      const postSource = fetchMock.mock.calls.find(
+        (c) => String(c[0]) === "/api/datasources" && c[1]?.method === "POST"
+      );
+      expect(postSource).toBeTruthy();
+      // 验证紧接着调用了 POST /api/datasources/<id>/file 上传文件
+      const postFile = fetchMock.mock.calls.find(
+        (c) => String(c[0]).includes("/file") && c[1]?.method === "POST"
+      );
+      expect(postFile).toBeTruthy();
+    });
+  });
+
   it("编辑 db 源：连接串正确回显，支持弹窗取消关闭", async () => {
     renderSettings();
     await screen.findByText("订单库");
@@ -521,6 +591,150 @@ describe("DatasourceSettings", () => {
     // 不应发送 PATCH 请求
     const call = fetchMock.mock.calls.find(
       (c) => String(c[0]) === "/api/datasources/mysql-a" && c[1]?.method === "PATCH"
+    );
+    expect(call).toBeUndefined();
+  });
+
+  it("添加 http-mcp 源：支持配置 Headers (JSON) 与 Params (JSON) 并提交", async () => {
+    renderSettings();
+    await openCreateForm();
+
+    fireEvent.change(screen.getByLabelText(/ID/), { target: { value: "custom-api" } });
+    fireEvent.change(screen.getByLabelText(/名称/), { target: { value: "自定义接口" } });
+    fireEvent.click(screen.getByLabelText(/HTTP MCP/));
+    fireEvent.change(screen.getByLabelText(/URL/), { target: { value: "https://api.example.com/mcp" } });
+    fireEvent.change(screen.getByLabelText(/Headers 配置/), {
+      target: { value: JSON.stringify({ Authorization: "Bearer my-token", "X-Key": "123" }) },
+    });
+    fireEvent.change(screen.getByLabelText(/参数配置/), {
+      target: { value: JSON.stringify({ tenant: "t-1", env: "staging" }) },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /保存/ }));
+
+    await waitFor(() => {
+      const call = fetchMock.mock.calls.find(
+        (c) => String(c[0]) === "/api/datasources" && c[1]?.method === "POST"
+      );
+      expect(call).toBeTruthy();
+      const body = JSON.parse(call![1].body as string);
+      expect(body).toEqual({
+        id: "custom-api",
+        name: "自定义接口",
+        kind: "http-mcp",
+        url: "https://api.example.com/mcp",
+        headers: {
+          Authorization: "Bearer my-token",
+          "X-Key": "123",
+        },
+        params: {
+          tenant: "t-1",
+          env: "staging",
+        },
+      });
+    });
+  });
+
+  it("添加 http-mcp 源：Headers 输入非法 JSON 格式时阻止提交并显示错误", async () => {
+    renderSettings();
+    await openCreateForm();
+
+    fireEvent.change(screen.getByLabelText(/ID/), { target: { value: "bad-json-mcp" } });
+    fireEvent.change(screen.getByLabelText(/名称/), { target: { value: "错误JSON测试" } });
+    fireEvent.click(screen.getByLabelText(/HTTP MCP/));
+    fireEvent.change(screen.getByLabelText(/URL/), { target: { value: "https://api.example.com/mcp" } });
+    fireEvent.change(screen.getByLabelText(/Headers 配置/), {
+      target: { value: "not a valid json" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /保存/ }));
+
+    expect(await screen.findByText(/Headers 格式不合法/)).toBeInTheDocument();
+    const call = fetchMock.mock.calls.find(
+      (c) => String(c[0]) === "/api/datasources" && c[1]?.method === "POST"
+    );
+    expect(call).toBeUndefined();
+  });
+
+  it("编辑 http-mcp 源：正确回显脱敏 Headers 与 Params，支持修改 Headers 提交", async () => {
+    renderSettings();
+    await screen.findByText("Jira MCP");
+
+    fireEvent.click(screen.getByRole("button", { name: /编辑 jira/ }));
+    const headersTextarea = await screen.findByLabelText(/Headers 配置/);
+    expect(headersTextarea).toHaveValue(
+      JSON.stringify(
+        {
+          Authorization: "***",
+          "X-Env": "prod",
+        },
+        null,
+        2
+      )
+    );
+    const paramsTextarea = screen.getByLabelText(/参数配置/);
+    expect(paramsTextarea).toHaveValue(
+      JSON.stringify({ tenant: "acme" }, null, 2)
+    );
+
+    // 修改 Headers 为新合法内容
+    fireEvent.change(headersTextarea, {
+      target: {
+        value: JSON.stringify({ Authorization: "Bearer new-secret", "X-Env": "prod" }),
+      },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /保存/ }));
+
+    await waitFor(() => {
+      const call = fetchMock.mock.calls.find(
+        (c) => String(c[0]) === "/api/datasources/jira" && c[1]?.method === "PATCH"
+      );
+      expect(call).toBeTruthy();
+      const body = JSON.parse(call![1].body as string);
+      expect(body.headers).toEqual({
+        Authorization: "Bearer new-secret",
+        "X-Env": "prod",
+      });
+    });
+  });
+
+  it("编辑 http-mcp 源：修改 Headers 若包含脱敏星号(***)时拦截并报错", async () => {
+    renderSettings();
+    await screen.findByText("Jira MCP");
+
+    fireEvent.click(screen.getByRole("button", { name: /编辑 jira/ }));
+    const headersTextarea = await screen.findByLabelText(/Headers 配置/);
+    // 只改动了一个字段，但保留了 Authorization 的 ***
+    fireEvent.change(headersTextarea, {
+      target: {
+        value: JSON.stringify({ Authorization: "***", "X-Env": "stage" }),
+      },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /保存/ }));
+
+    expect(
+      await screen.findByText(/Headers 包含脱敏星号\(.*?\)，若修改 Headers 请填入完整的值/)
+    ).toBeInTheDocument();
+    const call = fetchMock.mock.calls.find(
+      (c) => String(c[0]) === "/api/datasources/jira" && c[1]?.method === "PATCH"
+    );
+    expect(call).toBeUndefined();
+  });
+
+  it("编辑 http-mcp 源：修改参数配置若包含脱敏星号(***)时同样拦截并报错", async () => {
+    renderSettings();
+    await screen.findByText("Jira MCP");
+
+    fireEvent.click(screen.getByRole("button", { name: /编辑 jira/ }));
+    const paramsTextarea = await screen.findByLabelText(/参数配置/);
+    fireEvent.change(paramsTextarea, {
+      target: { value: JSON.stringify({ api_key: "***", tenant: "acme" }) },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /保存/ }));
+
+    expect(
+      await screen.findByText(/参数配置 包含脱敏星号\(.*?\)，若修改 参数配置 请填入完整的值/)
+    ).toBeInTheDocument();
+    const call = fetchMock.mock.calls.find(
+      (c) => String(c[0]) === "/api/datasources/jira" && c[1]?.method === "PATCH"
     );
     expect(call).toBeUndefined();
   });
