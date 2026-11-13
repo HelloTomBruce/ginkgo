@@ -101,4 +101,31 @@ describe("createReasoningContentTransformStream", () => {
     expect(text).toContain("<think>思考中");
     expect(text).toContain("</think>");
   });
+
+  it("自动补齐 choices 中的 index 字段，且生成的闭合 chunk 包含合法的 index: 0", async () => {
+    // 模拟非标 SSE chunk（如智谱 GLM 或缺失 index 的端点）
+    const sseInput = [
+      'data: {"id":"1","choices":[{"delta":{"reasoning_content":"推理过程"}}]}\n\n',
+      'data: {"id":"2","choices":[{"delta":{"content":"正式回答"}}]}\n\n',
+      "data: [DONE]\n\n",
+    ];
+
+    const transformed = makeStream(sseInput).pipeThrough(
+      createReasoningContentTransformStream()
+    );
+    const output = await readStream(transformed);
+
+    const lines = output
+      .split("\n\n")
+      .map((l) => l.trim())
+      .filter((l) => l.startsWith("data:") && l !== "data: [DONE]");
+
+    for (const line of lines) {
+      const parsed = JSON.parse(line.slice(5).trim());
+      expect(Array.isArray(parsed.choices)).toBe(true);
+      for (const choice of parsed.choices) {
+        expect(typeof choice.index).toBe("number");
+      }
+    }
+  });
 });

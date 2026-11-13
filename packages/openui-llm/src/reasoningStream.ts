@@ -23,7 +23,7 @@ export function createReasoningContentTransformStream(): TransformStream<Uint8Ar
           if (trimmed === "data: [DONE]" && inReasoning) {
             inReasoning = false;
             const closeChunk = {
-              choices: [{ delta: { content: "</think>" }, finish_reason: null }],
+              choices: [{ index: 0, delta: { content: "</think>" }, finish_reason: null }],
             };
             controller.enqueue(textEncoder.encode(`data: ${JSON.stringify(closeChunk)}\n\n`));
           }
@@ -40,6 +40,7 @@ export function createReasoningContentTransformStream(): TransformStream<Uint8Ar
         try {
           const json = JSON.parse(dataContent) as {
             choices?: Array<{
+              index?: number;
               delta?: {
                 content?: string | null;
                 reasoning_content?: string;
@@ -49,9 +50,20 @@ export function createReasoningContentTransformStream(): TransformStream<Uint8Ar
                 [key: string]: unknown;
               };
               finish_reason?: string | null;
+              [key: string]: unknown;
             }>;
             [key: string]: unknown;
           };
+
+          // 规范化 choices：部分第三方/非标 OpenAI 代理会遗漏 index 字段，导致 AI SDK 严格校验报错
+          if (Array.isArray(json.choices)) {
+            for (let i = 0; i < json.choices.length; i++) {
+              const c = json.choices[i];
+              if (c && typeof c === "object" && typeof c.index !== "number") {
+                c.index = i;
+              }
+            }
+          }
 
           const choice = json.choices?.[0];
           const delta = choice?.delta;
@@ -92,9 +104,17 @@ export function createReasoningContentTransformStream(): TransformStream<Uint8Ar
                   delta.content = "</think>" + delta.content;
                 } else {
                   // 先插入一个闭合 chunk 再发当前 chunk
+                  const closeIndex =
+                    typeof choice?.index === "number" ? choice.index : 0;
                   const closeChunk = {
                     ...json,
-                    choices: [{ delta: { content: "</think>" }, finish_reason: null }],
+                    choices: [
+                      {
+                        index: closeIndex,
+                        delta: { content: "</think>" },
+                        finish_reason: null,
+                      },
+                    ],
                   };
                   controller.enqueue(textEncoder.encode(`data: ${JSON.stringify(closeChunk)}\n\n`));
                 }
@@ -114,7 +134,7 @@ export function createReasoningContentTransformStream(): TransformStream<Uint8Ar
       if (inReasoning) {
         inReasoning = false;
         const closeChunk = {
-          choices: [{ delta: { content: "</think>" }, finish_reason: null }],
+          choices: [{ index: 0, delta: { content: "</think>" }, finish_reason: null }],
         };
         controller.enqueue(textEncoder.encode(`data: ${JSON.stringify(closeChunk)}\n\n`));
       }

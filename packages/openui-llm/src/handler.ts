@@ -1,3 +1,4 @@
+import path from "node:path";
 import {
   streamText,
   generateText,
@@ -23,6 +24,8 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import {
   mergeToolSets,
   renderCardForPrompt,
+  CertifiedQueryStore,
+  matchCertifiedQueries,
   type ActiveSourceSummary,
   type DatasourceManager,
 } from "@openui-analytics/datasources";
@@ -157,6 +160,8 @@ export interface AnalyzeHandlerOptions {
   sessions?: SessionContextStore;
   /** 会话流中继中枢（可选注入；缺省全局单例 defaultStreamHub） */
   streamHub?: SessionStreamHub;
+  /** 认证口径知识库（可选注入；缺省尝试读取 config/certified-queries.json） */
+  certifiedStore?: CertifiedQueryStore;
 }
 
 export interface AnalyzeRequestBody {
@@ -207,6 +212,12 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
     opts.methodology ??
     createMethodLibrary({ builtin: builtinMethodCards }).library;
   const methodIndexText = renderMethodIndex(methodLibrary.cards);
+
+  const certifiedStore =
+    opts.certifiedStore ??
+    new CertifiedQueryStore({
+      configPath: path.join(process.cwd(), "config/certified-queries.json"),
+    });
 
   const POST = async function (req: Request) {
     try {
@@ -375,6 +386,13 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
       // execute → base + 按已确认思路执行的增量约束 + 命中方法卡详情（按需注入）；
       // direct → base 直出看板 + 方法索引（常驻）
       const userQueryHint = extractLatestUserQuery(messages);
+      const activeSourceIds = summaries.map((s) => s.id);
+      // 认证口径配置热加载：改 config/certified-queries.json 无需重启进程
+      certifiedStore.reloadIfChanged();
+      const certifiedMatches = userQueryHint
+        ? matchCertifiedQueries(userQueryHint, activeSourceIds, certifiedStore)
+        : [];
+
       const schemaDigest = await buildSchemaDigest(datasources, summaries, userQueryHint);
       const methodDetails =
         mode === "execute"
@@ -382,10 +400,10 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
           : undefined;
       const baseSystem =
         mode === "plan"
-          ? getOpenUIPlanPrompt(summaries, schemaDigest, methodIndexText)
+          ? getOpenUIPlanPrompt(summaries, schemaDigest, methodIndexText, certifiedMatches)
           : mode === "execute"
-            ? getExecuteSystemPrompt(summaries, schemaDigest, methodDetails)
-            : getOpenUISystemPrompt(summaries, schemaDigest, methodIndexText);
+            ? getExecuteSystemPrompt(summaries, schemaDigest, methodDetails, certifiedMatches)
+            : getOpenUISystemPrompt(summaries, schemaDigest, methodIndexText, certifiedMatches);
 
       // ========== 上下文治理（投影式压缩，设计见 context.ts） ==========
       // 会话元数据读取失败静默降级（仅当次启发式，不阻塞分析）
@@ -542,7 +560,8 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
                 terminated: true,
                 status,
                 summary: summary ?? "",
-                message: "分析任务终态已确认。请输出最终分析结果与看板（若已输出则直接结束）。",
+                message:
+                  "数据取数与任务终态已确认闭环。若你在上一步或当前步骤已输出了完整的 Markdown 分析报告与 ```openui 看板代码块，严禁重复输出，直接输出一句简要闭环致辞即可自然结束；若尚未输出报告与看板，请在此处基于已获取的数据输出一份完整的 Markdown 深度分析报告及 ```openui ... ``` 可视化动态看板代码块。每轮回复严格只能有一份报告和一个看板，绝对不可重复输出两遍！",
               };
             },
           });

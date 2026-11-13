@@ -1,6 +1,6 @@
 import { serverLibrary } from "./serverLibrary";
 import { resolveCrossSourcePairs } from "./crossSourceMap";
-import type { ActiveSourceSummary } from "@openui-analytics/datasources";
+import type { ActiveSourceSummary, CertifiedQueryMatch } from "@openui-analytics/datasources";
 
 /**
  * Prompt 中的 few-shot 示例。导出以便测试校验其与 serverLibrary schema 的一致性
@@ -165,6 +165,64 @@ function methodSelectionSection(methodIndex?: string): string {
 }
 
 /**
+ * 认证口径约束段（Certified Queries 三档注入，阈值语义对齐架构 RFC §2.2.2）：
+ * - exact（≥0.85）：强约束——严禁即兴改动口径，必须复用标准模版；
+ * - high（0.6–0.85）：Few-Shot 参考示例——供模型参考取数思路，不强制绑定；
+ * - 其余档位不注入。
+ */
+export function certifiedQueriesSection(matches?: CertifiedQueryMatch[]): string {
+  if (!matches || matches.length === 0) return "";
+
+  const exact = matches.filter((m) => m.confidence === "exact");
+  const reference = matches.filter((m) => m.confidence === "high");
+
+  const sections: string[] = [];
+
+  if (exact.length > 0) {
+    const items = exact
+      .map(
+        (m, idx) => `### 认证口径 ${idx + 1}：${m.query.title}
+- **指标标识 (ID)**: \`${m.query.id}\`
+- **业务定义**: ${m.query.description}
+${m.query.businessMetricFormula ? `- **权威计算公式**: ${m.query.businessMetricFormula}` : ""}
+- **标准 SQL / CTE 模版**:
+\`\`\`sql
+${m.query.sqlTemplate}
+\`\`\`
+- **使用约束**: 当前问题命中企业认证标准口径，严禁擅自修改核心度量与计算逻辑。必须优先复用此标准 CTE/SQL，仅允许依用户需求调整时间筛选范围或在外层补充维度聚合。`
+      )
+      .join("\n\n");
+
+    sections.push(`
+## 权威业务口径约束 (Certified Queries):
+经企业数据团队口径审计，检测到当前分析任务与以下官方认证标准口径高度吻合：
+${items}
+`);
+  }
+
+  if (reference.length > 0) {
+    const items = reference
+      .map(
+        (m, idx) => `### 参考口径 ${idx + 1}：${m.query.title} (\`${m.query.id}\`)
+- 业务定义: ${m.query.description}
+- 参考 SQL 模版:
+\`\`\`sql
+${m.query.sqlTemplate}
+\`\`\``
+      )
+      .join("\n\n");
+
+    sections.push(`
+## 相关认证口径参考 (Few-Shot，非强制):
+以下经认证的口径与当前问题部分相关，可作为取数思路与字段参考；若其口径与用户需求不完全吻合，允许在此基础上调整或另行编写 SQL：
+${items}
+`);
+  }
+
+  return sections.join("\n");
+}
+
+/**
  * 方法论详情段（execute 按需注入）：仅注入选中卡的完整指导
  * （renderCardDetail 产出，预算由 methodology 包守护）。
  */
@@ -180,12 +238,14 @@ The user confirmed a plan referencing the method(s) above — follow their detai
 export function getOpenUISystemPrompt(
   activeSources: ActiveSourceSummary[],
   schemaDigest?: string,
-  methodIndex?: string
+  methodIndex?: string,
+  certifiedMatches?: CertifiedQueryMatch[]
 ): string {
   const preamble = `You are an expert Data Analyst & Engineering BI Assistant powered by OpenUI Generative UI and MCP (Model Context Protocol).
 
 ${dataAccessSection(activeSources)}
 ${schemaDigestSection(schemaDigest)}
+${certifiedQueriesSection(certifiedMatches)}
 ${methodIndexSection(methodIndex)}
 ${methodNamingSection(methodIndex)}
 ${crossSourceSection(activeSources)}
@@ -250,7 +310,10 @@ Dashboards whose components bind directly to query results can be refreshed late
     preamble,
     additionalRules: [
       "CRITICAL: After executing MCP tools, you MUST generate the final analysis and the complete ```openui ... ``` code block. Do NOT finish early with just punctuation or empty text.",
-      "Dual-Termination Contract (双重终态): Once data is retrieved and the full markdown analysis + ```openui ... ``` code block is output, you may conclude naturally (finishReason=stop), OR call `finish_task` to explicitly mark task closure. Do NOT call data retrieval tools after concluding your findings.",
+      "Single Output Enforcement (单一交付物原则): In any response turn, produce EXACTLY ONE Markdown analytical report and EXACTLY ONE ```openui ... ``` code block. NEVER duplicate, copy-paste, or repeat the report or code block in the same turn. If you call `finish_task` after already writing the report and dashboard, your post-finish response must be a brief 1-sentence sign-off, NOT a repetition of the report.",
+      "Dual-Termination Contract (双重终态): Once data is retrieved and the full markdown analysis + ```openui ... ``` code block is output, you may conclude naturally (finishReason=stop), OR call `finish_task` to explicitly mark task closure. Calling `finish_task` does NOT replace the final analysis if not yet output; but if you have ALREADY output the report and dashboard, do NOT re-generate or duplicate them after calling finish_task. Never stop inside a thinking block or with empty content.",
+      "Reasoning Token Budget: In thinking models (e.g. GLM, DeepSeek), keep <think> reasoning concise and focused on tool call strategy and logical checks. Do NOT write full analysis reports or draft extensive markdown inside <think> — reserve the vast majority of the output token budget for the final markdown report and ```openui code block.",
+      "Compact Dashboard Code: Keep the dashboard visual structure clean and focused (typically 1-2 core charts, key metrics, and actionable insights). Avoid overly bloated datasets or sprawling multi-level layouts in the DSL to guarantee the output completes and closes within the token budget.",
       "Your response MUST contain valid openui-lang code inside ```openui and ``` code fence.",
       "root = Root(...) MUST be the first statement in the openui code block.",
       "Populate actual data rows/objects fetched from MCP tools inside the data arrays for charts, funnels, timelines, and tables.",
@@ -274,12 +337,14 @@ Dashboards whose components bind directly to query results can be refreshed late
 export function getOpenUIPlanPrompt(
   activeSources: ActiveSourceSummary[],
   schemaDigest?: string,
-  methodIndex?: string
+  methodIndex?: string,
+  certifiedMatches?: CertifiedQueryMatch[]
 ): string {
   const preamble = `You are an expert Data Analyst doing REQUIREMENT SCOPING before any dashboard is built, powered by OpenUI Generative UI and MCP (Model Context Protocol).
 
 ${dataAccessSection(activeSources)}
 ${schemaDigestSection(schemaDigest)}
+${certifiedQueriesSection(certifiedMatches)}
 ${methodIndexSection(methodIndex)}
 ${methodSelectionSection(methodIndex)}
 
@@ -336,9 +401,10 @@ The user just asked an analytical question. Your job:
 export function getExecuteSystemPrompt(
   activeSources: ActiveSourceSummary[],
   schemaDigest?: string,
-  methodDetails?: string
+  methodDetails?: string,
+  certifiedMatches?: CertifiedQueryMatch[]
 ): string {
-  const base = getOpenUISystemPrompt(activeSources, schemaDigest);
+  const base = getOpenUISystemPrompt(activeSources, schemaDigest, undefined, certifiedMatches);
   return `${base}
 ${methodDetailsSection(methodDetails)}
 
@@ -346,7 +412,10 @@ ${methodDetailsSection(methodDetails)}
 The conversation history contains an analysis plan (PlanReviewCard) the user has now confirmed, possibly with clarification answers.
 - Execute the confirmed plan now: skip re-planning, do not ask further questions. Fetch the real data and produce the complete analytical markdown report plus the full \`\`\`openui dashboard following the confirmed steps and chosen visuals.
 - Exact Column References: Always reference exact column names in SQL, wrapping any column containing spaces, parentheses, or brackets in double quotes (e.g. \"场景 （对应五大场景，可对应多个）\"). Never truncate or fabricate column headers, and do not use '\\n' for multiline Excel headers (normalized to single spaces).
-- Dual-Termination: When your analysis and dashboard are complete, you can conclude naturally, or call \`finish_task\` to explicitly confirm execution closure.
+- Compact Dashboard Code: Keep the dashboard visual structure clean and focused (typically 1-2 core charts, key metrics, and actionable insights). Avoid overly bloated datasets or sprawling multi-level layouts in the DSL to guarantee the output completes and closes within the token budget.
+- Reasoning Token Budget: In thinking models (e.g. GLM, DeepSeek), keep <think> reasoning concise and lightweight (focus on tool coordination and logic verification). Do NOT draft the full analytical report or verbose markdown inside <think> tags — reserve the output token budget for the final report and the \`\`\`openui dashboard.
+- Dual-Termination: When your analysis and dashboard are complete, you can conclude naturally, or call \`finish_task\` to explicitly confirm execution closure. Note: Output EXACTLY ONE analytical report and EXACTLY ONE \`\`\`openui dashboard code block per response turn; NEVER repeat or output a second duplicate copy after finish_task.
+- Single Output Enforcement: In your execution response, produce exactly ONE analytical report and exactly ONE \`\`\`openui dashboard. If \`finish_task\` is called after the report/dashboard is already written, close with a brief sign-off sentence only.
 - If the user's latest message fundamentally changes or rejects the confirmed plan, do NOT force the old plan — output a REVISED PlanReviewCard instead (planning-mode output contract applies).
 - If the user's latest message is an unrelated new question, just answer it following the normal rules above.`;
 }
