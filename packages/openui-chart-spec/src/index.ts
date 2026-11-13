@@ -189,6 +189,10 @@ export const ChartSpecSchema = z
     style: styleSchema.optional(),
     /** 取数源；缺省 = 当前唯一激活源，多源场景必填（渲染侧提示） */
     sourceId: z.string().regex(SOURCE_ID_RE).optional(),
+    /** 数据表名（内联快照声明或刷新物化用） */
+    table: z.string().optional(),
+    /** 已物化的数据行快照（LLM 生成期直接内联物化时使用） */
+    data: z.array(z.record(z.string(), z.unknown())).optional(),
     /**
      * MCP 源取数声明（非 db 源必填）：物化退化路径先经此工具拉原始行，
      * 再按 dims/meas 聚合（TransformSpec 投影）+ filters 行级谓词过滤。
@@ -282,3 +286,9 @@ export function specToGroupByAndMetrics(spec: ChartSpec): {
     metrics: Object.fromEntries(spec.meas.map((m) => [m.field, m.agg])),
   };
 }
+
+// DashboardSpec 2.0 声明式状态树与契约
+export * from "./dashboardSpec";
+
+// RFC 6902 JSON Patch 增量编辑引擎
+export * from "./jsonPatch";
