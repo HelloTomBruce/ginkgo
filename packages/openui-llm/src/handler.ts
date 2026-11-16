@@ -41,6 +41,8 @@ import { getOpenUISystemPrompt, getOpenUIPlanPrompt, getExecuteSystemPrompt } fr
 import { getCrossSourceLinks, resolveCrossSourcePairs } from "./crossSourceMap";
 import { SessionStreamHub, defaultStreamHub } from "./streamHub";
 import { createReasoningFetch } from "./reasoningStream";
+import type { RunId, TelemetrySink } from "./telemetry";
+import { createConsoleSink, jsonByteSize, newRunId } from "./telemetry";
 
 /** 全部启用源结构卡注入 prompt 的总量预算（与单卡 2KB 预算配套，快照测试守护） */
 export const SCHEMA_DIGEST_TOTAL_BUDGET_BYTES = 8 * 1024;
@@ -48,14 +50,14 @@ export const SCHEMA_DIGEST_TOTAL_BUDGET_BYTES = 8 * 1024;
 /**
  * 组装启用源的结构卡摘要：逐源读卡（渲染职责在 datasources 包），
  * 依据用户提问相关度优先展开核心表，按总量预算降序纳入，超限的源省略并标注。
- * 读卡失败静默跳过（不阻塞分析）。
+ * 读卡失败静默跳过（不阻塞分析）。返回摘要文本与因预算被省略的源数（供遥测告警）。
  */
 async function buildSchemaDigest(
   datasources: DatasourceManager,
   activeSources: ActiveSourceSummary[],
   queryHint?: string
-): Promise<string | undefined> {
-  if (activeSources.length === 0) return undefined;
+): Promise<{ text?: string; omitted: number }> {
+  if (activeSources.length === 0) return { omitted: 0 };
   const sections: string[] = [];
   let used = 0;
   let omitted = 0;
@@ -75,11 +77,11 @@ async function buildSchemaDigest(
       // 读卡失败不阻塞分析
     }
   }
-  if (sections.length === 0) return undefined;
+  if (sections.length === 0) return { omitted };
   if (omitted > 0) {
     sections.push(`（另有 ${omitted} 个数据源的结构卡因总量预算省略，可用工具现场探查）`);
   }
-  return sections.join("\n\n");
+  return { text: sections.join("\n\n"), omitted };
 }
 
 /** 提取对话历史中最后一条用户提问文本作为表画像召回提示词 */
@@ -99,6 +101,62 @@ function extractLatestUserQuery(messages: unknown[]): string | undefined {
     }
   }
   return undefined;
+}
+
+/**
+ * 工具执行遥测包装:为数据源工具的 execute 叠加耗时/结果量级/成败采集,
+ * 不改变工具的输入输出语义(含失败重抛)。无 execute 的纯查询型工具原样透传。
+ */
+function instrumentTools(
+  tools: Record<string, CoreTool>,
+  ctx: { runId: RunId; sessionId?: string; sourceId?: string; telemetry: TelemetrySink }
+): Record<string, CoreTool> {
+  const wrapped: Record<string, CoreTool> = {};
+  for (const [name, t] of Object.entries(tools)) {
+    const orig = t as { execute?: (args: unknown, opts: unknown) => Promise<unknown> };
+    if (typeof orig.execute !== "function") {
+      wrapped[name] = t;
+      continue;
+    }
+    const origExecute = orig.execute.bind(t);
+    wrapped[name] = {
+      ...t,
+      execute: async (args: unknown, callOpts: unknown) => {
+        const t0 = Date.now();
+        try {
+          const result = await origExecute(args, callOpts);
+          ctx.telemetry.emit({
+            type: "tool_result",
+            runId: ctx.runId,
+            sessionId: ctx.sessionId,
+            tool: name,
+            sourceId: ctx.sourceId,
+            ok: !(
+              result &&
+              typeof result === "object" &&
+              (result as { isError?: unknown }).isError === true
+            ),
+            bytes: jsonByteSize(result),
+            durationMs: Date.now() - t0,
+          });
+          return result;
+        } catch (err) {
+          ctx.telemetry.emit({
+            type: "tool_result",
+            runId: ctx.runId,
+            sessionId: ctx.sessionId,
+            tool: name,
+            sourceId: ctx.sourceId,
+            ok: false,
+            bytes: -1,
+            durationMs: Date.now() - t0,
+          });
+          throw err;
+        }
+      },
+    } as CoreTool;
+  }
+  return wrapped;
 }
 
 /**
@@ -162,6 +220,12 @@ export interface AnalyzeHandlerOptions {
   streamHub?: SessionStreamHub;
   /** 认证口径知识库（可选注入；缺省尝试读取 config/certified-queries.json） */
   certifiedStore?: CertifiedQueryStore;
+  /**
+   * 结构化遥测 sink（可选注入；缺省 NDJSON console）。
+   * 注意：注入自建 SessionStreamHub 时需在 hub 构造函数传入同一 sink，
+   * hub 内部事件（abort/reader error）才会汇入同一事件流。
+   */
+  telemetry?: TelemetrySink;
 }
 
 export interface AnalyzeRequestBody {
@@ -219,13 +283,17 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
       configPath: path.join(process.cwd(), "config/certified-queries.json"),
     });
 
+  // 注入替换缺省(需要 console+OTel 双写时由 app 侧传 compositeSink(consoleSink, otelSink))
+  const telemetry = opts.telemetry ?? createConsoleSink();
+
   const POST = async function (req: Request) {
+    const runId = newRunId();
     try {
       const rawBody = (await req.json()) as AnalyzeRequestBody;
       if (rawBody && typeof rawBody === "object" && rawBody.action === "stop") {
         const sid = rawBody.sessionId;
         if (sid) {
-          streamHub.abortTask(sid);
+          streamHub.abortTask(sid, "user");
         }
         return Response.json({ ok: true, stopped: true });
       }
@@ -245,11 +313,20 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
         maxSteps: clientMaxSteps,
       } = rawBody;
 
+      // 遥测用的会话 id(缺省 undefined,贯穿全事件)
+      const sessionIdForEvents =
+        typeof clientSessionId === "string" && clientSessionId ? clientSessionId : undefined;
+
       // 检查是否为流重连请求（如页面刷新后客户端发起无缝续接）：
       // 若带有 reconnect 标记且服务端保留有该会话在途或刚完成的流任务，直接返回重连流
       const isReconnect = Boolean(rawBody && typeof rawBody === "object" && rawBody.reconnect);
       if (clientSessionId && isReconnect && streamHub.hasTask(clientSessionId)) {
-        console.log(`[StreamHub] Reconnecting to task for session ${clientSessionId}`);
+        telemetry.emit({
+          type: "reconnect",
+          runId,
+          sessionId: clientSessionId,
+          replayedChunks: streamHub.getTask(clientSessionId)?.chunks.length ?? 0,
+        });
         const reconnResp = streamHub.createResponse(clientSessionId);
         if (reconnResp) return reconnResp;
       }
@@ -298,11 +375,16 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
           : defaultMaxSteps;
       const maxSteps = Math.min(Math.max(Math.round(rawMaxSteps), 1), 100);
 
-      console.log("[Analyze API Request]", { model, baseURL, protocol: clientProtocol ?? "openai", mode, maxSteps, hasApiKey: !!apiKey });
-
       // 安全约束：客户端自带 baseURL 时必须同时自带 apiKey。
       // 否则服务端会拿着 env 中的真实 Key 去请求客户端指定的任意 URL —— 凭证外泄通道。
       if (clientBaseURL && !clientKey) {
+        telemetry.emit({
+          type: "warn",
+          runId,
+          sessionId: sessionIdForEvents,
+          code: "CRED_GUARD_REJECTED",
+          detail: "自定义 baseURL 时未提供 apiKey，拒绝以环境凭证请求任意 URL",
+        });
         return Response.json(
           { error: "自定义 baseURL 时必须同时提供 apiKey（不允许与服务端环境凭证混用）" },
           { status: 400 }
@@ -311,6 +393,13 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
 
       // 当未配置 Key 时，返回合规的 Data Stream 协议响应
       if (!apiKey) {
+        telemetry.emit({
+          type: "warn",
+          runId,
+          sessionId: sessionIdForEvents,
+          code: "NO_API_KEY",
+          detail: "请求缺apiKey且服务端无环境凭证，返回设置引导降级流",
+        });
         const msg = `⚠️ 请先在右上角「设置」中配置您的 API Key。\n\n\`\`\`openui\nInsightBox(type="warning", title="未检测到 LLM API Key", content="请点击右上角「设置」进入「模型配置」输入 API Key，开启由 Vercel AI SDK 与多数据源 MCP（内置 + 动态配置）驱动的流式数据分析看板。")\n\`\`\``;
         const dataStreamChunk = `0:${JSON.stringify(msg)}\nd:{"finishReason":"stop","usage":{"promptTokens":0,"completionTokens":0}}\n`;
 
@@ -322,6 +411,16 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
           },
         });
       }
+
+      // run_start:守卫(凭证/Key)全部通过,分析真正开始
+      telemetry.emit({
+        type: "run_start",
+        runId,
+        sessionId: sessionIdForEvents,
+        mode,
+        model,
+        maxSteps,
+      });
 
       // 协议分派：anthropic 端点（如 Kimi Coding，实际路径 /v1/messages，baseURL 自动补 /v1）
       // 或缺省 openai 兼容端点（/chat/completions，baseURL 去尾斜杠）
@@ -364,13 +463,27 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
       const loadedTools: Record<string, CoreTool> = {};
       settledResults.forEach((r, i) => {
         if (r.status === "rejected") {
-          console.warn(
-            `[Analyze API] ${toolEntries[i].id} 工具加载失败，降级为空工具集:`,
-            r.reason
-          );
+          telemetry.emit({
+            type: "warn",
+            runId,
+            sessionId: sessionIdForEvents,
+            code: "TOOL_LOAD_FAILED",
+            detail: `${toolEntries[i].id} 工具加载失败，降级为空工具集: ${
+              r.reason instanceof Error ? r.reason.message : String(r.reason)
+            }`,
+          });
           return;
         }
-        mergeToolSets(loadedTools, r.value, toolEntries[i].id);
+        mergeToolSets(
+          loadedTools,
+          instrumentTools(r.value, {
+            runId,
+            sessionId: sessionIdForEvents,
+            sourceId: toolEntries[i].id,
+            telemetry,
+          }),
+          toolEntries[i].id
+        );
       });
 
       // prompt 数据源清单：动态源写入实际装载到的工具名
@@ -394,16 +507,25 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
         : [];
 
       const schemaDigest = await buildSchemaDigest(datasources, summaries, userQueryHint);
+      if (schemaDigest.omitted > 0) {
+        telemetry.emit({
+          type: "warn",
+          runId,
+          sessionId: sessionIdForEvents,
+          code: "SCHEMA_DIGEST_OMITTED",
+          detail: `${schemaDigest.omitted} 个数据源结构卡因总量预算(${SCHEMA_DIGEST_TOTAL_BUDGET_BYTES}B)省略`,
+        });
+      }
       const methodDetails =
         mode === "execute"
           ? buildMethodDetailsFromMessages(methodLibrary, messages)
           : undefined;
       const baseSystem =
         mode === "plan"
-          ? getOpenUIPlanPrompt(summaries, schemaDigest, methodIndexText, certifiedMatches)
+          ? getOpenUIPlanPrompt(summaries, schemaDigest.text, methodIndexText, certifiedMatches)
           : mode === "execute"
-            ? getExecuteSystemPrompt(summaries, schemaDigest, methodDetails, certifiedMatches)
-            : getOpenUISystemPrompt(summaries, schemaDigest, methodIndexText, certifiedMatches);
+            ? getExecuteSystemPrompt(summaries, schemaDigest.text, methodDetails, certifiedMatches)
+            : getOpenUISystemPrompt(summaries, schemaDigest.text, methodIndexText, certifiedMatches);
 
       // ========== 上下文治理（投影式压缩，设计见 context.ts） ==========
       // 会话元数据读取失败静默降级（仅当次启发式，不阻塞分析）
@@ -466,7 +588,13 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
             }
           } catch (err) {
             // 摘要失败不阻塞分析：退化为 pruning 投影（模型端溢出由压缩恢复语义兜底）
-            console.warn("[上下文治理] 摘要生成失败，退化为 pruning 投影:", err);
+            telemetry.emit({
+              type: "warn",
+              runId,
+              sessionId: sessionIdForEvents,
+              code: "SUMMARY_FAILED",
+              detail: err instanceof Error ? err.message : String(err),
+            });
           }
         }
         if (summary) {
@@ -477,13 +605,14 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
         }
       }
       if (projection.pruned || projection.summarizeUpToIndex >= 0) {
-        console.log("[上下文治理]", {
+        telemetry.emit({
+          type: "context_projection",
+          runId,
+          sessionId: sessionIdForEvents,
           estimated: projection.estimatedPromptTokens,
           triggerAt: budget.triggerAt,
           pruned: projection.prunedCount,
           summarized: projection.summarizeUpToIndex >= 0,
-          before: (messages as CoreMessage[]).length,
-          after: projectedMessages.length,
         });
       }
 
@@ -508,20 +637,30 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
             required: ["project_id"],
           }),
           execute: async ({ project_id }) => {
-            console.log("[Vercel AI SDK -> CrossSource] cross_source_link:", project_id);
+            telemetry.emit({
+              type: "tool_result",
+              runId,
+              sessionId: sessionIdForEvents,
+              tool: "cross_source_link",
+              ok: true,
+              bytes: -1,
+              durationMs: 0,
+            });
             return getCrossSourceLinks(project_id);
           },
         });
       }
 
       // 使用现代 createDataStreamResponse 管理流生命周期，避免旧 StreamData 15秒悬挂超时警告与异常中止泄漏
+      const runStartTs = Date.now();
+      let stepIndex = 0;
+      let prevStepTs = runStartTs;
+      let lastStepPromptTokens: number | undefined;
+      let lastStepFinishReason: string | undefined;
+      let explicitFinishDetails: { status: string; summary?: string } | undefined;
+
       const rawResponse = createDataStreamResponse({
         execute: (dataStream) => {
-          // 跟踪最后一步的单步输入 promptTokens（反映对话历史的真实单次窗口占用峰值）
-          let lastStepPromptTokens: number | undefined;
-          let lastStepFinishReason: string | undefined;
-          let explicitFinishDetails: { status: string; summary?: string } | undefined;
-
           // 双重终态机制：显式终态工具 finish_task
           const finishTaskTool = tool({
             description:
@@ -547,9 +686,6 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
             }),
             execute: async ({ status, summary }) => {
               explicitFinishDetails = { status, summary };
-              console.log(
-                `[Dual-Termination] Explicit finish_task invoked: status=${status}, summary=${summary || ""}`
-              );
               dataStream.writeData({
                 type: "task_finish",
                 termination: "explicit",
@@ -580,11 +716,22 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
               finish_task: finishTaskTool,
             },
             maxSteps,
-            onStepFinish({ stepType, toolCalls, text, finishReason, usage }) {
+            onStepFinish({ toolCalls, finishReason, usage }) {
+              stepIndex++;
               lastStepFinishReason = finishReason;
-              console.log(
-                `[Vercel AI SDK Step Finish] type=${stepType}, finishReason=${finishReason}, toolCalls=${toolCalls?.length || 0}, textLength=${text?.length || 0}`
-              );
+              const stepDurationMs = Date.now() - prevStepTs;
+              prevStepTs = Date.now();
+              telemetry.emit({
+                type: "step_finish",
+                runId,
+                sessionId: sessionIdForEvents,
+                step: stepIndex,
+                finishReason: finishReason ?? "unknown",
+                toolCalls: (toolCalls ?? []).map((c) => c.toolName),
+                promptTokens:
+                  typeof usage?.promptTokens === "number" ? usage.promptTokens : undefined,
+                durationMs: stepDurationMs,
+              });
               if (usage && typeof usage.promptTokens === "number" && Number.isFinite(usage.promptTokens)) {
                 lastStepPromptTokens = usage.promptTokens;
                 // 单步完成后即时向下发送最新单步 token 用量（实时平滑刷新）
@@ -606,30 +753,40 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
               }
 
               // 双重终态判定：若未被显式 finish_task 捕获，则评估自然停止与截断兜底
+              let termination: string;
+              let status: string;
               if (!explicitFinishDetails) {
                 if (lastStepFinishReason === "stop" || lastStepFinishReason === undefined) {
-                  console.log("[Dual-Termination] Concluded via natural termination (finishReason=stop)");
-                  dataStream.writeData({
-                    type: "task_finish",
-                    termination: "natural",
-                    status: "completed",
-                  });
+                  termination = "natural";
+                  status = "completed";
                 } else if (lastStepFinishReason === "length") {
-                  console.warn("[Dual-Termination] Concluded via step limit / token length truncation");
-                  dataStream.writeData({
-                    type: "task_finish",
-                    termination: "step_limit_reached",
-                    status: "truncated",
-                  });
+                  termination = "step_limit_reached";
+                  status = "truncated";
                 } else {
-                  console.log(`[Dual-Termination] Concluded with finishReason=${lastStepFinishReason}`);
-                  dataStream.writeData({
-                    type: "task_finish",
-                    termination: lastStepFinishReason,
-                    status: "completed",
-                  });
+                  termination = lastStepFinishReason ?? "unknown";
+                  status = "completed";
                 }
+                dataStream.writeData({
+                  type: "task_finish",
+                  termination,
+                  status,
+                });
+              } else {
+                termination = "explicit";
+                status = explicitFinishDetails.status;
               }
+              telemetry.emit({
+                type: "task_finish",
+                runId,
+                sessionId: sessionIdForEvents,
+                termination,
+                status,
+                totalPromptTokens:
+                  typeof usage?.promptTokens === "number" ? usage.promptTokens : undefined,
+                totalCompletionTokens:
+                  typeof usage?.completionTokens === "number" ? usage.completionTokens : undefined,
+                durationMs: Date.now() - runStartTs,
+              });
 
               if (
                 sessions &&
@@ -649,17 +806,28 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
           result.mergeIntoDataStream(dataStream, { sendReasoning: true });
         },
         onError: (err: unknown) => {
-          console.error("[AI SDK Stream Error]:", err);
+          telemetry.emit({
+            type: "error",
+            runId,
+            sessionId: sessionIdForEvents,
+            code: "STREAM_ERROR",
+            detail: err instanceof Error ? err.message : String(err),
+          });
           return err instanceof Error ? err.message : String(err);
         },
       });
 
       if (clientSessionId) {
-        return streamHub.registerAndConsume(clientSessionId, rawResponse);
+        return streamHub.registerAndConsume(clientSessionId, rawResponse, { runId });
       }
       return rawResponse;
     } catch (err: unknown) {
-      console.error("Vercel AI SDK Route error in handler:", err);
+      telemetry.emit({
+        type: "error",
+        runId,
+        code: "HANDLER_ERROR",
+        detail: err instanceof Error ? err.message : String(err),
+      });
       const errorMessage = err instanceof Error ? err.message : "Unknown error";
       return new Response(
         `3:${JSON.stringify(errorMessage)}\n`,

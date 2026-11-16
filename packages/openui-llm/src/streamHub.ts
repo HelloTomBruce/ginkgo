@@ -9,12 +9,17 @@
  * 4. 显式中止（Abort）：支持前端主动暂停/中止后台在途任务。
  */
 
+import type { AbortReason, RunId, TelemetrySink } from "./telemetry";
+import { createConsoleSink } from "./telemetry";
+
 export interface StreamSubscriber {
   controller: ReadableStreamDefaultController<Uint8Array>;
 }
 
 export interface SessionStreamTask {
   sessionId: string;
+  /** 创建该任务的请求 id(遥测事件串联;watchdog 定时中止时也用) */
+  runId?: RunId;
   chunks: Uint8Array[];
   subscribers: Set<StreamSubscriber>;
   status: "running" | "completed" | "error";
@@ -26,6 +31,8 @@ export interface SessionStreamTask {
 
 export class SessionStreamHub {
   private tasks = new Map<string, SessionStreamTask>();
+
+  constructor(private sink: TelemetrySink = createConsoleSink()) {}
 
   hasRunningTask(sessionId: string): boolean {
     const task = this.tasks.get(sessionId);
@@ -40,9 +47,15 @@ export class SessionStreamHub {
     return this.tasks.get(sessionId);
   }
 
-  abortTask(sessionId: string): boolean {
+  abortTask(sessionId: string, reason: AbortReason = "user"): boolean {
     const task = this.tasks.get(sessionId);
     if (!task) return false;
+    this.sink.emit({
+      type: "abort",
+      runId: task.runId,
+      sessionId,
+      reason,
+    });
     task.abortController.abort();
     // reader 可能正阻塞在 read()（上游慢思考/hang 住），cancel 让 abort 即刻生效，
     // 否则要等下一个 chunk 恰好到来才检查 aborted，上游会继续消耗 token
@@ -97,17 +110,22 @@ export class SessionStreamHub {
 
   /**
    * 注册由 createDataStreamResponse 产生的原始流，启动服务端后台 Reader 持续消费，
-   * 并返回首个订阅者的 HTTP Response
+   * 并返回首个订阅者的 HTTP Response。meta.runId 用于遥测事件串联。
    */
-  registerAndConsume(sessionId: string, rawResponse: Response): Response {
+  registerAndConsume(
+    sessionId: string,
+    rawResponse: Response,
+    meta?: { runId?: RunId }
+  ): Response {
     // 若原会话已有未完成旧任务，先中止
     if (this.hasRunningTask(sessionId)) {
-      this.abortTask(sessionId);
+      this.abortTask(sessionId, "new_task");
     }
 
     const abortController = new AbortController();
     const task: SessionStreamTask = {
       sessionId,
+      runId: meta?.runId,
       chunks: [],
       subscribers: new Set(),
       status: "running",
@@ -121,11 +139,15 @@ export class SessionStreamHub {
       if (!reader) {
         // 上游响应无 body：任务即刻转入 error 并走统一清理，
         // 绝不能 early-return 绕过清理（否则 task 永久滞留 map，重连恒拿 error 流）
-        console.error(
-          "[StreamHub] rawResponse.body is not readable; terminating task"
-        );
         task.status = "error";
         task.error = new Error("Upstream response has no body");
+        this.sink.emit({
+          type: "error",
+          runId: task.runId,
+          sessionId,
+          code: "STREAM_BODY_UNREADABLE",
+          detail: "rawResponse.body is not readable; terminating task",
+        });
         this.closeSubscribers(task);
         this.scheduleCleanup(sessionId, task);
         return;
@@ -163,9 +185,15 @@ export class SessionStreamHub {
           }
         }
       } catch (err) {
-        console.error("[StreamHub] Reader error:", err);
         task.status = "error";
         task.error = err;
+        this.sink.emit({
+          type: "error",
+          runId: task.runId,
+          sessionId,
+          code: "READER_ERROR",
+          detail: err instanceof Error ? err.message : String(err),
+        });
       } finally {
         this.closeSubscribers(task);
         this.scheduleCleanup(sessionId, task);
