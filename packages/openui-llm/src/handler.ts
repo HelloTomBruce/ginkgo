@@ -593,7 +593,10 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
       for (const s of activeSources) {
         const conf = datasources.get(s.id);
         if (!conf) continue;
-        toolEntries.push({ id: s.id, tools: datasources.tools(conf).then(toAiTools) });
+        toolEntries.push({
+          id: s.id,
+          tools: datasources.tools(conf).then((bindings) => toAiTools(bindings, { sourceId: s.id })),
+        });
       }
 
       const settledResults = await Promise.allSettled(
@@ -823,6 +826,9 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
       let explicitFinishDetails: { status: string; summary?: string } | undefined;
       /** 最后一步的模型文本(plan 模式 onFinish 据此提取 methods,WS-4) */
       let lastStepText: string | undefined;
+      // WS-5 finish_task 不变量:跨步骤累计「已产出看板/规划卡」的证据
+      let hasDashboardOutput = false;
+      let hasPlanCardOutput = false;
       // 任务级中止控制器:abortTask(用户停止/看门狗超时)经 hub 触发后传导进
       // streamText 并以 error 语义终止订阅;预算熔断走独立 controller——只取消
       // provider 生成,流自然收尾(客户端已收到 task_finish,订阅不得 error)
@@ -858,6 +864,28 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
               required: ["status"],
             }),
             execute: async ({ status, summary }) => {
+              // WS-5 服务端不变量:completed 必须有产出证据(看板代码块或规划卡),
+              // 把提示词的「严禁无产出宣告完成」从软约束变成硬兜底
+              if (
+                status === "completed" &&
+                !hasDashboardOutput &&
+                !hasPlanCardOutput
+              ) {
+                telemetry.emit({
+                  type: "warn",
+                  runId,
+                  sessionId: sessionIdForEvents,
+                  code: "FINV_GATE_REJECTED",
+                  detail: `finish_task(completed) 被拒:无看板/规划卡产出证据`,
+                });
+                return {
+                  terminated: false,
+                  status: "rejected",
+                  summary: summary ?? "",
+                  message:
+                    "尚未输出分析报告与 ```openui 看板代码块（规划模式则为 PlanReviewCard），不能宣告 completed。请先完成正式输出；若确属数据缺失或遇到阻塞，请改用 status=insufficient_data 或 status=blocked。",
+                };
+              }
               explicitFinishDetails = { status, summary };
               dataStream.writeData({
                 type: "task_finish",
@@ -898,6 +926,9 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
               stepIndex++;
               if (typeof text === "string" && text.length > 0) {
                 lastStepText = text;
+                // 不变量证据跨步骤累计(报告与看板可能分步输出)
+                if (text.includes("```openui")) hasDashboardOutput = true;
+                if (text.includes("PlanReviewCard")) hasPlanCardOutput = true;
               }
               lastStepFinishReason = finishReason;
               const stepDurationMs = Date.now() - prevStepTs;

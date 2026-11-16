@@ -772,7 +772,7 @@ describe("双重终态识别与步数预算", () => {
     expect(Object.keys(arg.tools ?? {})).toContain("finish_task");
   });
 
-  it("显式调用 finish_task 触发 explicit 终态并返回确认消息", async () => {
+  it("显式调用 finish_task(insufficient_data,不受产出门禁限制)触发 explicit 终态并返回确认消息", async () => {
     const manager = await makeFakeManager();
     const POST = createAnalyzeHandler({ datasources: manager });
     const res = await POST(makeRequest({ messages: [], apiKey: "k" }));
@@ -785,16 +785,16 @@ describe("双重终态识别与步数预算", () => {
     expect(finishTool).toBeDefined();
 
     const result = (await finishTool.execute({
-      status: "completed",
-      summary: "分析完成",
+      status: "insufficient_data",
+      summary: "数据不足",
     })) as {
       terminated: boolean;
       status: string;
       summary: string;
     };
     expect(result.terminated).toBe(true);
-    expect(result.status).toBe("completed");
-    expect(result.summary).toBe("分析完成");
+    expect(result.status).toBe("insufficient_data");
+    expect(result.summary).toBe("数据不足");
   });
 
   it("未调用 finish_task 且模型正常 stop 时，触发 natural 终态兜底", async () => {
@@ -1248,5 +1248,77 @@ describe("Plan→execute 结构化交接（WS-4）", () => {
       .mocked(sessions.updateContext)
       .mock.calls.filter(([, patch]) => "pendingPlan" in patch);
     expect(pendingPatches).toHaveLength(0);
+  });
+});
+
+describe("finish_task 服务端不变量（WS-5）", () => {
+  const savedEnv: Record<string, string | undefined> = {};
+
+  beforeEach(() => {
+    for (const key of ["OPENAI_API_KEY", "LLM_API_KEY"]) {
+      savedEnv[key] = process.env[key];
+      delete process.env[key];
+    }
+    mockStreamOk();
+  });
+
+  afterEach(() => {
+    for (const [key, value] of Object.entries(savedEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    vi.clearAllMocks();
+  });
+
+  function makeTelemetrySpy() {
+    const events: Array<{ type: string; code?: string }> = [];
+    return { events, sink: { emit: (e: never) => events.push(e) } };
+  }
+
+  it("无产出证据宣告 completed:被服务端拒绝并返回纠正指令(terminated=false)", async () => {
+    const { events, sink } = makeTelemetrySpy();
+    const manager = await makeFakeManager();
+    const POST = createAnalyzeHandler({ datasources: manager, telemetry: sink });
+    await POST(makeRequest({ messages: [], apiKey: "k" }));
+
+    const arg = vi.mocked(streamText).mock.calls[0][0];
+    const finishTool = arg.tools?.finish_task as unknown as {
+      execute: (args: unknown) => Promise<{ terminated: boolean; status: string; message: string }>;
+    };
+    const result = await finishTool.execute({ status: "completed", summary: "完成" });
+
+    expect(result.terminated).toBe(false);
+    expect(result.status).toBe("rejected");
+    expect(result.message).toContain("insufficient_data");
+    expect(events.some((e) => e.type === "warn" && e.code === "FINV_GATE_REJECTED")).toBe(true);
+  });
+
+  it("已输出看板代码块后宣告 completed:正常闭环(terminated=true)", async () => {
+    vi.mocked(streamText).mockImplementation((opts) => {
+      return {
+        mergeIntoDataStream: vi.fn(() => {
+          opts.onStepFinish?.({
+            stepType: "text",
+            toolCalls: [],
+            finishReason: "stop",
+            text: '分析报告……\n```openui\nroot = Root([insight])\ninsight = InsightBox("tip","结论","内容")\n```',
+            usage: { promptTokens: 100, completionTokens: 50 },
+          } as never);
+          opts.onFinish?.({ usage: { promptTokens: 100 } } as never);
+        }),
+      } as never;
+    });
+
+    const manager = await makeFakeManager();
+    const POST = createAnalyzeHandler({ datasources: manager });
+    await POST(makeRequest({ messages: [], apiKey: "k" }));
+
+    const arg = vi.mocked(streamText).mock.calls[0][0];
+    const finishTool = arg.tools?.finish_task as unknown as {
+      execute: (args: unknown) => Promise<{ terminated: boolean; status: string }>;
+    };
+    const result = await finishTool.execute({ status: "completed", summary: "完成" });
+    expect(result.terminated).toBe(true);
+    expect(result.status).toBe("completed");
   });
 });
