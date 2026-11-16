@@ -570,7 +570,23 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
       const baseModel =
         clientProtocol === "anthropic"
           ? createAnthropic({ apiKey, baseURL: anthropicBase })(model)
-          : createOpenAI({ apiKey, baseURL: normalizedBase, fetch: createReasoningFetch() })(model);
+          : createOpenAI({
+              apiKey,
+              baseURL: normalizedBase,
+              // SSE 层挂两道防御:reasoning 字段标准化 + 重复循环熔断
+              // (推理模型退化时同一行字节级重复数百次,烧尽 maxTokens 才停)
+              fetch: createReasoningFetch(fetch, {
+                onCircuitBreak: (info) => {
+                  telemetry.emit({
+                    type: "warn",
+                    runId,
+                    sessionId: sessionIdForEvents,
+                    code: "REPETITION_CIRCUIT",
+                    detail: `输出重复循环已熔断:连续 ${info.repeats} 行相同,已产出 ${info.totalChars} 字符`,
+                  });
+                },
+              }),
+            })(model);
 
       // 提取 <think>...</think> 标签为标准 reasoning 分块（统一兼容 DeepSeek/Qwen 以及经由 createReasoningFetch 拦截转换的 GLM/Moonshot 等）
       const languageModel =

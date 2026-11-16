@@ -1,8 +1,9 @@
 // @vitest-environment node
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
   createReasoningContentTransformStream,
   createReasoningFetch,
+  createRepetitionCircuitBreakerStream,
 } from "./reasoningStream";
 
 async function readStream(stream: ReadableStream<Uint8Array>): Promise<string> {
@@ -127,5 +128,98 @@ describe("createReasoningContentTransformStream", () => {
         expect(typeof choice.index).toBe("number");
       }
     }
+  });
+});
+
+function contentDelta(text: string): string {
+  return `data: ${JSON.stringify({
+    choices: [{ index: 0, delta: { content: text }, finish_reason: null }],
+  })}\n\n`;
+}
+
+describe("重复循环熔断器", () => {
+  it("同一行连续重复 ≥15 次:注入截断说明并以规范 stop/[DONE] 终止,回调上报", async () => {
+    const onCircuitBreak = vi.fn();
+    const loopLine = "418,000 × 1.1531 = 482,xxx\n";
+    const chunks = [
+      contentDelta("## 增长预测\n\n"),
+      ...Array.from({ length: 20 }, () => contentDelta(loopLine)),
+      contentDelta("后续内容(真实场景不会到达)"),
+      "data: [DONE]\n\n",
+    ];
+    const out = await readStream(
+      makeStream(chunks).pipeThrough(
+        createRepetitionCircuitBreakerStream({ onCircuitBreak })
+      )
+    );
+
+    expect(onCircuitBreak).toHaveBeenCalledTimes(1);
+    expect(onCircuitBreak.mock.calls[0][0].repeats).toBeGreaterThanOrEqual(15);
+    expect(out).toContain("检测到输出进入重复循环");
+    expect(out).toContain('"finish_reason":"stop"');
+    expect(out).toContain("data: [DONE]");
+    // 终止后不再有内容分块
+    expect(out).not.toContain("后续内容");
+    // 截断说明在最后一个 content 分块中
+    const lastContentIdx = out.lastIndexOf("检测到输出进入重复循环");
+    expect(out.indexOf("data: [DONE]")).toBeGreaterThan(lastContentIdx);
+  });
+
+  it("合法表格行(内容各不相同)全部透传,不误伤", async () => {
+    const rows = Array.from(
+      { length: 30 },
+      (_, i) => contentDelta(`| 2025-${String(i % 12 + 1).padStart(2, "0")} | ${1000 + i * 7} |\n`)
+    );
+    const chunks = [
+      contentDelta("| 月份 | 收入 |\n|---|---|\n"),
+      ...rows,
+      "data: [DONE]\n\n",
+    ];
+    const out = await readStream(
+      makeStream(chunks).pipeThrough(createRepetitionCircuitBreakerStream())
+    );
+    // out 是 SSE 字节流:断言解码后的 content 子串(JSON 内原文)存在
+    expect(out).not.toContain("重复循环");
+    expect(out).toContain("2025-06");
+    expect(out).toContain("1203");
+    expect(out).toContain("data: [DONE]");
+  });
+
+  it("短行(<6 字符)不计入重复判定", async () => {
+    const chunks = [
+      ...Array.from({ length: 30 }, () => contentDelta("——\n")),
+      "data: [DONE]\n\n",
+    ];
+    const out = await readStream(
+      makeStream(chunks).pipeThrough(createRepetitionCircuitBreakerStream())
+    );
+    expect(out).not.toContain("重复循环");
+    expect((out.match(/——/g) ?? []).length).toBeGreaterThanOrEqual(30);
+  });
+
+  it("createReasoningFetch 组合管道:reasoning 映射 + 熔断协同工作", async () => {
+    const onCircuitBreak = vi.fn();
+    const loopLine = "monthly = prev * 1.1531, forever and ever\n";
+    const sseChunks = [
+      'data: {"choices":[{"delta":{"reasoning_content":"先推理"}}]}\n\n',
+      ...Array.from({ length: 20 }, () => contentDelta(loopLine)),
+      "data: [DONE]\n\n",
+    ];
+    const fakeFetch = vi.fn(async () =>
+      new Response(makeStream(sseChunks), {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      })
+    );
+    const wrappedFetch = createReasoningFetch(fakeFetch as unknown as typeof fetch, {
+      onCircuitBreak,
+    });
+    const res = await wrappedFetch("https://api.example.com/chat/completions");
+    const text = await res.text();
+
+    expect(onCircuitBreak).toHaveBeenCalledTimes(1);
+    expect(text).toContain("<think>先推理");
+    expect(text).toContain("</think>");
+    expect(text).toContain("检测到输出进入重复循环");
   });
 });
