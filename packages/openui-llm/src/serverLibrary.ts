@@ -35,7 +35,7 @@ export const serverFocusLayout = defineComponent({
     title: z.string().describe("深钻主题标题，如：为什么 Q3 CAC 上升"),
     subtitle: z.string().optional().describe("聚焦对象或范围说明"),
     main: z.array(z.any()).optional().describe("主分析区：核心趋势/对比图表数组（AnalyticsChart/FunnelChart/RadarChart）"),
-    side: z.array(z.any()).optional().describe("侧栏洞察：InsightBox/GaugeProgress/MetricCard/ActionPlanCard 数组"),
+    side: z.array(z.any()).optional().describe("侧栏洞察（1/3 窄列，仅放紧凑结论件）：InsightBox/GaugeProgress/单个 MetricCard 或 MetricGrid；ActionPlanCard/ActivityTimeline/DataTable 等内容密集组件须放 detail"),
     detail: z.array(z.any()).optional().describe("底部全宽明细区：DataTable 数组"),
     controls: z.any().optional().describe("全局控制区：AnalyticsFilterBar 等筛选组件"),
   }),

@@ -13,13 +13,23 @@ export const MetricGrid: React.FC<MetricGridProps> = ({
   children,
   columns = 3,
 }) => {
+  // 列数只随【自身分得宽度】自适应，两处易错点缺一不可：
+  // 1. 不能用视口断点（sm:/lg:）——桌面窗口恒宽，会把 3 列硬塞进 FocusLayout
+  //    1/3 侧栏（约 300px）导致卡片挤作一团；
+  // 2. @container 必须在外层 wrapper 上——元素不能容器查询自身，若与响应式类
+  //    同处一个元素，@sm/@lg 会解析到祖先容器（如 FocusLayout 根，恒为宽），
+  //    同样永远量不到自身真实宽度
   const colClass = {
-    2: "grid-cols-1 sm:grid-cols-2 @sm:grid-cols-2",
-    3: "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 @sm:grid-cols-2 @lg:grid-cols-3",
-    4: "grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 @sm:grid-cols-2 @lg:grid-cols-4",
-  }[columns] || "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 @sm:grid-cols-2 @lg:grid-cols-3";
+    2: "grid-cols-1 @sm:grid-cols-2",
+    3: "grid-cols-1 @sm:grid-cols-2 @lg:grid-cols-3",
+    4: "grid-cols-1 @sm:grid-cols-2 @lg:grid-cols-4",
+  }[columns] || "grid-cols-1 @sm:grid-cols-2 @lg:grid-cols-3";
 
-  return <div className={`@container grid gap-4 w-full min-w-0 ${colClass}`}>{children}</div>;
+  return (
+    <div className="@container w-full min-w-0">
+      <div className={`grid gap-4 min-w-0 ${colClass}`}>{children}</div>
+    </div>
+  );
 };
 
 // ===== OpenUI 组件库定义 =====

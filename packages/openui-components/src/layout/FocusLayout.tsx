@@ -11,8 +11,9 @@ import { renderSafeLayout } from "../internal/layoutZone";
  *
  * 区块（zone）语义约定——LLM 侧同步见 llm 包 serverFocusLayout：
  * - main     主分析区：AnalyticsChart / FunnelChart / RadarChart 等主图（有侧栏时占 2/3，无侧栏时占满）
- * - side     侧栏洞察：InsightBox / GaugeProgress / MetricCard / ActionPlanCard 等结论件
- * - detail   底部全宽明细：DataTable
+ * - side     侧栏洞察（1/3 窄列，仅紧凑结论件）：InsightBox / GaugeProgress / 单个 MetricCard 或 MetricGrid；
+ *            ActionPlanCard / ActivityTimeline / DataTable 等内容密集组件归 detail
+ * - detail   底部全宽明细：DataTable / ActionPlanCard / ActivityTimeline
  * side/detail 可选，未提供的区块不渲染占位。
  */
 export interface FocusLayoutProps {
@@ -59,26 +60,29 @@ export const FocusLayout: React.FC<FocusLayoutProps> = ({
       {/* 控制区：筛选器/时间区间选择器 */}
       {controls ? <div className="w-full">{controls}</div> : null}
 
-      {/* 主区 + 侧栏：有侧栏时 2/3 + 1/3，无侧栏时主区占满，支持容器查询 */}
+      {/* 主区 + 侧栏：有侧栏时 2/3 + 1/3，无侧栏时主区占满，支持容器查询。
+          列容器必须 min-w-0：Grid 子项默认 min-width:auto（不小于内容固有最小宽度），
+          长文本/长数字/定宽图表会把 1/3 侧栏（或 2/3 主区）轨道撑破导致整行错位——
+          ReportLayout 的 [&>*]:min-w-0 是同一防御的既有先例 */}
       {main || side ? (
         <div className="grid grid-cols-1 lg:grid-cols-3 @lg:grid-cols-3 gap-4 items-start">
           {main ? (
             <div
               className={
                 side
-                  ? "lg:col-span-2 @lg:col-span-2 space-y-4"
-                  : "lg:col-span-3 @lg:col-span-3 space-y-4"
+                  ? "lg:col-span-2 @lg:col-span-2 space-y-4 min-w-0"
+                  : "lg:col-span-3 @lg:col-span-3 space-y-4 min-w-0"
               }
             >
               {main}
             </div>
           ) : null}
-          {side ? <div className="space-y-4">{side}</div> : null}
+          {side ? <div className="space-y-4 min-w-0">{side}</div> : null}
         </div>
       ) : null}
 
-      {/* 底部全宽明细区 */}
-      {detail ? <div className="w-full space-y-4">{detail}</div> : null}
+      {/* 底部全宽明细区（min-w-0 同理防御定宽内容） */}
+      {detail ? <div className="w-full space-y-4 min-w-0">{detail}</div> : null}
     </div>
   );
 };
@@ -92,8 +96,8 @@ export const FocusLayoutDef = defineComponent({
     title: z.any().optional().describe("深钻主题标题，如：为什么 Q3 CAC 上升"),
     subtitle: z.any().optional().describe("聚焦对象或范围说明"),
     main: z.any().optional().describe("主分析区：核心趋势/对比图表数组"),
-    side: z.any().optional().describe("侧栏洞察：InsightBox/GaugeProgress/MetricCard/ActionPlanCard 数组"),
-    detail: z.any().optional().describe("底部全宽明细区：DataTable 数组"),
+    side: z.any().optional().describe("侧栏洞察（1/3 窄列，仅紧凑结论件）：InsightBox/GaugeProgress/单个 MetricCard 或 MetricGrid 数组；ActionPlanCard/ActivityTimeline/DataTable 等内容密集组件须放 detail"),
+    detail: z.any().optional().describe("底部全宽明细区：DataTable/ActionPlanCard/ActivityTimeline 数组"),
     controls: z.any().optional().describe("全局控制区：AnalyticsFilterBar 等筛选组件"),
   }),
   component: ({

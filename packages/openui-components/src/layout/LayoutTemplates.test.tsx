@@ -41,6 +41,20 @@ describe("FocusLayout 深钻模板", () => {
     render(<FocusLayout title="带筛选" controls={<div data-testid="focus-controls">筛选组件</div>} />);
     expect(screen.getByTestId("focus-controls")).toBeInTheDocument();
   });
+
+  it("主区/侧栏/明细列容器均带 min-w-0（防内容固有宽度撑破栅格轨道导致错位）", () => {
+    render(
+      <FocusLayout
+        main={<div>主图</div>}
+        side={<div>侧栏</div>}
+        detail={<div>明细</div>}
+      />
+    );
+    for (const text of ["主图", "侧栏", "明细"]) {
+      const zone = screen.getByText(text).parentElement;
+      expect(zone?.className).toContain("min-w-0");
+    }
+  });
 });
 
 describe("ComparisonLayout 对比模板", () => {

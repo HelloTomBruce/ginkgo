@@ -38,7 +38,7 @@ insight = InsightBox("tip", "Q4 预算再分配建议", "TikTok Ads 的 CAC 最�
  * 深钻归因 few-shot：单一主题根因分析 → FocusLayout（主图 + 侧栏洞察 + 底部明细）。
  */
 export const focusLayoutExample = `root = Root([focus])
-focus = FocusLayout("为什么 Q3 CAC 上升", "TikTok Ads 单渠道归因", [chart], [gauge, insight, plan], [table])
+focus = FocusLayout("为什么 Q3 CAC 上升", "TikTok Ads 单渠道归因", [chart], [gauge, insight], [plan, table])
 chart = AnalyticsChart("line", "CAC 周趋势", "Q3 逐周 CAC 变化", "week", [{"week":"W27","cac":16.1},{"week":"W31","cac":17.8},{"week":"W35","cac":19.9},{"week":"W39","cac":21.4}], [{"key":"cac","label":"CAC ($)","color":"#3b82f6"}])
 gauge = GaugeProgress("Q4 CAC 控制目标", "目标压回 $18 以下", 21.4, 18, "$", "当前超标 19%")
 insight = InsightBox("warning", "归因结论", "素材疲劳是主因：CTR 由 2.1% 降至 1.4%，CPM 未涨，量级放大 2.4 倍摊薄了精准度。")
@@ -252,7 +252,7 @@ ${crossSourceSection(activeSources)}
 ## Visual Component Kit (OpenUI Lang):
 You have a rich set of declarative components available:
 - **ReportLayout(title, subtitle?, kpis?, charts?, detail?, insights?, controls?)**: BI report layout template — page header + KPI strip + 2-col charts zone + full-width detail zone + insights zone + optional controls. Use it for periodic comprehensive reviews (business/growth/iteration reports). Pass raw MetricCard arrays in kpis (NOT MetricGrid — the template grids them itself).
-- **FocusLayout(title, subtitle?, main, side?, detail?, controls?)**: deep-dive layout — wide main chart zone (2/3) + narrow sidebar insights (1/3) + optional bottom detail + optional controls. Use it for single-topic root-cause analysis / attribution ("why did X rise/drop").
+- **FocusLayout(title, subtitle?, main, side?, detail?, controls?)**: deep-dive layout — wide main chart zone (2/3) + narrow sidebar insights (1/3) + optional bottom detail + optional controls. Use it for single-topic root-cause analysis / attribution ("why did X rise/drop"). The 1/3 sidebar fits ONLY compact widgets (InsightBox/GaugeProgress/single MetricCard/MetricGrid); put content-heavy components (ActionPlanCard/ActivityTimeline/DataTable) in detail, never in side.
 - **ComparisonLayout(title, subtitle?, leftLabel, left, rightLabel, right, verdict?, controls?)**: side-by-side comparison layout with labeled panels + optional verdict zone + optional controls. Use it for A/B tests or comparing two channels/repos/members/versions.
 - **MonitoringLayout(title, subtitle?, status?, statusBanner?, controls?, anomalies?, details?, actions?)**: System health / stability inspection / alert triage layout with status indicator, anomaly metrics, logs/details, and mitigation plans.
 - **CohortRetentionLayout(title, subtitle?, controls?, kpis?, heatmapMatrix?, decayTrend?, verdict?)**: User cohort and lifecycle retention analysis template with headline metrics, retention matrix, decay curve, and verdict.
