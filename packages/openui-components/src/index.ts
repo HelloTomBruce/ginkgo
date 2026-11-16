@@ -7,14 +7,15 @@
  * React 组件与其 defineComponent 定义，最后在下方 CATALOG_GROUPS
  * 对应分组注册一行——library 渲染清单与组件展示目录均由此派生）：
  *
- *   layout/      布局与模板    Root、MetricGrid + 布局模板（ReportLayout/FocusLayout/ComparisonLayout）
+ *   layout/      布局与模板    Root、MetricGrid + 布局模板（ReportLayout/FocusLayout/ComparisonLayout/MonitoringLayout/CohortRetentionLayout）
  *   metrics/     指标类        MetricCard、GaugeProgress
- *   charts/      图表类        AnalyticsChart、FunnelChart、RadarChart、ContributionHeatmap
- *   data/        数据明细      DataTable
+ *   charts/      图表类        AnalyticsChart、SpecChart、ComboChart、FunnelChart、RadarChart、ContributionHeatmap（共享基建 registry/chartShared/filterBus）
+ *   data/        数据明细      DataTable、RankingList
  *   insight/     洞察结论      InsightBox、ActionPlanCard
  *   timeline/    时间线        ActivityTimeline
  *   interaction/ 交互控件      AnalyticsFilterBar、ActionButton、ReactiveSimulator、PlanReviewCard
- *   internal/    内部支撑      ErrorBoundary、ComponentSafeWrapper、parseProp、csv（不对外承诺稳定性）
+ *   spec/        声明式渲染    DashboardSpecRenderer（DashboardSpec 2.0 → 栅格看板）
+ *   internal/    内部支撑      ErrorBoundary、ComponentSafeWrapper、layoutZone、parseProp、csv、niceScale（不对外承诺稳定性）
  *
  * 扩展指南见包内 README.md。
  */
