@@ -924,3 +924,43 @@ describe("双重终态识别与步数预算", () => {
     expect(POST.isSessionRunning("sess_recon_test")).toBe(false);
   });
 });
+
+describe("任务中止传导（WS-2:abortTask → streamText abortSignal）", () => {
+  const savedEnv: Record<string, string | undefined> = {};
+
+  beforeEach(async () => {
+    for (const key of ["OPENAI_API_KEY", "LLM_API_KEY"]) {
+      savedEnv[key] = process.env[key];
+      delete process.env[key];
+    }
+    mockStreamOk();
+  });
+
+  afterEach(() => {
+    for (const [key, value] of Object.entries(savedEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    vi.clearAllMocks();
+  });
+
+  it("streamText 接收任务 abortSignal;用户停止后 signal 被触发(取消 provider 生成/计费)", async () => {
+    const manager = await makeFakeManager();
+    const POST = createAnalyzeHandler({ datasources: manager });
+
+    // 发起会话任务(mock 流即刻完成,任务进 30s 终态保留窗,abortController 仍随 task 保留)
+    await POST(
+      makeRequest({ messages: [], apiKey: "k", sessionId: "sess_sig_test" })
+    );
+    const passedSignal = vi.mocked(streamText).mock.calls[0][0].abortSignal;
+    expect(passedSignal).toBeDefined();
+    expect(passedSignal?.aborted).toBe(false);
+
+    // 用户显式停止:hub.abortTask 触发同一 controller
+    const stopRes = await POST(
+      makeRequest({ action: "stop", sessionId: "sess_sig_test" } as never)
+    );
+    expect(((await stopRes.json()) as { stopped?: boolean }).stopped).toBe(true);
+    expect(passedSignal?.aborted).toBe(true);
+  });
+});

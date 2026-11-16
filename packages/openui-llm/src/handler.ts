@@ -658,6 +658,9 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
       let lastStepPromptTokens: number | undefined;
       let lastStepFinishReason: string | undefined;
       let explicitFinishDetails: { status: string; summary?: string } | undefined;
+      // 任务级中止控制器:abortTask(用户停止/看门狗超时/预算熔断)经 hub 触发后,
+      // 同一 signal 传导进 streamText——provider 侧生成即刻取消,不再继续计费
+      const taskAbortController = new AbortController();
 
       const rawResponse = createDataStreamResponse({
         execute: (dataStream) => {
@@ -710,6 +713,8 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
             temperature,
             // AI SDK v1 参数名为 maxTokens（透传 max_tokens；Anthropic 端点必填）
             maxTokens: maxOutputTokens,
+            // 任务中止信号:用户停止/看门狗超时/预算熔断统一经此取消 provider 生成
+            abortSignal: taskAbortController.signal,
             tools: {
               ...loadedTools,
               ...crossSourceTools,
@@ -818,7 +823,10 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
       });
 
       if (clientSessionId) {
-        return streamHub.registerAndConsume(clientSessionId, rawResponse, { runId });
+        return streamHub.registerAndConsume(clientSessionId, rawResponse, {
+          runId,
+          abortController: taskAbortController,
+        });
       }
       return rawResponse;
     } catch (err: unknown) {

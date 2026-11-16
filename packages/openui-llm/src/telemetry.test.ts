@@ -69,7 +69,7 @@ describe("SessionStreamHub 遥测事件", () => {
 
   it("abortTask 携带任务 runId 与中止原因;无任务时返回 false 且不发事件", async () => {
     const sink = spySink();
-    const hub = new SessionStreamHub(sink);
+    const hub = new SessionStreamHub({ sink });
     // 任务随后台 Reader 尽快完成,但保留在 map 中 30s 保留窗内
     hub.registerAndConsume("s1", makeStreamResponse(['0:"a"\n']), { runId: "run-1" });
 
@@ -91,7 +91,7 @@ describe("SessionStreamHub 遥测事件", () => {
 
   it("同会话新任务顶替旧任务:abort 事件 reason=new_task 且携带旧任务 runId", async () => {
     const sink = spySink();
-    const hub = new SessionStreamHub(sink);
+    const hub = new SessionStreamHub({ sink });
     // 旧任务:永不完成的流(模拟在途)
     const pending = new Response(
       new ReadableStream<Uint8Array>({ start() {} /* 不 close */ })
@@ -112,7 +112,7 @@ describe("SessionStreamHub 遥测事件", () => {
 
   it("上游响应无 body:发 error 事件且任务经清理不留 map", async () => {
     const sink = spySink();
-    const hub = new SessionStreamHub(sink);
+    const hub = new SessionStreamHub({ sink });
     hub.registerAndConsume("s3", new Response(null), { runId: "run-3" });
     await new Promise((r) => setTimeout(r, 0));
 

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { SessionStreamHub } from "./streamHub";
+import type { HarnessEvent } from "./telemetry";
 
 function makeFakeStreamResponse(chunks: string[], delayMs = 10): Response {
   const encoder = new TextEncoder();
@@ -144,5 +145,88 @@ describe("SessionStreamHub", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("SessionStreamHub 任务级看门狗（WS-2）", () => {
+  it("任务超过 taskTimeoutMs 未完成：自动中止，abort 事件 reason=timeout", () => {
+    vi.useFakeTimers();
+    try {
+      const events: HarnessEvent[] = [];
+      // 35s 在钳制边界[30s, 60min]内,不经收敛,便于精确推进
+      const hub = new SessionStreamHub({
+        sink: { emit: (e) => events.push(e) },
+        taskTimeoutMs: 35_000,
+      });
+      // 永不产出、永不结束的上游（模拟 provider 挂起）
+      const stuck = new Response(new ReadableStream<Uint8Array>({ start() {} }));
+      hub.registerAndConsume("sess_watchdog", stuck, { runId: "run-wd" });
+      expect(hub.hasRunningTask("sess_watchdog")).toBe(true);
+
+      vi.advanceTimersByTime(36_000);
+
+      expect(hub.hasRunningTask("sess_watchdog")).toBe(false);
+      const abortEvent = events.find((e) => e.type === "abort") as
+        | Extract<HarnessEvent, { type: "abort" }>
+        | undefined;
+      expect(abortEvent).toMatchObject({
+        type: "abort",
+        sessionId: "sess_watchdog",
+        reason: "timeout",
+        runId: "run-wd",
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("任务正常完成：看门狗清除，超时不误伤（终态仍在 30s 保留窗）", async () => {
+    vi.useFakeTimers();
+    try {
+      const events: HarnessEvent[] = [];
+      const hub = new SessionStreamHub({
+        sink: { emit: (e) => events.push(e) },
+        taskTimeoutMs: 5000,
+      });
+      hub.registerAndConsume(
+        "sess_ok",
+        makeFakeStreamResponse(['0:"a"\n'], 0),
+        { runId: "run-ok" }
+      );
+      // 推进假定时器并排空微任务，让后台 Reader 消费完流
+      await vi.advanceTimersByTimeAsync(100);
+      expect(hub.hasRunningTask("sess_ok")).toBe(false);
+
+      // 越过看门狗时限:不得对已完成任务发 abort
+      vi.advanceTimersByTime(10000);
+      expect(events.filter((e) => e.type === "abort")).toHaveLength(0);
+      expect(hub.hasTask("sess_ok")).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("taskTimeoutMs 钳制:低于下限 30s 的配置被收敛,5s 时不得提前中止", () => {
+    vi.useFakeTimers();
+    try {
+      const hub = new SessionStreamHub({ taskTimeoutMs: 1 });
+      const stuck = new Response(new ReadableStream<Uint8Array>({ start() {} }));
+      hub.registerAndConsume("sess_clamp", stuck);
+      vi.advanceTimersByTime(5000);
+      expect(hub.hasRunningTask("sess_clamp")).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("外部注入 abortController:abortTask 后同一 signal 被触发（handler 借此传导进 streamText）", () => {
+    const hub = new SessionStreamHub();
+    const controller = new AbortController();
+    const stuck = new Response(new ReadableStream<Uint8Array>({ start() {} }));
+    hub.registerAndConsume("sess_signal", stuck, { abortController: controller });
+
+    hub.abortTask("sess_signal", "user");
+    expect(controller.signal.aborted).toBe(true);
+    expect(hub.hasRunningTask("sess_signal")).toBe(false);
   });
 });

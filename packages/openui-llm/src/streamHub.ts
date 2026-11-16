@@ -27,12 +27,38 @@ export interface SessionStreamTask {
   error?: unknown;
   /** 中止时立即取消上游 reader：解除 read() 阻塞，让 abort 即刻生效（而非等下一个 chunk） */
   cancelUpstream?: () => Promise<void>;
+  /** 任务级看门狗定时器：终态（完成/错误/中止）即清除 */
+  deadlineTimer?: ReturnType<typeof setTimeout>;
+}
+
+/** 任务级看门狗超时的钳制边界 */
+const TASK_TIMEOUT_MIN_MS = 30_000;
+const TASK_TIMEOUT_MAX_MS = 3_600_000;
+const TASK_TIMEOUT_DEFAULT_MS = 600_000;
+
+export interface SessionStreamHubOptions {
+  sink?: TelemetrySink;
+  /** 任务 wall-clock 上限；缺省读 env LLM_TASK_TIMEOUT_MS，再缺省 10 分钟 */
+  taskTimeoutMs?: number;
 }
 
 export class SessionStreamHub {
   private tasks = new Map<string, SessionStreamTask>();
+  private readonly taskTimeoutMs: number;
+  private sink: TelemetrySink;
 
-  constructor(private sink: TelemetrySink = createConsoleSink()) {}
+  constructor(opts: SessionStreamHubOptions = {}) {
+    this.sink = opts.sink ?? createConsoleSink();
+    const envMs = Number(process.env.LLM_TASK_TIMEOUT_MS);
+    const envValid = Number.isFinite(envMs) && envMs > 0;
+    this.taskTimeoutMs = Math.min(
+      Math.max(
+        opts.taskTimeoutMs ?? (envValid ? envMs : TASK_TIMEOUT_DEFAULT_MS),
+        TASK_TIMEOUT_MIN_MS
+      ),
+      TASK_TIMEOUT_MAX_MS
+    );
+  }
 
   hasRunningTask(sessionId: string): boolean {
     const task = this.tasks.get(sessionId);
@@ -50,6 +76,7 @@ export class SessionStreamHub {
   abortTask(sessionId: string, reason: AbortReason = "user"): boolean {
     const task = this.tasks.get(sessionId);
     if (!task) return false;
+    this.clearDeadline(task);
     this.sink.emit({
       type: "abort",
       runId: task.runId,
@@ -110,19 +137,21 @@ export class SessionStreamHub {
 
   /**
    * 注册由 createDataStreamResponse 产生的原始流，启动服务端后台 Reader 持续消费，
-   * 并返回首个订阅者的 HTTP Response。meta.runId 用于遥测事件串联。
+   * 并返回首个订阅者的 HTTP Response。
+   * meta.runId 用于遥测事件串联；meta.abortController 允许调用方（handler）把同一
+   * signal 传入 streamText，使 abortTask 真正传导到 provider 取消生成（停止计费）。
    */
   registerAndConsume(
     sessionId: string,
     rawResponse: Response,
-    meta?: { runId?: RunId }
+    meta?: { runId?: RunId; abortController?: AbortController }
   ): Response {
     // 若原会话已有未完成旧任务，先中止
     if (this.hasRunningTask(sessionId)) {
       this.abortTask(sessionId, "new_task");
     }
 
-    const abortController = new AbortController();
+    const abortController = meta?.abortController ?? new AbortController();
     const task: SessionStreamTask = {
       sessionId,
       runId: meta?.runId,
@@ -132,6 +161,16 @@ export class SessionStreamHub {
       abortController,
     };
     this.tasks.set(sessionId, task);
+
+    // 任务级看门狗：wall-clock 超限即中止（防 provider 挂起永久占用 Reader）
+    task.deadlineTimer = setTimeout(() => {
+      this.abortTask(sessionId, "timeout");
+    }, this.taskTimeoutMs);
+    // 常驻服务无需 unref（终态即清除）；仅防 CLI/测试环境被定时器拖住退出
+    const t = task.deadlineTimer as { unref?: () => void };
+    if (typeof t === "object" && t !== null && typeof t.unref === "function") {
+      t.unref();
+    }
 
     // 服务端独立异步 Reader：持续从 rawResponse.body 读取并广播
     void (async () => {
@@ -195,12 +234,21 @@ export class SessionStreamHub {
           detail: err instanceof Error ? err.message : String(err),
         });
       } finally {
+        this.clearDeadline(task);
         this.closeSubscribers(task);
         this.scheduleCleanup(sessionId, task);
       }
     })();
 
     return this.createResponse(sessionId)!;
+  }
+
+  /** 任务到达终态（完成/错误/中止）时清除看门狗定时器 */
+  private clearDeadline(task: SessionStreamTask): void {
+    if (task.deadlineTimer) {
+      clearTimeout(task.deadlineTimer);
+      task.deadlineTimer = undefined;
+    }
   }
 
   /** 任务终态后在内存保留 30 秒，供刚刷新完成的页面做最后重放，之后自动清理 */
