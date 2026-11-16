@@ -200,7 +200,7 @@ export function useSessionManager(options?: UseSessionManagerOptions) {
     (
       newMessages: Message[],
       targetSessionId?: string,
-      options?: { silent?: boolean; keepalive?: boolean; promptTokens?: number }
+      options?: { silent?: boolean; keepalive?: boolean }
     ) => {
       const activeId = targetSessionId ?? currentSessionIdRef.current;
       if (!activeId || newMessages.length === 0) return;
@@ -225,14 +225,6 @@ export function useSessionManager(options?: UseSessionManagerOptions) {
         next[idx] = {
           ...prev[idx],
           ...(nextTitle ? { title: nextTitle } : {}),
-          ...(options?.promptTokens
-            ? {
-                context: {
-                  ...prev[idx].context,
-                  lastPromptTokens: options.promptTokens,
-                },
-              }
-            : {}),
           updatedAt: Date.now(),
           messageCount: newMessages.length,
         };
@@ -240,14 +232,14 @@ export function useSessionManager(options?: UseSessionManagerOptions) {
       });
 
       // 后台同步服务端
+      // 注意：context.lastPromptTokens（token 锚点）只由服务端 analyze handler
+      // 按最后一步单步实测写入，客户端保存消息时绝不同步 context——
+      // useChat 的累计 usage 会覆盖实测锚点导致剪枝判定虚高
       void updateSessionApi(
         activeId,
         {
           messages: newMessages as unknown as SessionRecord["messages"],
           ...(nextTitle ? { title: nextTitle } : {}),
-          ...(options?.promptTokens
-            ? { context: { lastPromptTokens: options.promptTokens } }
-            : {}),
         },
         options?.keepalive ? { keepalive: true } : undefined
       ).then((ok) => {

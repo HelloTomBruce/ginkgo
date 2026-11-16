@@ -70,7 +70,13 @@ function toolBadgeText(
  * - 流式思考中（active）自动展开，伴随脉冲呼吸灯、光标动画与实时自动平滑滚动；
  * - 思考完成后默认收起为精简状态，支持用户自由展开/折叠查验完整推理链；
  * - 若用户主动点击切换折叠状态，优先遵从用户的手动选择。
+ * - 流式期间只渲染尾部窗口：推理模型的思考可达数万字符，whitespace-pre-wrap
+ *   长块每帧全量重排（配合 autoScroll 的 scrollHeight 强制同步布局）会卡死主线程；
+ *   尾部窗口把每帧重排成本限在常量级，完成后回源全文（默认收起，展开可查）
  */
+/** 流式思考中的尾部渲染窗口（字符数） */
+const STREAMING_TAIL_CHARS = 3000;
+
 const ReasoningViewer = React.memo(function ReasoningViewer({
   reasoning,
   isStreaming,
@@ -87,6 +93,13 @@ const ReasoningViewer = React.memo(function ReasoningViewer({
   const isOpen = userToggled !== null ? userToggled : (isActivelyThinking || defaultOpen);
   const contentRef = useRef<HTMLDivElement>(null);
   const scrollRafRef = useRef<number | null>(null);
+
+  // 尾部窗口：仅流式思考中生效；完成后恢复全文（思考块默认收起，全文展开可查）
+  const tailTruncated =
+    isActivelyThinking && reasoning.length > STREAMING_TAIL_CHARS;
+  const displayReasoning = tailTruncated
+    ? reasoning.slice(-STREAMING_TAIL_CHARS)
+    : reasoning;
 
   useEffect(() => {
     if (isActivelyThinking && contentRef.current) {
@@ -153,7 +166,12 @@ const ReasoningViewer = React.memo(function ReasoningViewer({
         className="px-3 pb-3 pt-1 border-t border-border/50 max-h-72 overflow-y-auto font-mono text-[11px] leading-relaxed text-foreground-subtle"
       >
         <div className="whitespace-pre-wrap opacity-90 break-words">
-          {reasoning}
+          {tailTruncated && (
+            <div className="text-foreground-faint italic" data-testid="reasoning-tail-note">
+              …（思考较长，流式期间仅展示末尾片段）
+            </div>
+          )}
+          {displayReasoning}
           {isActivelyThinking && (
             <span className="inline-block w-1.5 h-3 bg-info-solid animate-pulse ml-0.5 align-middle rounded-xs" />
           )}

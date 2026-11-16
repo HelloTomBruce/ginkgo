@@ -20,8 +20,8 @@ interface DashboardPreviewModalProps {
   /** 待预览的完整收藏记录；null 不渲染 */
   dashboard: DashboardRecord | null;
   onClose: () => void;
-  /** 重新分析：把原始提问交回当前会话（由父层决定 append 或提示） */
-  onReanalyze: (prompt?: string) => void;
+  /** 重新分析：把原始提问交回看板原会话（原会话已删除时父层报错终止；无来源记录回退当前会话），第二参为 origin.sessionId */
+  onReanalyze: (prompt?: string, originSessionId?: string) => void;
   onRename: (id: string, title: string) => void;
   onDelete: (id: string) => void;
   /** 交互组件动作：注入 ChatInput（不自动发送），由父层接线 */
@@ -229,12 +229,12 @@ export function DashboardPreviewModal({
             <Hint
               label={
                 dashboard.prompt
-                  ? "用原始提问在当前会话重新分析（取最新数据）"
+                  ? "用原始提问重新分析取最新数据（原会话仍在则回到原会话）"
                   : "该收藏未记录原始提问"
               }
             >
               <button
-                onClick={() => onReanalyze(dashboard.prompt)}
+                onClick={() => onReanalyze(dashboard.prompt, dashboard.origin?.sessionId)}
                 disabled={!dashboard.prompt}
                 className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border border-info-border text-info-fg hover:bg-info-soft transition-colors disabled:opacity-40 disabled:pointer-events-none"
               >

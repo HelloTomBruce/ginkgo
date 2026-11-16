@@ -829,6 +829,38 @@ describe("消息内容与工具执行按顺序交错渲染", () => {
     expect(screen.getByText("正在规划数据探索方案...")).toBeInTheDocument();
   });
 
+  it("流式中超长思考只渲染尾部窗口（防长文每帧全量重排卡死），完成后回源全文", () => {
+    const headMark = "HEAD_MARK_思考开头";
+    const tailMark = "TAIL_MARK_思考结尾";
+    const longReasoning = `${headMark}${"过程".repeat(2500)}${tailMark}`;
+    const makeMsg = () =>
+      ({
+        id: "a-long-reasoning",
+        role: "assistant",
+        content: "",
+        parts: [{ type: "reasoning", reasoning: longReasoning }],
+      }) as unknown as Message;
+
+    // 流式思考中：仅尾部窗口可见，开头被窗口截掉并有提示
+    const { unmount } = render(
+      <MessageList
+        {...baseProps}
+        status="streaming"
+        messages={[userMsg, makeMsg()]}
+      />
+    );
+    expect(screen.getByText(/TAIL_MARK/)).toBeInTheDocument();
+    expect(screen.queryByText(/HEAD_MARK/)).not.toBeInTheDocument();
+    expect(screen.getByTestId("reasoning-tail-note")).toBeInTheDocument();
+    unmount();
+
+    // 思考完成：回源全文（开头结尾都在），无窗口提示
+    render(<MessageList {...baseProps} messages={[userMsg, makeMsg()]} />);
+    expect(screen.getByText(/HEAD_MARK/)).toBeInTheDocument();
+    expect(screen.getByText(/TAIL_MARK/)).toBeInTheDocument();
+    expect(screen.queryByTestId("reasoning-tail-note")).not.toBeInTheDocument();
+  });
+
   it("当模型输出文字规划但遗漏 PlanReviewCard 代码块时，兜底展示按此思路开始分析按钮并可点击触发", () => {
     const onRendererAction = vi.fn();
     const textPlanMsg = {

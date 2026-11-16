@@ -97,7 +97,8 @@ describe("ChatSidebar 看板库 tab", () => {
     openItemMenu();
     fireEvent.click(screen.getByRole("menuitem", { name: /重新分析 Bug 收敛漏斗/ }));
     expect(props.onReanalyzeDashboard).toHaveBeenCalledWith(
-      "本迭代 Bug 收敛情况如何"
+      "本迭代 Bug 收敛情况如何",
+      "s1"
     );
     expect(props.onPreviewDashboard).not.toHaveBeenCalled();
   });

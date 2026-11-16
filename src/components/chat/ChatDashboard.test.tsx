@@ -239,7 +239,7 @@ describe("ChatDashboard 守护测试（重构行为锁定）", () => {
     expect(stopMock).toHaveBeenCalledTimes(1);
   });
 
-  it("流式中切换会话：先停流并把进度落盘到原会话；迟到的 onFinish 不写入任何会话", async () => {
+  it("流式中切换会话：客户端脱钩落盘但不杀服务端任务（回切可续接）；迟到的 onFinish 不写入任何会话", async () => {
     const sessionA = makeSessionRecord({
       title: "会话甲",
       messages: [DEFAULT_WELCOME_MESSAGE],
@@ -267,10 +267,15 @@ describe("ChatDashboard 守护测试（重构行为锁定）", () => {
     );
 
     render(<ChatDashboard />);
-    // 侧边栏就绪后流式中切换到会话乙
-    fireEvent.click(await screen.findByText("会话乙"));
+    // 先模拟一次发起（建立流式会话标记——否则 stopActiveStream 拿不到
+    // activeId，旧代码的 server-stop 分支走不到，断言会空转），再切到会话乙。
+    // 须等 bootstrap 完成（侧栏就绪）再提交，否则 currentSessionId 仍为 null
+    await screen.findByText("会话乙");
+    const form = document.querySelector("form") as HTMLFormElement;
+    fireEvent.submit(form);
+    fireEvent.click(screen.getByText("会话乙"));
 
-    // 切换前先停流，且把流式进度落盘到原会话甲
+    // 切换前客户端脱钩（停止订阅），且把流式进度落盘到原会话甲
     expect(stopMock).toHaveBeenCalledTimes(1);
     await waitFor(() => {
       const saved = server.records.get(sessionA.id)?.messages as Array<{
@@ -278,6 +283,20 @@ describe("ChatDashboard 守护测试（重构行为锁定）", () => {
       }>;
       expect(saved?.some((m) => m.content === "甲的部分回答")).toBe(true);
     });
+
+    // 关键回归：脱钩不得向服务端发送 action:stop——StreamHub 任务后台续跑，
+    // 回切时 probe 重连续接（修复前此处杀任务导致「切走再切回输出中断」）
+    const serverStops = vi.mocked(fetch).mock.calls.filter(([url, init]) => {
+      if (String(url) !== "/api/analyze") return false;
+      try {
+        return (
+          JSON.parse(String(init?.body ?? "{}")).action === "stop"
+        );
+      } catch {
+        return false;
+      }
+    });
+    expect(serverStops).toHaveLength(0);
 
     // 迟到的 onFinish（属于已被停掉的旧流）不得写入任何会话
     const config = vi.mocked(useChat).mock.calls.at(-1)?.[0] as {
@@ -288,6 +307,236 @@ describe("ChatDashboard 守护测试（重构行为锁定）", () => {
       ...server.records.values(),
     ].flatMap((r) => r.messages as Array<{ content?: string }>);
     expect(allSaved.some((m) => m.content === "迟到的旧流回答")).toBe(false);
+  });
+
+  it("用户显式停止：客户端脱钩并通知服务端终止后台任务", async () => {
+    const session = makeSessionRecord({
+      title: "当前会话",
+      messages: [DEFAULT_WELCOME_MESSAGE],
+    });
+    server.seed([session], session.id);
+
+    const stopMock = vi.fn();
+    vi.mocked(useChat).mockImplementation(
+      () =>
+        ({
+          ...defaultUseChatResult(),
+          isLoading: true,
+          stop: stopMock,
+        }) as never
+    );
+
+    render(<ChatDashboard />);
+    // 模拟一次发起（建立流式会话标记），随后点击停止
+    // （isLoading 时发送按钮被停止按钮替换，表单本身仍在，直接从 DOM 取）
+    await screen.findByRole("button", { name: /停止生成/ });
+    const form = document.querySelector("form") as HTMLFormElement;
+    fireEvent.submit(form);
+    fireEvent.click(screen.getByRole("button", { name: /停止生成/ }));
+
+    expect(stopMock).toHaveBeenCalledTimes(1);
+    await waitFor(() => {
+      const serverStops = vi.mocked(fetch).mock.calls.filter(([url, init]) => {
+        if (String(url) !== "/api/analyze") return false;
+        try {
+          return (
+            JSON.parse(String(init?.body ?? "{}")).action === "stop" &&
+            JSON.parse(String(init?.body ?? "{}")).sessionId === session.id
+          );
+        } catch {
+          return false;
+        }
+      });
+      expect(serverStops).toHaveLength(1);
+    });
+  });
+
+  it("重连探测：hasTask（脱钩期间后台跑完）也触发重放收尾", async () => {
+    const session = makeSessionRecord({
+      title: "会话甲",
+      messages: [DEFAULT_WELCOME_MESSAGE],
+    });
+    server = installSessionServer((url, init) => {
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (url.startsWith("/api/analyze") && method === "GET") {
+        return new Response(
+          JSON.stringify({ running: false, hasTask: true }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        );
+      }
+      return new Response(JSON.stringify({ error: "not mocked" }), {
+        status: 404,
+        headers: { "content-type": "application/json" },
+      });
+    });
+    server.seed([session], session.id);
+
+    const reload = vi.fn();
+    vi.mocked(useChat).mockImplementation(
+      () => ({ ...defaultUseChatResult(), reload }) as never
+    );
+
+    render(<ChatDashboard />);
+
+    // running=false 但 hasTask=true：终态保留窗内重连重放，尾巴内容落盘不丢
+    await waitFor(() => {
+      expect(reload).toHaveBeenCalledWith({
+        body: { mode: "plan", reconnect: true },
+      });
+    });
+  });
+
+  it("上下文锚点准确性：onFinish 持久化消息时不得写入累计 usage 到 context（锚点仅服务端实测写入）", async () => {
+    const session = makeSessionRecord({
+      title: "锚点会话",
+      messages: [DEFAULT_WELCOME_MESSAGE],
+    });
+    server.seed([session], session.id);
+
+    render(<ChatDashboard />);
+    const form = (
+      await screen.findByRole("button", { name: /发送/ })
+    ).closest("form") as HTMLFormElement;
+    // 提交建立流式会话标记（streamingSessionIdRef），模拟真实发起
+    fireEvent.submit(form);
+
+    const config = vi.mocked(useChat).mock.calls.at(-1)?.[0] as {
+      onFinish?: (
+        message: unknown,
+        options?: { usage?: { promptTokens: number } }
+      ) => void;
+    };
+    config.onFinish?.(
+      { id: "a1", role: "assistant", content: "分析完成" },
+      // AI SDK 多步工具调用场景下这是累计值（如 3 步 × 单步 21k），
+      // 绝不能作为 token 锚点持久化
+      { usage: { promptTokens: 64_000 } }
+    );
+
+    await waitFor(() => {
+      const puts = vi
+        .mocked(fetch)
+        .mock.calls.filter(
+          ([url, init]) =>
+            String(url) === `/api/sessions/${session.id}` &&
+            (init?.method ?? "GET").toUpperCase() === "PUT"
+        );
+      expect(puts.length).toBeGreaterThan(0);
+      for (const [, init] of puts) {
+        const body = JSON.parse(String(init?.body ?? "{}")) as {
+          context?: unknown;
+        };
+        // 回归：修复前会把累计 usage 写进 context.lastPromptTokens，
+        // 覆盖服务端 handler 按最后一步单步实测写入的准确锚点
+        expect(body).not.toHaveProperty("context");
+      }
+    });
+  });
+
+  it("切换会话时清空 StreamData（context_usage 不跨会话串显）", async () => {
+    const sessionA = makeSessionRecord({
+      title: "会话甲",
+      messages: [DEFAULT_WELCOME_MESSAGE],
+    });
+    const sessionB = makeSessionRecord({
+      title: "会话乙",
+      messages: [DEFAULT_WELCOME_MESSAGE],
+    });
+    server.seed([sessionA, sessionB], sessionA.id);
+
+    const setData = vi.fn();
+    vi.mocked(useChat).mockImplementation(
+      () =>
+        ({
+          ...buildUseChatResult(
+            [DEFAULT_WELCOME_MESSAGE],
+            [{ type: "context_usage", promptTokens: 32_000 }]
+          ),
+          setData,
+        }) as never
+    );
+
+    render(<ChatDashboard />);
+    fireEvent.click(await screen.findByText("会话乙"));
+
+    // 回归：修复前 StreamData 跨会话存续（SDK 从不清空），
+    // 用量条继续显示会话甲的 token 峰值
+    expect(setData).toHaveBeenCalledWith(undefined);
+  });
+
+  it("重新分析切会话后：重连探测不得对已在途提交发起 reload（防重复消费同一流）", async () => {
+    const origin = makeSessionRecord({
+      title: "原会话",
+      messages: [DEFAULT_WELCOME_MESSAGE],
+    });
+    const current = makeSessionRecord({
+      title: "当前会话",
+      messages: [DEFAULT_WELCOME_MESSAGE],
+    });
+    installDashboardMock(origin.id);
+    server.seed([origin, current], current.id);
+
+    const reload = vi.fn();
+    const append = vi.fn();
+    vi.mocked(useChat).mockImplementation(
+      () => ({ ...defaultUseChatResult(), append, reload }) as never
+    );
+
+    render(<ChatDashboard />);
+    const reanalyzeBtn = await openDashboardPreview();
+    fireEvent.click(reanalyzeBtn);
+
+    // append 已在途后，重连探测（running=true 由 installDashboardMock 的
+    // /api/analyze fallback 提供）必须被「提交在途」守卫拦下
+    await waitFor(() => {
+      expect(append).toHaveBeenCalledTimes(1);
+    });
+    await waitFor(() => {
+      const probes = vi
+        .mocked(fetch)
+        .mock.calls.filter(([url]) =>
+          String(url).startsWith("/api/analyze?sessionId=")
+        );
+      expect(probes.length).toBeGreaterThan(0);
+    });
+    expect(reload).not.toHaveBeenCalled();
+  });
+
+  it("删除当前会话：清空 StreamData 且不影响其他会话（同族串显防御）", async () => {
+    const sessionA = makeSessionRecord({
+      title: "会话甲",
+      messages: [DEFAULT_WELCOME_MESSAGE],
+      createdAt: 2000,
+      updatedAt: 2000,
+    });
+    const sessionB = makeSessionRecord({
+      title: "会话乙",
+      messages: [DEFAULT_WELCOME_MESSAGE],
+      createdAt: 1000,
+      updatedAt: 1000,
+    });
+    server.seed([sessionA, sessionB], sessionA.id);
+
+    const setData = vi.fn();
+    vi.mocked(useChat).mockImplementation(
+      () => ({ ...defaultUseChatResult(), setData }) as never
+    );
+
+    render(<ChatDashboard />);
+    // 列表按 updatedAt 降序，首位即当前会话甲；删除它须清除其 context_usage
+    const deleteBtns = await screen.findAllByRole("button", {
+      name: "删除会话",
+    });
+    fireEvent.click(deleteBtns[0]);
+    expect(setData).toHaveBeenCalledWith(undefined);
+  });
+
+  it("useChat 配置：流式渲染合批 experimental_throttle=100（防增量风暴卡死主线程）", () => {
+    render(<ChatDashboard />);
+    const config = vi.mocked(useChat).mock.calls.at(-1)?.[0] as {
+      experimental_throttle?: number;
+    };
+    expect(config.experimental_throttle).toBe(100);
   });
 
   it("首次渲染无 React 错误 / hydration 告警", () => {
@@ -421,5 +670,193 @@ describe("ChatDashboard 守护测试（重构行为锁定）", () => {
     expect(handleSubmit).toHaveBeenLastCalledWith(expect.anything(), {
       body: { mode: "execute" },
     });
+  });
+
+  it("预览弹窗重命名：保存后弹窗标题立即更新（回写预览快照，不停留旧标题）", async () => {
+    // 内存看板库：rename 只刷新列表摘要，预览记录须由 handleRenameDashboard 同步回写
+    const json = (body: unknown, status = 200) =>
+      new Response(JSON.stringify(body), {
+        status,
+        headers: { "content-type": "application/json" },
+      });
+    const record = {
+      id: "dash_ab12cd34",
+      title: "旧标题看板",
+      dsl: "root = Root([])",
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+    const summary = {
+      id: record.id,
+      title: record.title,
+      createdAt: record.createdAt,
+      updatedAt: record.updatedAt,
+    };
+    server = installSessionServer((url, init) => {
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (url === "/api/dashboards" && method === "GET") {
+        return json({ dashboards: [summary] });
+      }
+      if (url === `/api/dashboards/${record.id}`) {
+        if (method === "GET") return json({ dashboard: record });
+        if (method === "PUT") {
+          const body = JSON.parse(String(init?.body ?? "{}")) as {
+            title?: string;
+          };
+          if (body.title) {
+            record.title = body.title;
+            summary.title = body.title;
+          }
+          return json({ dashboard: summary });
+        }
+      }
+      return json({ error: "not mocked" }, 404);
+    });
+
+    render(<ChatDashboard />);
+
+    // 侧栏切到看板库 → 打开预览弹窗
+    fireEvent.click(
+      await screen.findByRole("button", { name: /看板 \(1\)/ })
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "查看看板 旧标题看板" })
+    );
+    expect(
+      await screen.findByRole("heading", { name: "旧标题看板" })
+    ).toBeInTheDocument();
+
+    // 行内重命名 → 保存
+    fireEvent.click(screen.getByRole("button", { name: "重命名看板" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "看板标题" }), {
+      target: { value: "新标题看板" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "保存标题" }));
+
+    // 弹窗标题立即更新为新值（回归：修复前停留在旧标题直到关闭重开）
+    await waitFor(() => {
+      expect(
+        screen.getByRole("heading", { name: "新标题看板" })
+      ).toBeInTheDocument();
+    });
+  });
+
+  /** 看板库 mock：一条摘要 + 完整记录（origin 指向指定会话） */
+  function installDashboardMock(originSessionId: string | undefined) {
+    const json = (body: unknown, status = 200) =>
+      new Response(JSON.stringify(body), {
+        status,
+        headers: { "content-type": "application/json" },
+      });
+    const record = {
+      id: "dash_re1",
+      title: "可重分析看板",
+      dsl: "root = Root([])",
+      prompt: "原始提问：各渠道 CAC 如何",
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      ...(originSessionId
+        ? { origin: { sessionId: originSessionId, messageId: "m1" } }
+        : {}),
+    };
+    const summary = { ...record, dsl: undefined };
+    server = installSessionServer((url, init) => {
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (url === "/api/dashboards" && method === "GET") {
+        return json({ dashboards: [summary] });
+      }
+      if (url === `/api/dashboards/${record.id}` && method === "GET") {
+        return json({ dashboard: record });
+      }
+      // 重连探测端点：仅原会话模拟「服务端有在途任务」（probe 守卫的触发前提）；
+      // 其他会话 running=false，避免 bootstrap 首次探测触发合法重连干扰断言
+      if (url.startsWith("/api/analyze") && method === "GET") {
+        return json({
+          running: originSessionId ? url.includes(originSessionId) : false,
+        });
+      }
+      return json({ error: "not mocked" }, 404);
+    });
+  }
+
+  /** 打开看板库 tab 并进入预览弹窗 */
+  async function openDashboardPreview() {
+    fireEvent.click(
+      await screen.findByRole("button", { name: /看板 \(1\)/ })
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "查看看板 可重分析看板" })
+    );
+    return screen.findByRole("button", { name: /重新分析/ });
+  }
+
+  it("重新分析：原会话存在但不活跃时切回原会话并以其数据源发送", async () => {
+    const origin = makeSessionRecord({
+      title: "原会话",
+      enabledSources: ["psql"],
+      messages: [
+        DEFAULT_WELCOME_MESSAGE,
+        { id: "u1", role: "user", content: "各渠道 CAC" },
+      ],
+    });
+    const current = makeSessionRecord({
+      title: "当前会话",
+      enabledSources: ["zentao"],
+      messages: [DEFAULT_WELCOME_MESSAGE],
+    });
+    installDashboardMock(origin.id);
+    server.seed([origin, current], current.id);
+
+    const append = vi.fn();
+    vi.mocked(useChat).mockImplementation(
+      () => ({ ...defaultUseChatResult(), append }) as never
+    );
+
+    render(<ChatDashboard />);
+    const reanalyzeBtn = await openDashboardPreview();
+    fireEvent.click(reanalyzeBtn);
+
+    await waitFor(() => {
+      expect(append).toHaveBeenCalledWith(
+        { role: "user", content: "原始提问：各渠道 CAC 如何" },
+        { body: { sources: ["psql"], sessionId: origin.id } }
+      );
+    });
+  });
+
+  it("重新分析：原会话已删除时提示无法重新分析，不发送也不新建会话", async () => {
+    const current = makeSessionRecord({
+      title: "当前会话",
+      enabledSources: ["zentao"],
+      messages: [
+        DEFAULT_WELCOME_MESSAGE,
+        { id: "u1", role: "user", content: "别的分析" },
+      ],
+    });
+    installDashboardMock("sess_gone0000");
+    server.seed([current], current.id);
+
+    const append = vi.fn();
+    vi.mocked(useChat).mockImplementation(
+      () => ({ ...defaultUseChatResult(), append }) as never
+    );
+
+    render(<ChatDashboard />);
+    const reanalyzeBtn = await openDashboardPreview();
+    fireEvent.click(reanalyzeBtn);
+
+    // 明确报错终止：toast 提示、不 append、不新建会话
+    expect(
+      await screen.findByText("原会话已删除，无法重新分析")
+    ).toBeInTheDocument();
+    expect(append).not.toHaveBeenCalled();
+    const posts = vi
+      .mocked(fetch)
+      .mock.calls.filter(
+        ([url, init]) =>
+          String(url) === "/api/sessions" &&
+          (init?.method ?? "GET").toUpperCase() === "POST"
+      );
+    expect(posts).toHaveLength(0);
   });
 });

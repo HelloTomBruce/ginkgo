@@ -39,8 +39,8 @@ interface ChatSidebarProps {
   /** 看板收藏库（服务端存储，跨浏览器可用） */
   dashboards: DashboardSummary[];
   onPreviewDashboard: (id: string) => void;
-  /** 重新分析：prompt 交回当前会话；未记录提问时由上层提示 */
-  onReanalyzeDashboard: (prompt?: string) => void;
+  /** 重新分析：prompt 交回看板原会话（原会话已删除时上层报错终止；无来源记录回退当前会话） */
+  onReanalyzeDashboard: (prompt?: string, originSessionId?: string) => void;
   onRenameDashboard: (id: string, title: string) => void;
   onDeleteDashboard: (id: string) => void;
   /** 导出快照：父层拉取完整记录后下载 .openui.json */
@@ -337,7 +337,7 @@ function DashboardListItem({
 }: {
   dashboard: DashboardSummary;
   onPreview: (id: string) => void;
-  onReanalyze: (prompt?: string) => void;
+  onReanalyze: (prompt?: string, originSessionId?: string) => void;
   onRename: (id: string, title: string) => void;
   onDelete: (id: string) => void;
   onExport: (id: string) => void;
@@ -505,7 +505,7 @@ function DashboardListItem({
                   role="menuitem"
                   onClick={() => {
                     closeMenu();
-                    onReanalyze(dashboard.prompt);
+                    onReanalyze(dashboard.prompt, dashboard.origin?.sessionId);
                   }}
                   disabled={!dashboard.prompt}
                   aria-label={`重新分析 ${dashboard.title}`}

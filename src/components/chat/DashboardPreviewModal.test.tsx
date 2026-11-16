@@ -75,10 +75,13 @@ describe("DashboardPreviewModal 只读预览", () => {
     expect(props.onAction).toHaveBeenCalledWith("筛选: 华东大区");
   });
 
-  it("重新分析按钮携带原始提问", () => {
+  it("重新分析按钮携带原始提问与原会话 id", () => {
     const props = renderModal();
     fireEvent.click(screen.getByRole("button", { name: /重新分析/ }));
-    expect(props.onReanalyze).toHaveBeenCalledWith("本迭代 Bug 收敛情况如何");
+    expect(props.onReanalyze).toHaveBeenCalledWith(
+      "本迭代 Bug 收敛情况如何",
+      "s1"
+    );
   });
 
   it("未记录 prompt 时重新分析按钮禁用", () => {

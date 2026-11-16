@@ -35,11 +35,12 @@ describe("POST /api/analyze 薄壳", () => {
     expect(text).toContain("「设置」");
   });
 
-  it("GET /api/analyze 探针：无 sessionId 或无任务返回 running: false", async () => {
+  it("GET /api/analyze 探针：无 sessionId 或无任务返回 running/hasTask 均为 false", async () => {
     const res = await GET(new Request("http://localhost:3006/api/analyze?sessionId=sess_none"));
     expect(res.status).toBe(200);
     const data = await res.json();
-    expect(data).toEqual({ running: false });
+    // hasTask 覆盖「客户端脱钩期间任务已后台完成」的 30s 保留窗，供重放收尾
+    expect(data).toEqual({ running: false, hasTask: false });
   });
 
   it("POST /api/analyze 支持 action: stop 显式中止任务", async () => {

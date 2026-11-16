@@ -28,5 +28,11 @@ export async function GET(req: Request) {
   if (!sessionId) {
     return Response.json({ running: false });
   }
-  return Response.json({ running: POST.isSessionRunning(sessionId) });
+  // hasTask：任务存在（含 running 与终态保留 30s 的 completed/error）。
+  // 客户端脱钩切换期间任务可能在后台跑完——此时 running=false 但仍有未落盘内容，
+  // 探测须按 hasTask 触发重连重放收尾，否则尾巴内容随 30s 清理永久丢失
+  return Response.json({
+    running: POST.isSessionRunning(sessionId),
+    hasTask: POST.streamHub.hasTask(sessionId),
+  });
 }

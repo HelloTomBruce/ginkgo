@@ -268,12 +268,17 @@ export default function ChatDashboard() {
     reload,
     stop,
     data,
+    setData,
   } = useChat({
     api: "/api/analyze",
     body: chatBodyWithSources,
     headers: authHeaders(),
     onError: handleChatError,
     initialMessages: [DEFAULT_WELCOME_MESSAGE],
+    // 流式渲染合批：SSE 增量频率远超人眼可辨（推理模型思考流尤甚），
+    // 每个 delta 全量重渲染 + 长文重排是页面卡死的根因。throttleit 为
+    // leading+trailing 语义，末尾增量保证冲刷，最终内容不丢
+    experimental_throttle: 100,
     onFinish: (message, options) => {
       // 流式结束时保存：用 getMessages() 读取最新列表（含多步工具调用的中间消息），
       // upsert 防止与 AI SDK 已合入的最终消息重复；写回发起请求时的会话。
@@ -281,6 +286,9 @@ export default function ChatDashboard() {
       // 这条 finish 属于旧会话，静默丢弃，防止把 A 会话内容写进 B。
       const targetId = streamingSessionIdRef.current;
       // 上下文用量：记录兜底值（当 StreamData 可用时优先消费真实单步值）
+      // 注意：options.usage 是 AI SDK 多步工具调用的【累计值】，只能用于展示兜底；
+      // 持久化锚点由服务端 handler 按最后一步单步实测写入（updateContext），
+      // 客户端不得再写——否则累计值覆盖实测锚点，后续剪枝判定与展示都会虚高
       const promptTokens = options?.usage?.promptTokens;
       const validTokens =
         typeof promptTokens === "number" && Number.isFinite(promptTokens) && promptTokens > 0
@@ -292,8 +300,7 @@ export default function ChatDashboard() {
       if (targetId) {
         saveCurrentSessionMessages(
           upsertMessage(getMessages(), message),
-          targetId,
-          validTokens ? { promptTokens: validTokens } : undefined
+          targetId
         );
       }
     },
@@ -410,8 +417,13 @@ export default function ChatDashboard() {
   // isLoadingRef：探测回调里复查最新流式状态。闭包捕获的 isLoading 可能已过期
   // （fetch 返回与 React 重渲染之间有窗口），只用闭包值会与用户刚提交的新请求并发。
   const isLoadingRef = useRef(false);
+  // 提交将发/在途标记：重新分析等「切会话→立即 append」路径中，React 的 isLoading
+  // 尚未翻转时重连探测即可能命中在途任务——probe 以此标记为据放弃重连，
+  // 待 isLoading 真正翻转为 true（或 append 失败）后放下
+  const pendingSubmitRef = useRef(false);
   useEffect(() => {
     isLoadingRef.current = isLoading;
+    if (isLoading) pendingSubmitRef.current = false;
   }, [isLoading]);
 
   // 探测所需的最新回调快照：reload/nextModeBody/authHeaders 的 identity 在流式期间
@@ -433,10 +445,15 @@ export default function ChatDashboard() {
           { headers: { ...authHeaders() } }
         );
         if (!res.ok) return;
-        const data = (await res.json()) as { running?: boolean };
-        // 双重复查：cancelled（effect 已被更新取代）或 isLoadingRef（用户刚提交）
-        // 任一命中都放弃重连
-        if (cancelled || !data.running || isLoadingRef.current) return;
+        const data = (await res.json()) as { running?: boolean; hasTask?: boolean };
+        // 三重复查：cancelled（effect 已被更新取代）、isLoadingRef（用户刚提交）
+        // 或已有提交将发/在途（pendingSubmitRef——重新分析切会话后立即 append，
+        // React 尚未刷新 isLoading 的窗口期）——任一命中都放弃重连，
+        // 防止第二个消费端接入同一在途流造成消息重复
+        if (cancelled || isLoadingRef.current || pendingSubmitRef.current) return;
+        // running：在途任务无缝续接；hasTask（终态 30s 保留窗）：脱钩期间后台
+        // 跑完的任务重放收尾并落盘，否则尾巴内容随清理丢失
+        if (!data.running && !data.hasTask) return;
         streamingSessionIdRef.current = currentSessionId;
         void reload({ body: { ...nextModeBody(), reconnect: true } });
       } catch {
@@ -465,13 +482,16 @@ export default function ChatDashboard() {
     [append, currentSessionId, nextModeBody]
   );
 
-  // 中止在途流并即刻落盘当前会话（silent=true 时不提示，供切换/新建会话前调用）
+  // 在途流的两种处置：
+  // - 脱钩（切换/新建会话，默认）：仅中止客户端订阅并落盘进度——服务端 StreamHub
+  //   任务继续后台生成，回切时由重连探测无缝续接（页面刷新恢复同构）；
+  // - 终止（仅用户显式点击「停止」）：同时通知服务端 abortTask 杀掉后台任务
   const stopActiveStream = useCallback(
-    (opts?: { silent?: boolean }) => {
+    (opts?: { silent?: boolean; killServer?: boolean }) => {
       if (!isLoading) return;
       const activeId = streamingSessionIdRef.current;
       stop();
-      if (activeId) {
+      if (opts?.killServer && activeId) {
         void fetch("/api/analyze", {
           method: "POST",
           headers: { "content-type": "application/json", ...authHeaders() },
@@ -486,41 +506,68 @@ export default function ChatDashboard() {
     [isLoading, stop, getMessages, saveCurrentSessionMessages, authHeaders]
   );
 
-  // 暂停/中止当前会话生成（保留已有内容并即刻持久化）
-  const handleStop = useCallback(() => stopActiveStream(), [stopActiveStream]);
+  // 暂停/中止当前会话生成（用户显式停止：保留已有内容并即刻持久化，服务端任务一并终止）
+  const handleStop = useCallback(
+    () => stopActiveStream({ killServer: true }),
+    [stopActiveStream]
+  );
 
-  // 切换/新建会话前必先停流并清空流式会话标记：
-  // 否则节流落盘与 onFinish 仍指向旧会话 A，会把新会话 B 的消息写进 A
+  // 切换/新建会话前必先脱钩在途流并清空流式会话标记：
+  // 否则节流落盘与 onFinish 仍指向旧会话 A，会把新会话 B 的消息写进 A。
+  // 脱钩不杀服务端任务（StreamHub 后台续跑），回切时 probe 重连续接输出。
+  // StreamData（含 context_usage 真实单步值）随 useChat 实例跨会话存续且 SDK 从不清空，
+  // 切换时必须清除，否则用量条继续显示旧会话的 token 峰值直到新会话发起下一次流
   const handleSelectSessionSafe = useCallback(
     (sessionId: string) => {
       stopActiveStream({ silent: true });
       streamingSessionIdRef.current = null;
+      setData(undefined);
       void handleSelectSession(sessionId);
     },
-    [stopActiveStream, handleSelectSession]
+    [stopActiveStream, handleSelectSession, setData]
   );
 
   const handleCreateNewChatSafe = useCallback(() => {
     stopActiveStream({ silent: true });
     streamingSessionIdRef.current = null;
+    setData(undefined);
     void handleCreateNewChat();
-  }, [stopActiveStream, handleCreateNewChat]);
+  }, [stopActiveStream, handleCreateNewChat, setData]);
+
+  // 删除会话：删除【当前】会话时 hook 内部会切换到下一条会话（绕开 *Safe 包装），
+  // 须同步清除 StreamData，与切换/新建保持同一「不跨会话串显」不变量；
+  // 删除非当前会话不影响流式与用量显示，直接透传
+  const handleDeleteSessionSafe = useCallback(
+    (e: React.MouseEvent, sessionId: string) => {
+      if (sessionId === currentSessionId) {
+        streamingSessionIdRef.current = null;
+        setData(undefined);
+      }
+      void handleDeleteSession(e, sessionId);
+    },
+    [handleDeleteSession, setData, currentSessionId]
+  );
 
   // 分叉：从该消息复制前缀历史生成新会话（hook 内完成切换与落盘）
   const handleForkMessage = useCallback(
     (messageId: string) => {
+      setData(undefined);
       void forkSession(messageId);
     },
-    [forkSession]
+    [forkSession, setData]
   );
 
   // 回滚重问：截断到该用户消息之前，消息内容回填输入框供修订后重发
+  // （服务端同步清除 token 锚点，客户端 StreamData 中的旧峰值一并失效清除）
   const handleRewindMessage = useCallback(
     (messageId: string) => {
       const content = rewindSession(messageId);
-      if (content) setInput(content);
+      if (content) {
+        setData(undefined);
+        setInput(content);
+      }
     },
-    [rewindSession, setInput]
+    [rewindSession, setInput, setData]
   );
 
   // 推荐列表：方法卡 presetQuery（内置兜底 + 挂载后拉合并卡集覆盖）
@@ -644,24 +691,82 @@ export default function ChatDashboard() {
     [allDatasources, createDashboardFromTemplate, handlePreviewDashboard]
   );
 
-  // 重新分析：原始提问作为新用户消息进入当前会话（沿用预设场景的直出模式与当前会话源设置）
+  // 重新分析：优先回到看板原会话（上下文与数据源选择延续）；原会话已删除则
+  // 明确报错终止——新建会话顶替会丢失原分析上下文，跑出的是另一份分析。
+  // 直接塞进无关的当前活跃会话更不可取：其锁定的数据源可能不含看板原数据源
+  // （服务端对未知源静默不装载工具），模型拿不到取数工具而失败
   const handleReanalyzeDashboard = useCallback(
-    (prompt?: string) => {
+    async (prompt?: string, originSessionId?: string) => {
       if (!prompt) {
         toast("该收藏未记录原始提问，请在输入框输入问题后发送", "info");
         return;
       }
-      streamingSessionIdRef.current = currentSessionId;
-      append({ role: "user", content: prompt });
+      const origin = originSessionId
+        ? sessions.find((s) => s.id === originSessionId)
+        : undefined;
+
+      if (originSessionId && !origin) {
+        // 原会话已删除：无法恢复原上下文与数据源选择，终止并提示
+        toast("原会话已删除，无法重新分析", "error");
+        return;
+      }
+
+      let targetId: string | null = currentSessionId;
+      let targetSources: string[] | undefined = activeSession?.enabledSources;
+      // 提交意图确定：竖起「提交将发」标记，拦截切换渲染触发的重连探测
+      pendingSubmitRef.current = true;
+      if (origin && origin.id !== currentSessionId) {
+        // 原会话仍在但不活跃：安全停流后切换。handleSelectSession 内部
+        // setMessages 会同步更新 useChat 的 messagesRef，await 返回后立即
+        // append 无竞态（消息不会拼到旧会话历史上）
+        stopActiveStream({ silent: true });
+        streamingSessionIdRef.current = null;
+        await handleSelectSession(origin.id);
+        targetId = origin.id;
+        targetSources = origin.enabledSources;
+      }
+      // 其余情形（原会话即当前会话 / 导入快照无来源记录）：在当前会话重新分析
+      if (!targetId) {
+        pendingSubmitRef.current = false;
+        toast("没有可用的会话，请稍后重试", "error");
+        return;
+      }
+
+      // 显式按请求传 body：useChat 的 extraMetadataRef 要等重渲染才刷新，
+      // 切会话后立即 append 必须覆盖 sources/sessionId，否则请求仍带旧会话的数据源
+      streamingSessionIdRef.current = targetId;
+      void Promise.resolve(
+        append(
+          { role: "user", content: prompt },
+          { body: { sources: targetSources, sessionId: targetId } }
+        )
+      ).catch(() => {
+        // 提交失败：isLoading 不会翻转，在此放下标记恢复后续重连能力
+        pendingSubmitRef.current = false;
+      });
       setPreviewDashboard(null);
     },
-    [append, currentSessionId]
+    [
+      append,
+      currentSessionId,
+      activeSession?.enabledSources,
+      sessions,
+      stopActiveStream,
+      handleSelectSession,
+    ]
   );
 
   const handleRenameDashboard = useCallback(
     async (id: string, title: string) => {
       const ok = await renameDashboard(id, title);
       toast(ok ? "已重命名" : "重命名失败", ok ? "success" : "error");
+      // 预览弹窗标题读的是打开时拉取的完整记录快照，rename 只刷新列表摘要，
+      // 须同步回写预览记录，否则弹窗标题滞留在旧值（id 守卫：勿覆盖切换后的其他看板）
+      if (ok) {
+        setPreviewDashboard((prev) =>
+          prev?.id === id ? { ...prev, title } : prev
+        );
+      }
     },
     [renameDashboard]
   );
@@ -775,7 +880,7 @@ export default function ChatDashboard() {
         onSelectSession={handleSelectSessionSafe}
         onStartRename={handleStartRename}
         onSaveRename={handleSaveRename}
-        onDeleteSession={handleDeleteSession}
+        onDeleteSession={handleDeleteSessionSafe}
         onEditTitleChange={setEditingTitleText}
         onPresetSelect={handlePresetSelect}
         presetQueries={presetQueries}
