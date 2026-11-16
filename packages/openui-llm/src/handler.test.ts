@@ -964,3 +964,137 @@ describe("任务中止传导（WS-2:abortTask → streamText abortSignal）", ()
     expect(passedSignal?.aborted).toBe(true);
   });
 });
+
+describe("成本预算与并发准入（WS-3）", () => {
+  const savedEnv: Record<string, string | undefined> = {};
+
+  beforeEach(() => {
+    for (const key of [
+      "OPENAI_API_KEY",
+      "LLM_API_KEY",
+      "LLM_TASK_TOKEN_BUDGET",
+      "LLM_MAX_CONCURRENT_TASKS",
+    ]) {
+      savedEnv[key] = process.env[key];
+      delete process.env[key];
+    }
+    mockStreamOk();
+  });
+
+  afterEach(() => {
+    for (const [key, value] of Object.entries(savedEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    vi.clearAllMocks();
+  });
+
+  it("累计 usage 超预算：写 budget_exhausted 终态恰一次、中止 provider、不发自然终态", async () => {
+    vi.mocked(streamText).mockImplementation((opts) => {
+      return {
+        mergeIntoDataStream: vi.fn(() => {
+          // 两步各 600k,预算 10k(请求体钳制下限)→ 第一步即熔断
+          opts.onStepFinish?.({
+            stepType: "tool-result",
+            toolCalls: [],
+            finishReason: "tool-calls",
+            text: "",
+            usage: { promptTokens: 400_000, completionTokens: 200_000 },
+          } as never);
+          opts.onFinish?.({
+            usage: { promptTokens: 800_000, completionTokens: 400_000 },
+          } as never);
+        }),
+      } as never;
+    });
+
+    const manager = await makeFakeManager();
+    const POST = createAnalyzeHandler({ datasources: manager });
+    const res = await POST(
+      makeRequest({ messages: [], apiKey: "k", sessionId: "sess_budget", budgetTokens: 10_000 })
+    );
+    const text = await res.text();
+
+    const finishChunks = text.split("\n").filter((l) => l.includes('"termination":"budget_exhausted"'));
+    expect(finishChunks).toHaveLength(1);
+    expect(text).not.toContain('"termination":"natural"');
+    // 预算熔断触发 provider 中止
+    const passedSignal = vi.mocked(streamText).mock.calls[0][0].abortSignal;
+    expect(passedSignal?.aborted).toBe(true);
+  });
+
+  it("未超预算：不出现 budget_exhausted 终态(正常 natural 闭环)", async () => {
+    vi.mocked(streamText).mockImplementation((opts) => {
+      return {
+        mergeIntoDataStream: vi.fn(() => {
+          opts.onStepFinish?.({
+            stepType: "tool-result",
+            toolCalls: [],
+            finishReason: "stop",
+            text: "完成",
+            usage: { promptTokens: 5000, completionTokens: 100 },
+          } as never);
+          opts.onFinish?.({ usage: { promptTokens: 5000 } } as never);
+        }),
+      } as never;
+    });
+
+    const manager = await makeFakeManager();
+    const POST = createAnalyzeHandler({ datasources: manager });
+    const res = await POST(
+      makeRequest({ messages: [], apiKey: "k", sessionId: "sess_ok_budget", budgetTokens: 600_000 })
+    );
+    const text = await res.text();
+    expect(text).not.toContain("budget_exhausted");
+    expect(text).toContain('"termination":"natural"');
+  });
+
+  it("并发准入：running 任务数达上限时新任务 429,重连不受限", async () => {
+    process.env.LLM_MAX_CONCURRENT_TASKS = "1";
+    let finishStream: () => void;
+    vi.mocked(streamText).mockImplementation((opts) => {
+      return {
+        mergeIntoDataStream: vi.fn((dataStream: {
+          write: (chunk: string) => void;
+        }) => {
+          // 模拟在途流:写一个 chunk 后挂起,直到测试显式放行
+          dataStream.write('0:"working"\n');
+          void new Promise<void>((resolve) => {
+            finishStream = resolve;
+          });
+        }),
+      } as never;
+    });
+
+    const manager = await makeFakeManager();
+    const POST = createAnalyzeHandler({ datasources: manager });
+
+    // 任务 A:占满并发名额(流挂起在途)
+    const resA = await POST(
+      makeRequest({ messages: [], apiKey: "k", sessionId: "sess_conc_a" })
+    );
+    expect(resA.status).toBe(200);
+    expect(POST.isSessionRunning("sess_conc_a")).toBe(true);
+
+    // 新任务 B:被准入拒绝
+    const resB = await POST(
+      makeRequest({ messages: [], apiKey: "k", sessionId: "sess_conc_b" })
+    );
+    expect(resB.status).toBe(429);
+    expect(((await resB.json()) as { error?: string }).error).toContain("并发已达上限");
+
+    // 重连是接入既有任务:不受名额限制
+    const resRecon = await POST(
+      makeRequest({ messages: [], apiKey: "k", sessionId: "sess_conc_a", reconnect: true })
+    );
+    expect(resRecon.status).toBe(200);
+
+    // 放行 A 结束后,B 可正常发起
+    finishStream!();
+    await new Promise((r) => setTimeout(r, 20));
+    const resB2 = await POST(
+      makeRequest({ messages: [], apiKey: "k", sessionId: "sess_conc_b" })
+    );
+    expect(resB2.status).toBe(200);
+  });
+});

@@ -73,6 +73,15 @@ export class SessionStreamHub {
     return this.tasks.get(sessionId);
   }
 
+  /** 当前 running 状态的任务数(并发准入的计数来源) */
+  runningCount(): number {
+    let n = 0;
+    for (const t of this.tasks.values()) {
+      if (t.status === "running") n++;
+    }
+    return n;
+  }
+
   abortTask(sessionId: string, reason: AbortReason = "user"): boolean {
     const task = this.tasks.get(sessionId);
     if (!task) return false;

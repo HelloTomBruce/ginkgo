@@ -103,6 +103,19 @@ function extractLatestUserQuery(messages: unknown[]): string | undefined {
   return undefined;
 }
 
+/** 组合多个 abort signal:任一触发即触发(Node 原生 AbortSignal.any 的类型安全替代) */
+function anySignal(signals: AbortSignal[]): AbortSignal {
+  const combined = new AbortController();
+  for (const s of signals) {
+    if (s.aborted) {
+      combined.abort(s.reason);
+      break;
+    }
+    s.addEventListener("abort", () => combined.abort(s.reason), { once: true });
+  }
+  return combined.signal;
+}
+
 /**
  * 工具执行遥测包装:为数据源工具的 execute 叠加耗时/结果量级/成败采集,
  * 不改变工具的输入输出语义(含失败重抛)。无 execute 的纯查询型工具原样透传。
@@ -259,6 +272,12 @@ export interface AnalyzeRequestBody {
   contextWindow?: number | string;
   /** 步数上限（Agent 循环熔断兜底），缺省 plan 6 步，execute/direct 10 步 */
   maxSteps?: number | string;
+  /**
+   * 任务累计 token 预算（prompt+completion 总和）：
+   * 超限时立即写入 budget_exhausted 终态并中止 provider 生成，防成本敞口失控。
+   * 缺省读 env LLM_TASK_TOKEN_BUDGET（缺省 600k），钳制 10k–5M。
+   */
+  budgetTokens?: number | string;
   /** 历史透传字段（如 gitlabUrl/gitlabToken）被忽略的现状保持 */
   [key: string]: unknown;
 }
@@ -286,6 +305,13 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
   // 注入替换缺省(需要 console+OTel 双写时由 app 侧传 compositeSink(consoleSink, otelSink))
   const telemetry = opts.telemetry ?? createConsoleSink();
 
+  // WS-3 进程级并发准入上限:同时 running 的会话任务数超限即拒绝新任务(reconnect 不占名额)
+  const envConcurrent = Number(process.env.LLM_MAX_CONCURRENT_TASKS);
+  const maxConcurrentTasks = Math.min(
+    Math.max(Number.isFinite(envConcurrent) && envConcurrent > 0 ? envConcurrent : 8, 1),
+    64
+  );
+
   const POST = async function (req: Request) {
     const runId = newRunId();
     try {
@@ -311,6 +337,7 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
         sessionId: clientSessionId,
         contextWindow: clientContextWindow,
         maxSteps: clientMaxSteps,
+        budgetTokens: clientBudgetTokens,
       } = rawBody;
 
       // 遥测用的会话 id(缺省 undefined,贯穿全事件)
@@ -320,6 +347,25 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
       // 检查是否为流重连请求（如页面刷新后客户端发起无缝续接）：
       // 若带有 reconnect 标记且服务端保留有该会话在途或刚完成的流任务，直接返回重连流
       const isReconnect = Boolean(rawBody && typeof rawBody === "object" && rawBody.reconnect);
+      // 并发准入:仅约束「新任务」;重连是接入既有任务不占名额;无 sessionId 的请求不经 hub
+      // 追踪,无法可靠计数(应用层如需全局限流在 Next middleware 侧做)
+      if (
+        !isReconnect &&
+        clientSessionId &&
+        streamHub.runningCount() >= maxConcurrentTasks
+      ) {
+        telemetry.emit({
+          type: "warn",
+          runId,
+          sessionId: sessionIdForEvents,
+          code: "CONCURRENCY_REJECTED",
+          detail: `running 任务数已达上限 ${maxConcurrentTasks},拒绝新任务`,
+        });
+        return Response.json(
+          { error: "服务端分析任务并发已达上限，请稍后重试" },
+          { status: 429 }
+        );
+      }
       if (clientSessionId && isReconnect && streamHub.hasTask(clientSessionId)) {
         telemetry.emit({
           type: "reconnect",
@@ -374,6 +420,17 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
           ? parsedClientMaxSteps
           : defaultMaxSteps;
       const maxSteps = Math.min(Math.max(Math.round(rawMaxSteps), 1), 100);
+
+      // WS-3 任务累计 token 预算(prompt+completion 总和):超限即终态+中止,防成本敞口失控
+      const envTokenBudget = Number(process.env.LLM_TASK_TOKEN_BUDGET);
+      const parsedTokenBudget = Number(clientBudgetTokens);
+      const rawTokenBudget =
+        Number.isFinite(parsedTokenBudget) && clientBudgetTokens !== undefined && clientBudgetTokens !== ""
+          ? parsedTokenBudget
+          : Number.isFinite(envTokenBudget) && envTokenBudget > 0
+            ? envTokenBudget
+            : 600_000;
+      const taskTokenBudget = Math.min(Math.max(Math.round(rawTokenBudget), 10_000), 5_000_000);
 
       // 安全约束：客户端自带 baseURL 时必须同时自带 apiKey。
       // 否则服务端会拿着 env 中的真实 Key 去请求客户端指定的任意 URL —— 凭证外泄通道。
@@ -658,9 +715,14 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
       let lastStepPromptTokens: number | undefined;
       let lastStepFinishReason: string | undefined;
       let explicitFinishDetails: { status: string; summary?: string } | undefined;
-      // 任务级中止控制器:abortTask(用户停止/看门狗超时/预算熔断)经 hub 触发后,
-      // 同一 signal 传导进 streamText——provider 侧生成即刻取消,不再继续计费
+      // 任务级中止控制器:abortTask(用户停止/看门狗超时)经 hub 触发后传导进
+      // streamText 并以 error 语义终止订阅;预算熔断走独立 controller——只取消
+      // provider 生成,流自然收尾(客户端已收到 task_finish,订阅不得 error)
       const taskAbortController = new AbortController();
+      const budgetAbortController = new AbortController();
+      // WS-3 累计 token 计量(prompt+completion 总和):超预算立即终态+中止
+      let totalTokens = 0;
+      let budgetExceeded = false;
 
       const rawResponse = createDataStreamResponse({
         execute: (dataStream) => {
@@ -713,8 +775,11 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
             temperature,
             // AI SDK v1 参数名为 maxTokens（透传 max_tokens；Anthropic 端点必填）
             maxTokens: maxOutputTokens,
-            // 任务中止信号:用户停止/看门狗超时/预算熔断统一经此取消 provider 生成
-            abortSignal: taskAbortController.signal,
+            // 任务中止信号:任一来源(硬停止/预算熔断)取消 provider 生成
+            abortSignal: anySignal([
+              taskAbortController.signal,
+              budgetAbortController.signal,
+            ]),
             tools: {
               ...loadedTools,
               ...crossSourceTools,
@@ -745,6 +810,36 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
                   promptTokens: usage.promptTokens,
                 });
               }
+              // 累计预算熔断:超限写终态并中止 provider(客户端按既有 status=truncated 渲染)
+              if (usage) {
+                const p =
+                  typeof usage.promptTokens === "number" && Number.isFinite(usage.promptTokens)
+                    ? usage.promptTokens
+                    : 0;
+                const c =
+                  typeof usage.completionTokens === "number" && Number.isFinite(usage.completionTokens)
+                    ? usage.completionTokens
+                    : 0;
+                totalTokens += p + c;
+                if (!budgetExceeded && totalTokens > taskTokenBudget) {
+                  budgetExceeded = true;
+                  dataStream.writeData({
+                    type: "task_finish",
+                    termination: "budget_exhausted",
+                    status: "truncated",
+                  });
+                  // 仅取消 provider(独立 controller),不触发 hub 的 error 语义——
+                  // 流随后自然关闭,订阅者正常收到已写入的终态分块
+                  budgetAbortController.abort();
+                  telemetry.emit({
+                    type: "warn",
+                    runId,
+                    sessionId: sessionIdForEvents,
+                    code: "BUDGET_EXHAUSTED",
+                    detail: `累计 ${totalTokens} tokens 超预算 ${taskTokenBudget},已中止任务`,
+                  });
+                }
+              }
             },
             // token 锚点回写与流式用量下发：
             // 关键修复：必须使用最后一步实际发往 LLM 的单步 promptTokens，不能使用 AI SDK 多步工具调用的累加值
@@ -757,11 +852,15 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
                 });
               }
 
-              // 双重终态判定：若未被显式 finish_task 捕获，则评估自然停止与截断兜底
+              // 双重终态判定：若未被显式 finish_task 捕获，则评估预算熔断/自然停止/截断兜底
               let termination: string;
               let status: string;
               if (!explicitFinishDetails) {
-                if (lastStepFinishReason === "stop" || lastStepFinishReason === undefined) {
+                if (budgetExceeded) {
+                  // 预算终态已在 onStepFinish 写入,此处仅对齐遥测口径,不重复下发
+                  termination = "budget_exhausted";
+                  status = "truncated";
+                } else if (lastStepFinishReason === "stop" || lastStepFinishReason === undefined) {
                   termination = "natural";
                   status = "completed";
                 } else if (lastStepFinishReason === "length") {
@@ -771,11 +870,13 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
                   termination = lastStepFinishReason ?? "unknown";
                   status = "completed";
                 }
-                dataStream.writeData({
-                  type: "task_finish",
-                  termination,
-                  status,
-                });
+                if (!budgetExceeded) {
+                  dataStream.writeData({
+                    type: "task_finish",
+                    termination,
+                    status,
+                  });
+                }
               } else {
                 termination = "explicit";
                 status = explicitFinishDetails.status;
