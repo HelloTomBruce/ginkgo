@@ -46,6 +46,11 @@ pnpm dev        # http://localhost:3006
 | `OPENAI_API_KEY` / `LLM_API_KEY` | LLM API Key（也可在页面设置中配置） | 无 |
 | `OPENAI_BASE_URL` / `LLM_BASE_URL` | OpenAI 兼容接口地址 | `https://api.openai.com/v1` |
 | `OPENAI_MODEL` / `LLM_MODEL` | 模型名 | `gpt-4o-mini` |
+| `LLM_TASK_TIMEOUT_MS` | 单个分析任务的 wall-clock 上限（超时自动中止，防 provider 挂起） | 600000（钳 30s–60min） |
+| `LLM_TASK_TOKEN_BUDGET` | 单任务累计 token 预算（超限写 budget_exhausted 终态并中止） | 600000（钳 10k–5M） |
+| `LLM_MAX_CONCURRENT_TASKS` | 进程级同时 running 任务数上限（新任务超限返回 429） | 8（钳 1–64） |
+| `LLM_TOOL_OUTPUT_MAX_BYTES` | 单个工具结果进入模型上下文的字节上限（超限头尾保留截断） | 32768（钳 4KB–1MB） |
+| `LLM_MAX_OUTPUT_TOKENS` | 每个生成步的输出 token 上限（Anthropic 端点必填项保障） | 16384（钳 1024–65536） |
 | `PGUSER` / `PGHOST` / `PGDATABASE` / `PGPASSWORD` / `PGPORT` | 分析库连接（缺表时自动建表并写入示例数据） | 本机 `openui_analytics` 库 |
 | 动态 DB 源（设置中配置） | `dbType` 四选：postgres / mysql / **sqlite** / **clickhouse**。sqlite 连接串为数据库文件路径（可带 `sqlite:` 前缀）；clickhouse 为 `http(s)://[user[:pass]@]host:8123[/database]`。全部只读双保险（词法守卫 + 引擎级只读） | — |
 | GitLab MCP Endpoint / Token | 在页面「设置」中配置，存于浏览器 localStorage | `http://127.0.0.1:5002/mcp` |
