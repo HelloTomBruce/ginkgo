@@ -1052,7 +1052,7 @@ describe("成本预算与并发准入（WS-3）", () => {
   it("并发准入：running 任务数达上限时新任务 429,重连不受限", async () => {
     process.env.LLM_MAX_CONCURRENT_TASKS = "1";
     let finishStream: () => void;
-    vi.mocked(streamText).mockImplementation((opts) => {
+    vi.mocked(streamText).mockImplementation(() => {
       return {
         mergeIntoDataStream: vi.fn((dataStream: {
           write: (chunk: string) => void;
