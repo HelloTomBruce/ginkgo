@@ -12,9 +12,9 @@
   "dependencies": {
     "@openui-analytics/chart-spec": "workspace:*",
     "@openuidev/react-lang": "^0.3.1",
-    "lucide-react": "^1.52.0",
+    "lucide-react": "^1.73.0",
     "recharts": "^3.10.1",
-    "zod": "4.6.5"
+    "zod": "4.6.7"
   },
   "peerDependencies": {
     "react": "*"
@@ -24,8 +24,8 @@
     "@testing-library/react": "^16.3.3",
     "@types/react": "^19",
     "jsdom": "^30.1.2",
-    "react": "19.3.0",
+    "react": "19.3.1",
     "typescript": "^5",
-    "vitest": "^5.0.3"
+    "vitest": "^5.1.0"
   }
 }
