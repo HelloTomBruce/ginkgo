@@ -28,7 +28,17 @@
         OpenUIRenderer 流式渐进渲染为可交互看板
 ```
 
-**Workspace 包结构**：能力已抽为三个私有子包——`packages/openui-datasources`（`@openui-analytics/datasources`：数据源配置/连接/工具装配，门面 `createDatasourceManager`）、`packages/openui-llm`（`@openui-analytics/llm`：LLM 编排与提示词资产，门面 `createAnalyzeHandler`，依赖注入数据源单例）与 `packages/openui-components`（`@openui-analytics/components`：OpenUI 规范展示组件库，按 layout/metrics/charts/data/insight/timeline/interaction 分类，聚合为 `analyticsLibrary` 交给 `<Renderer>` 渲染）；应用侧 `src/` 只保留路由薄壳、前端 UI 与共享层。
+**Workspace 包结构**：能力抽为五个私有子包，各自带详细 README（架构/业务逻辑/功能/扩展指南）：
+
+| 包 | 门面 | 职责 |
+| --- | --- | --- |
+| `packages/openui-chart-spec` | `parseDashboardSpec` / `applyJsonPatch` | DashboardSpec 2.0 声明式状态树 + RFC 6902 JSON Patch 引擎（最底层 spec 契约，zod-only） |
+| `packages/openui-datasources` | `createDatasourceManager` | 数据源配置/连接/工具装配 + 只读守卫管线 + 结果集缓存 + Schema Card + Certified Queries 语义层 |
+| `packages/openui-components` | `analyticsLibrary` | OpenUI 规范展示组件库（24 组件，layout/metrics/charts/data/insight/timeline/interaction/spec 分类） |
+| `packages/openui-llm` | `createAnalyzeHandler` | LLM 编排、StreamHub 流中继、上下文治理、双层 eval（依赖注入数据源单例） |
+| `packages/openui-methodology` | `builtinMethodCards` | 方法论资产：10 张内置方法卡 + 用户卡 JSON 契约 |
+
+应用侧 `src/` 只保留路由薄壳、前端 UI 与共享层。
 
 ## 快速开始
 
@@ -93,8 +103,41 @@ pnpm dev        # http://localhost:3006
 ## 渲染性能与流式平滑控制
 
 - **流式 AST 解析平滑节流**：在 LLM 高速 token 输出阶段，通过 `useStreamingThrottled` 将超高频 OpenUI AST 重解析降频至 ~8fps（约 120ms 一次），彻底释放主线程 CPU，流式结束后立即全量对齐最新内容。
+- **增量合批**：`experimental_throttle=100`（leading+trailing）对流式渲染合批，每个 SSE delta 不再触发全量重渲染。
+- **思考流尾部窗口**：推理模型的思考可达数万字符，流式期间只渲染尾部 3000 字符窗口（每帧重排成本恒定），完成后回源全文可查。
 - **图表自适应死循环防御**：针对 Recharts 在 CSS Grid 双列排版下的 ResizeObserver 尺寸震荡，图表容器全量装配 `minWidth={0} debounce={50}` 与 `min-w-0`，杜绝页面卡死。
 - **消息流动画锁**：消息列表自动滚动采用 `requestAnimationFrame` 节流锁，防止高频 DOM 滚动重排引起的掉帧。
+
+## 流式会话生命周期与断线重连（StreamHub）
+
+服务端与客户端生命周期解耦：**切换/新建/刷新页面不杀任务，显式「停止」才真正终止**。
+
+- **后台续跑**：客户端脱钩（切会话/刷新）仅中止订阅并落盘进度，StreamHub 任务由服务端独立 Reader 继续生成并全量缓冲
+- **无缝续接**：回切会话时探针 `GET /api/analyze?sessionId=` 返回 `running/hasTask`，命中即在终态 30s 保留窗内重放历史分块并实时续接——切走再切回，输出不断线
+- **即刻中止**：用户显式停止经 `abortTask` 取消 provider 侧生成（停止计费），任务级看门狗（默认 10 分钟）防 provider 挂起永久占用
+- **防双消费**：「提交在途」守卫拦截重新分析切会话后 `isLoading` 未翻转窗口期的重连探测，避免两个消费端接入同一在途流
+
+## 运行时防护与可观测
+
+LLM 层内建五道防线（均可在环境变量章节调参）：
+
+| 防线 | 触发行为 |
+| --- | --- |
+| 任务看门狗 | wall-clock 超限（`LLM_TASK_TIMEOUT_MS`）自动中止，防 provider 挂起永久占用 |
+| token 预算熔断 | 单任务累计超限（`LLM_TASK_TOKEN_BUDGET`）写 `budget_exhausted` 终态并中止 provider |
+| 并发准入 | running 任务数达上限（`LLM_MAX_CONCURRENT_TASKS`）时新任务返回 429；重连不占名额 |
+| 工具结果截断 | 超长工具结果（`LLM_TOOL_OUTPUT_MAX_BYTES`）以 `<tool_output untrusted>` 信封头尾保留，配合 system 规则段声明「数据非指令」 |
+| 重复循环熔断 | 推理模型生成退化（同一行字节级重复 ≥15 次）时自动截断、取消 provider 生成并注入说明，已产出内容全保留 |
+
+- **结构化遥测**：`HarnessEvent` 事件流（run_start / step_finish / tool_result / task_finish / abort / reconnect…）以 NDJSON 输出，可注入 `TelemetrySink` 接入 OTel
+- **finish_task 服务端不变量**：无看板/规划卡产出时 `completed` 状态被拒绝（提示改用 `insufficient_data`），防模型空口宣告完成
+
+## 评测体系（Evals）
+
+双层守护「机制正确」与「行为质量」：
+
+- **Tier A 轨迹回归（进 CI）**：`packages/openui-llm/src/evals/trajectories.test.ts` 用脚本化模型剧本驱动 handler 全链路，锁定工具调用序列、终态类型、单步 token 锚点、上下文投影、注入信封与不变量门
+- **Tier B 真实模型评估（手动/夜间）**：`packages/openui-llm/src/evals/tier-b.real-model.test.ts` 以确定性 CSV 夹具经真实 `/api/analyze` 全链路跑固定问题集，轨迹指标（步数/token/终态/看板解析）落盘基线对比；需环境变量提供 API Key，无 Key 自动跳过。**prompt/模型变更前后各跑一次**
 
 ## 会话存储
 
@@ -109,7 +152,7 @@ pnpm dev        # http://localhost:3006
 
 长会话不会撑爆模型窗口，也不会丢历史——**存储层永远保存完整会话，压缩只作用于「发往模型的投影」**：
 
-- **token 计量**：每次响应的实测 `usage.promptTokens` 回写会话元数据作为锚点；锚点后新增消息用字符启发式估算，误差逐轮自校正
+- **token 计量**：最后一步的实测单步 `usage.promptTokens` 回写会话元数据作为锚点（多步工具调用的累计值不落盘，防剪枝判定虚高）；锚点后新增消息用字符启发式估算，误差逐轮自校正
 - **触发**：估算 prompt > `min(窗口 × 0.7, 窗口 − maxTokens − 8k)` 时启动（窗口按模型名查表，或由客户端 hint 提供）
 - **第一道 tool-result pruning**：保留窗口（窗口 × 25% 的最近消息）以外的工具结果替换为 `[已裁剪: 工具名]` 占位符；用户消息与 PlanReviewCard 天然豁免
 - **第二道 LLM 摘要**：pruning 后仍超阈值时，把旧历史压缩为摘要注入 system prompt（同模型、≤2k token 输出），摘要缓存在会话元数据中增量复用
