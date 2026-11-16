@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { createAnalyzeHandler, type SessionContextStore } from "./handler";
+import { createAnalyzeHandler, type SessionContextMeta, type SessionContextStore } from "./handler";
 import type {
   DatasourceManager,
   McpToolBinding,
@@ -1096,5 +1096,157 @@ describe("成本预算与并发准入（WS-3）", () => {
       makeRequest({ messages: [], apiKey: "k", sessionId: "sess_conc_b" })
     );
     expect(resB2.status).toBe(200);
+  });
+});
+
+describe("Plan→execute 结构化交接（WS-4）", () => {
+  const savedEnv: Record<string, string | undefined> = {};
+
+  beforeEach(() => {
+    for (const key of ["OPENAI_API_KEY", "LLM_API_KEY"]) {
+      savedEnv[key] = process.env[key];
+      delete process.env[key];
+    }
+    mockStreamOk();
+  });
+
+  afterEach(() => {
+    for (const [key, value] of Object.entries(savedEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    vi.clearAllMocks();
+  });
+
+  // 合规 plan 代码块(与 prompt few-shot 同构,含 methods 机器参数)
+  const PLAN_BLOCK_TEXT = [
+    "请确认以下分析方案。",
+    "```openui",
+    "root = Root([plan])",
+    'plan = PlanReviewCard("CAC 思路确认（方法：pareto）", "各渠道 CAC 对比", ["postgres: m.leads"], [{"title":"采样","chart":"DataTable"}], [{"question":"口径？","options":["仅投放"],"default":"仅投放"}], "按此思路开始分析", ["pareto"])',
+    "```",
+  ].join("\n");
+
+  function makeSessionsStub(context?: Partial<SessionContextMeta>) {
+    return {
+      getContext: vi.fn(async () => context),
+      updateContext: vi.fn<(sessionId: string, patch: SessionContextMeta) => Promise<void>>(
+        async () => {}
+      ),
+    } satisfies SessionContextStore & {
+      getContext: unknown;
+      updateContext: unknown;
+    };
+  }
+
+  function mockPlanTextStream(finalText: string) {
+    vi.mocked(streamText).mockImplementation((opts) => {
+      return {
+        mergeIntoDataStream: vi.fn(() => {
+          opts.onStepFinish?.({
+            stepType: "text",
+            toolCalls: [],
+            finishReason: "stop",
+            text: finalText,
+            usage: { promptTokens: 100, completionTokens: 50 },
+          } as never);
+          opts.onFinish?.({ usage: { promptTokens: 100 } } as never);
+        }),
+      } as never;
+    });
+  }
+
+  it("extractPlanMethods:含 methods 代码块提取 id;无 methods/坏 DSL/无代码块返回空", async () => {
+    const { extractPlanMethods } = await import("./handler");
+
+    expect(extractPlanMethods(PLAN_BLOCK_TEXT)).toEqual(["pareto"]);
+
+    const noMethods = PLAN_BLOCK_TEXT.replace(', ["pareto"]', "").replace("（方法：pareto）", "");
+    expect(extractPlanMethods(noMethods)).toEqual([]);
+
+    expect(extractPlanMethods("```openui\nroot = Root([insight])\n```")).toEqual([]);
+    expect(extractPlanMethods("纯文字规划,没有代码块")).toEqual([]);
+
+    // id 去重
+    const dupText = PLAN_BLOCK_TEXT.replace('["pareto"]', '["pareto","pareto","trend"]');
+    expect(extractPlanMethods(dupText)).toEqual(["pareto", "trend"]);
+  });
+
+  it("plan 模式 onFinish:提取 methods 并持久化 pendingPlan", async () => {
+    mockPlanTextStream(PLAN_BLOCK_TEXT);
+    const sessions = makeSessionsStub();
+    const manager = await makeFakeManager();
+    const POST = createAnalyzeHandler({ datasources: manager, sessions });
+
+    await POST(
+      makeRequest({ messages: [], apiKey: "k", sessionId: "sess_plan", mode: "plan" })
+    );
+
+    expect(sessions.updateContext).toHaveBeenCalledWith(
+      "sess_plan",
+      expect.objectContaining({ pendingPlan: { methodIds: ["pareto"] } })
+    );
+  });
+
+  it("execute 模式:pendingPlan 精确注入方法详情并消费清空", async () => {
+    mockPlanTextStream("执行中");
+    const sessions = makeSessionsStub({ pendingPlan: { methodIds: ["pareto"] } });
+    const manager = await makeFakeManager();
+    const POST = createAnalyzeHandler({ datasources: manager, sessions });
+
+    await POST(
+      makeRequest({
+        messages: [{ role: "assistant", content: "不含方法名的旧规划" }],
+        apiKey: "k",
+        sessionId: "sess_exec",
+        mode: "execute",
+      })
+    );
+
+    // system prompt 注入 pareto 卡详情(结构化主路径;散文匹配本应命不中该卡)
+    const arg = vi.mocked(streamText).mock.calls[0][0];
+    expect(String(arg.system)).toContain("### Method pareto");
+    // 消费后清空 pendingPlan
+    expect(sessions.updateContext).toHaveBeenCalledWith(
+      "sess_exec",
+      expect.objectContaining({ pendingPlan: { methodIds: [] } })
+    );
+  });
+
+  it("execute 模式无 pendingPlan:回退散文匹配并发 PLAN_FALLBACK_LEGACY 遥测", async () => {
+    mockPlanTextStream("执行中");
+    const sessions = makeSessionsStub(undefined);
+    const telemetryEvents: Array<{ type: string; code?: string }> = [];
+    const manager = await makeFakeManager();
+    const POST = createAnalyzeHandler({
+      datasources: manager,
+      sessions,
+      telemetry: { emit: (e) => telemetryEvents.push(e as { type: string; code?: string }) },
+    });
+
+    await POST(
+      makeRequest({
+        messages: [
+          {
+            role: "assistant",
+            content: "思路确认卡(方法:pareto + ranking),请确认以下分析方案。",
+          },
+        ],
+        apiKey: "k",
+        sessionId: "sess_legacy",
+        mode: "execute",
+      })
+    );
+
+    const arg = vi.mocked(streamText).mock.calls[0][0];
+    expect(String(arg.system)).toContain("### Method pareto");
+    expect(
+      telemetryEvents.some((e) => e.type === "warn" && e.code === "PLAN_FALLBACK_LEGACY")
+    ).toBe(true);
+    // 未消费 pendingPlan:不写 pendingPlan 补丁(onFinish 的 token 锚点回写不受影响)
+    const pendingPatches = vi
+      .mocked(sessions.updateContext)
+      .mock.calls.filter(([, patch]) => "pendingPlan" in patch);
+    expect(pendingPatches).toHaveLength(0);
   });
 });

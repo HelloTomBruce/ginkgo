@@ -245,6 +245,7 @@ export const PlanReviewCardDef = defineComponent({
     steps: z.any().describe("有序分析步骤 [{title, detail?, chart?}]"),
     clarifications: z.any().optional().describe("澄清问题 [{question, options?, default?}]，每题须带 options 或 default"),
     confirmLabel: z.any().optional().describe("确认按钮文案，默认「按此思路开始分析」"),
+    methods: z.any().optional().describe("本规划采用的方法卡 id 列表（机器可读，服务端消费；渲染侧不展示）"),
   }),
   component: ({ props }: { props: Record<string, unknown> }) => (
     <ComponentSafeWrapper name="PlanReviewCard">

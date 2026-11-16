@@ -61,7 +61,7 @@ verdict = InsightBox("tip", "对比结论", "TikTok CAC 更低且增速更快（
  * 与其他示例一样受 promptExamples.test.ts 全量解析校验守护。
  */
 export const planExample = `root = Root([plan])
-plan = PlanReviewCard("渠道 CAC 分析思路确认（方法：pareto + ranking）", "各渠道获客成本对比与预算优化建议", ["postgres: marketing.leads / marketing.deals", "采样验证: leads.status 枚举值"], [{"title":"拉取近 90 天各渠道线索与成交明细","detail":"方法 ranking：按渠道聚合花费/线索/成交数并排序","chart":"DataTable"},{"title":"计算各渠道 CAC、转化率与环比变化","chart":"MetricCard + AnalyticsChart(bar)"},{"title":"方法 pareto：定位贡献 80% 的头部渠道并给出预算再分配建议","chart":"ComparisonLayout + ActionPlanCard + ReactiveSimulator"}], [{"question":"CAC 口径是否包含人力成本？","options":["仅投放花费","投放+人力成本"],"default":"仅投放花费"},{"question":"分析周期以哪个为准？","options":["近 90 天","本季度"],"default":"近 90 天"}], "按此思路开始分析")`;
+plan = PlanReviewCard("渠道 CAC 分析思路确认（方法：pareto + ranking）", "各渠道获客成本对比与预算优化建议", ["postgres: marketing.leads / marketing.deals", "采样验证: leads.status 枚举值"], [{"title":"拉取近 90 天各渠道线索与成交明细","detail":"方法 ranking：按渠道聚合花费/线索/成交数并排序","chart":"DataTable"},{"title":"计算各渠道 CAC、转化率与环比变化","chart":"MetricCard + AnalyticsChart(bar)"},{"title":"方法 pareto：定位贡献 80% 的头部渠道并给出预算再分配建议","chart":"ComparisonLayout + ActionPlanCard + ReactiveSimulator"}], [{"question":"CAC 口径是否包含人力成本？","options":["仅投放花费","投放+人力成本"],"default":"仅投放花费"},{"question":"分析周期以哪个为准？","options":["近 90 天","本季度"],"default":"近 90 天"}], "按此思路开始分析", ["pareto", "ranking"])`;
 
 /**
  * 跨源联合分析是否可用完全由用户配置驱动：
@@ -160,7 +160,7 @@ function methodSelectionSection(methodIndex?: string): string {
   return `
 
 ## Method Selection (from the index above):
-- Pick 1-2 methods that best fit the question's intent and NAME them in the plan: put the method id (e.g. "pareto", "trend") in the PlanReviewCard title or a step's detail, so the user can confirm or change the analytical approach along with the plan.
+- Pick 1-2 methods that best fit the question's intent and NAME them in the plan: put the method id (e.g. "pareto", "trend") in the PlanReviewCard title or a step's detail, AND pass the same ids in the PlanReviewCard \`methods\` parameter (machine-readable list; the execution round consumes it to inject full method guidance).
 - The execution round will receive the full guidance of the selected methods automatically.`;
 }
 
@@ -366,10 +366,11 @@ The user just asked an analytical question. Your job:
 
 ⚠️ 强制输出要求：在输出完第 1 部分文字规划（如「请确认以下分析方案」）之后，必须在当前同一回复中立即紧接着输出 \`\`\`openui 代码块并实例化 PlanReviewCard！绝对不可只输出文字说明而漏掉 \`\`\`openui 代码块！
 
-## PlanReviewCard(title, question?, sources?, steps, clarifications?, confirmLabel?):
+## PlanReviewCard(title, question?, sources?, steps, clarifications?, confirmLabel?, methods?):
 - title: short plan name; question?: your restatement of the user's question; sources?: data basis badges (e.g. "postgres: marketing.leads").
 - steps: [{title, detail?, chart?}] — ordered analysis steps; chart names the intended component(s) (e.g. "FunnelChart", "ReportLayout + MetricCard").
 - clarifications: [{question, options?, default?}] — ambiguous points. EVERY question MUST provide options or a default assumption so the user can confirm in one click without answering. Do not interrogate the user with more than 3-4 questions; settle trivial ambiguities yourself with a default.
+- methods: ["id1", "id2"] — REQUIRED when methods were selected from the method index: the exact method ids you chose (same ids named in title/steps). This machine-readable list drives execution-round guidance injection; omit ONLY when no method applies.
 - The card's confirm button sends the user's selected answers back to the chat and triggers execution. confirmLabel defaults to "按此思路开始分析".
 
 ## Hard constraints:

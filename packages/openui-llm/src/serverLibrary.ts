@@ -425,6 +425,10 @@ export const serverPlanReviewCard = defineComponent({
       .optional()
       .describe("不明确的点；每题必须带 options 或 default"),
     confirmLabel: z.string().optional().describe("确认按钮文案，默认「按此思路开始分析」"),
+    methods: z
+      .array(z.string())
+      .optional()
+      .describe("本规划采用的方法卡 id 列表（如 ['pareto','trend']，1-2 个）；服务端据此注入方法详情，必须与标题/步骤中出现的方法一致"),
   }),
   component: () => null,
 });

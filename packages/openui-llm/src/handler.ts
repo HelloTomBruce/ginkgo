@@ -38,6 +38,8 @@ import {
   type MethodLibrary,
 } from "@openui-analytics/methodology";
 import { getOpenUISystemPrompt, getOpenUIPlanPrompt, getExecuteSystemPrompt } from "./prompt";
+import { serverLibrary } from "./serverLibrary";
+import { createParser } from "@openuidev/lang-core";
 import { getCrossSourceLinks, resolveCrossSourcePairs } from "./crossSourceMap";
 import { SessionStreamHub, defaultStreamHub } from "./streamHub";
 import { createReasoningFetch } from "./reasoningStream";
@@ -46,6 +48,9 @@ import { createConsoleSink, jsonByteSize, newRunId } from "./telemetry";
 
 /** 全部启用源结构卡注入 prompt 的总量预算（与单卡 2KB 预算配套，快照测试守护） */
 export const SCHEMA_DIGEST_TOTAL_BUDGET_BYTES = 8 * 1024;
+
+/** WS-4:plan 代码块解析器(模块级构造一次;解析 PlanReviewCard.methods 用) */
+const planParser = createParser(serverLibrary.toJSONSchema(), "Root");
 
 /**
  * 组装启用源的结构卡摘要：逐源读卡（渲染职责在 datasources 包），
@@ -173,7 +178,7 @@ function instrumentTools(
 }
 
 /**
- * execute 模式方法提取：从消息历史**最近一条 assistant 消息**（即待执行的
+ * execute 模式方法提取（WS-4 结构化交接的降级兜底）：从消息历史**最近一条 assistant 消息**（即待执行的
  * PlanReviewCard 规划）中匹配方法 id（词边界）或卡名（中文语境兜底），
  * 命中卡按需注入详情（≤2 张，与 plan 阶段「选 1~2 个方法」契约一致）。
  * 未命中返回 undefined（execute prompt 回落到无详情的增量约束）。
@@ -202,11 +207,88 @@ export function buildMethodDetailsFromMessages(
   return matched.length > 0 ? matched.join("\n\n") : undefined;
 }
 
+/** 按 id 注入方法卡详情（WS-4 结构化主路径;≤2 张,与 plan 契约一致;未知 id 跳过） */
+function renderMethodDetailsByIds(
+  library: MethodLibrary,
+  ids: string[]
+): string | undefined {
+  const matched: string[] = [];
+  for (const id of ids) {
+    if (matched.length >= 2) break;
+    const card = library.cards.find((c) => c.id === id);
+    if (card) matched.push(renderCardDetail(card));
+  }
+  return matched.length > 0 ? matched.join("\n\n") : undefined;
+}
+
+/** 在解析 AST 中泛型递归查找指定组件的 props(lang-core 元素以 typeName 标识组件名) */
+function findComponentProps(
+  node: unknown,
+  componentName: string
+): Record<string, unknown> | undefined {
+  if (!node || typeof node !== "object") return undefined;
+  const n = node as Record<string, unknown>;
+  if (
+    (n.typeName === componentName || n.name === componentName) &&
+    n.props &&
+    typeof n.props === "object"
+  ) {
+    return n.props as Record<string, unknown>;
+  }
+  for (const value of Object.values(n)) {
+    if (Array.isArray(value)) {
+      for (const v of value) {
+        const found = findComponentProps(v, componentName);
+        if (found) return found;
+      }
+    } else if (value && typeof value === "object") {
+      const found = findComponentProps(value, componentName);
+      if (found) return found;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * WS-4:plan 阶段 onFinish 从最后一步文本提取结构化方法列表。
+ * 用 serverLibrary 的 parser 正规解析 ```openui 代码块,读取 PlanReviewCard.methods;
+ * 任何失败(无代码块/解析错误/缺 methods)返回 [],由调用方决定降级路径。
+ */
+export function extractPlanMethods(finalText: string): string[] {
+  if (!finalText || typeof finalText !== "string") return [];
+  const blockRe = /```openui\n([\s\S]*?)```/g;
+  let match: RegExpExecArray | null;
+  while ((match = blockRe.exec(finalText)) !== null) {
+    const code = match[1];
+    if (!code.includes("PlanReviewCard")) continue;
+    try {
+      const result = planParser.parse(code);
+      const props = findComponentProps(result.root, "PlanReviewCard");
+      const raw = props?.methods;
+      if (Array.isArray(raw)) {
+        const ids = raw
+          .filter((v): v is string => typeof v === "string" && v.length > 0)
+          .filter((v, i, arr) => arr.indexOf(v) === i)
+          .slice(0, 4);
+        if (ids.length > 0) return ids;
+      }
+    } catch {
+      // 单块解析失败继续尝试下一块(模型可能输出 InsightBox 附属块)
+    }
+  }
+  return [];
+}
+
 /** 会话上下文元数据（投影式压缩的锚点与摘要缓存；与应用层 SessionContextMeta 同构） */
 export interface SessionContextMeta {
   lastPromptTokens?: number;
   summary?: string;
   summaryUptoMessageId?: string;
+  /**
+   * WS-4 结构化规划工件:plan 阶段服务端从 PlanReviewCard.methods 提取后写入,
+   * execute 阶段消费(按 id 注入方法卡详情)后置空数组,防陈旧规划被复用。
+   */
+  pendingPlan?: { methodIds: string[] };
 }
 
 /**
@@ -573,10 +655,38 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
           detail: `${schemaDigest.omitted} 个数据源结构卡因总量预算(${SCHEMA_DIGEST_TOTAL_BUDGET_BYTES}B)省略`,
         });
       }
-      const methodDetails =
-        mode === "execute"
-          ? buildMethodDetailsFromMessages(methodLibrary, messages)
+      // 会话上下文元数据提前读取:execute 消费 pendingPlan(WS-4)与投影锚点共用;
+      // 读取失败静默降级（仅当次启发式，不阻塞分析）
+      const sessionCtx =
+        sessions && typeof clientSessionId === "string" && clientSessionId
+          ? await sessions.getContext(clientSessionId).catch(() => undefined)
           : undefined;
+      let methodDetails: string | undefined;
+      if (mode === "execute") {
+        const pendingIds = sessionCtx?.pendingPlan?.methodIds ?? [];
+        if (pendingIds.length > 0) {
+          // WS-4 结构化主路径:plan 阶段登记的 methodIds 精确注入
+          methodDetails = renderMethodDetailsByIds(methodLibrary, pendingIds);
+          // 消费即清空(置空数组,增量合并语义可落盘),防陈旧规划被后续 execute 复用
+          void sessions
+            ?.updateContext(clientSessionId as string, {
+              pendingPlan: { methodIds: [] },
+            })
+            .catch(() => {});
+        } else {
+          // 降级兜底:旧格式规划(卡片无 methods 参数)走散文匹配
+          methodDetails = buildMethodDetailsFromMessages(methodLibrary, messages);
+          if (methodDetails) {
+            telemetry.emit({
+              type: "warn",
+              runId,
+              sessionId: sessionIdForEvents,
+              code: "PLAN_FALLBACK_LEGACY",
+              detail: "pendingPlan 缺失,execute 回退到散文匹配提取方法",
+            });
+          }
+        }
+      }
       const baseSystem =
         mode === "plan"
           ? getOpenUIPlanPrompt(summaries, schemaDigest.text, methodIndexText, certifiedMatches)
@@ -585,11 +695,7 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
             : getOpenUISystemPrompt(summaries, schemaDigest.text, methodIndexText, certifiedMatches);
 
       // ========== 上下文治理（投影式压缩，设计见 context.ts） ==========
-      // 会话元数据读取失败静默降级（仅当次启发式，不阻塞分析）
-      const sessionCtx =
-        sessions && typeof clientSessionId === "string" && clientSessionId
-          ? await sessions.getContext(clientSessionId).catch(() => undefined)
-          : undefined;
+      // sessionCtx 已在上方提前读取(execute 消费 pendingPlan 与此处投影共用)
       const contextWindow = resolveContextWindow(model, clientContextWindow);
       const budget = computeBudget(contextWindow, maxOutputTokens);
       const projection = projectMessages({
@@ -715,6 +821,8 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
       let lastStepPromptTokens: number | undefined;
       let lastStepFinishReason: string | undefined;
       let explicitFinishDetails: { status: string; summary?: string } | undefined;
+      /** 最后一步的模型文本(plan 模式 onFinish 据此提取 methods,WS-4) */
+      let lastStepText: string | undefined;
       // 任务级中止控制器:abortTask(用户停止/看门狗超时)经 hub 触发后传导进
       // streamText 并以 error 语义终止订阅;预算熔断走独立 controller——只取消
       // provider 生成,流自然收尾(客户端已收到 task_finish,订阅不得 error)
@@ -786,8 +894,11 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
               finish_task: finishTaskTool,
             },
             maxSteps,
-            onStepFinish({ toolCalls, finishReason, usage }) {
+            onStepFinish({ text, toolCalls, finishReason, usage }) {
               stepIndex++;
+              if (typeof text === "string" && text.length > 0) {
+                lastStepText = text;
+              }
               lastStepFinishReason = finishReason;
               const stepDurationMs = Date.now() - prevStepTs;
               prevStepTs = Date.now();
@@ -893,6 +1004,17 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
                   typeof usage?.completionTokens === "number" ? usage.completionTokens : undefined,
                 durationMs: Date.now() - runStartTs,
               });
+
+              // WS-4:plan 阶段从最终文本提取结构化 methods,登记为 pendingPlan
+              // (execute 轮消费后清空;提取失败静默——execute 侧有散文匹配兜底)
+              if (mode === "plan" && sessions && typeof clientSessionId === "string" && clientSessionId) {
+                const planIds = extractPlanMethods(lastStepText ?? "");
+                if (planIds.length > 0) {
+                  void sessions
+                    .updateContext(clientSessionId, { pendingPlan: { methodIds: planIds } })
+                    .catch(() => {});
+                }
+              }
 
               if (
                 sessions &&
