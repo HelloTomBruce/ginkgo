@@ -131,8 +131,8 @@ const ReasoningViewer = React.memo(function ReasoningViewer({
       }}
       className={`no-print text-xs rounded-xl border transition-all ${
         isActivelyThinking
-          ? "bg-info-soft/40 border-info-border"
-          : "bg-surface-sunken border-border"
+          ? "bg-surface-sunken border-border-strong shadow-2xs"
+          : "bg-surface-sunken/60 border-border"
       }`}
     >
       <summary className="cursor-pointer font-medium select-none flex items-center justify-between px-3 py-2 text-foreground-subtle hover:text-foreground-strong">
@@ -140,18 +140,18 @@ const ReasoningViewer = React.memo(function ReasoningViewer({
           <Brain
             className={`w-3.5 h-3.5 transition-colors ${
               isActivelyThinking
-                ? "text-info-fg animate-pulse"
+                ? "text-foreground-strong"
                 : "text-foreground-faint"
             }`}
           />
-          <span className={isActivelyThinking ? "text-info-fg font-medium" : ""}>
+          <span className={isActivelyThinking ? "text-foreground-strong font-medium" : ""}>
             {isActivelyThinking ? "正在深度思考..." : "思考过程"}
           </span>
         </div>
         <div>
           {isActivelyThinking ? (
-            <span className="text-[10px] bg-info-soft-strong text-info-fg-strong px-2 py-0.5 rounded font-sans font-medium flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-info-solid animate-ping" />
+            <span className="text-[10px] bg-surface-raised text-foreground-subtle border border-border px-2 py-0.5 rounded font-sans font-medium flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-info-fg animate-pulse" />
               思考中
             </span>
           ) : (
@@ -295,7 +295,7 @@ const MessageItem = React.memo(function MessageItem({
           isPrintTarget ? " print-target" : ""
         }`}
       >
-        <div className="ml-auto w-fit max-w-[60%] rounded-2xl p-3.5 text-sm bg-info-solid text-white rounded-br-xs">
+        <div className="ml-auto w-fit max-w-[65%] rounded-2xl p-3.5 text-sm bg-surface-raised text-foreground border border-border-subtle rounded-br-xs shadow-2xs animate-surface-appear">
           <div className="leading-relaxed whitespace-pre-wrap">{msg.content}</div>
         </div>
 
@@ -461,7 +461,7 @@ const MessageItem = React.memo(function MessageItem({
                   <button
                     type="button"
                     onClick={() => onRendererAction("请按上述已确认的分析思路开始执行，产出完整的分析报告与看板。")}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-info-solid text-white hover:opacity-90 transition-opacity shadow-xs cursor-pointer select-none"
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-foreground text-background hover:bg-foreground-strong transition-colors shadow-2xs cursor-pointer select-none"
                   >
                     <Play className="w-3.5 h-3.5 fill-current" />
                     <span>按此思路开始分析</span>
@@ -471,8 +471,8 @@ const MessageItem = React.memo(function MessageItem({
 
               {/* 原始 OpenUI Lang 源代码展示 */}
               {showRawLang && block.openuiPart && (
-                <div className="no-print mt-3 bg-info-solid/20 text-info-fg-strong p-3 rounded-lg text-xs font-mono overflow-x-auto border border-info-border">
-                  <div className="flex items-center gap-1.5 text-[11px] font-semibold text-info-fg mb-1.5">
+                <div className="no-print mt-3 bg-surface-sunken text-foreground-strong p-3 rounded-lg text-xs font-mono overflow-x-auto border border-border">
+                  <div className="flex items-center gap-1.5 text-[11px] font-semibold text-foreground-subtle mb-1.5">
                     <FileCode className="w-3.5 h-3.5" />
                     <span>OpenUI Lang (Model Generated DSL)</span>
                   </div>
@@ -591,7 +591,7 @@ const MessageItem = React.memo(function MessageItem({
                               "上面的 ```openui 看板代码由于达到长度上限被截断未闭合。请继续输出未完成的看板代码，确保完整闭合并渲染。"
                             )
                           }
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-info-solid text-white hover:opacity-90 transition-opacity shadow-xs cursor-pointer select-none"
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-foreground text-background hover:bg-foreground-strong transition-colors shadow-2xs cursor-pointer select-none"
                         >
                           <Play className="w-3.5 h-3.5 fill-current" />
                           <span>继续生成完整看板</span>
@@ -626,7 +626,7 @@ const MessageItem = React.memo(function MessageItem({
                     "数据取数与计算已全部完成。请立即基于上述结果，输出完整的 Markdown 深度分析报告以及 ```openui 可视化动态看板代码块。"
                   )
                 }
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-info-solid text-white hover:opacity-90 transition-opacity shadow-xs cursor-pointer select-none"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-foreground text-background hover:bg-foreground-strong transition-colors shadow-2xs cursor-pointer select-none"
               >
                 <Sparkles className="w-3.5 h-3.5" />
                 <span>立即生成报告与看板</span>

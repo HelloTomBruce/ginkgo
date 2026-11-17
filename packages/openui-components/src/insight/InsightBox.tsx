@@ -53,9 +53,9 @@ export const InsightBox: React.FC<InsightBoxProps> = ({
         <div className="shrink-0 mt-0.5">{styles.icon}</div>
         <div className="space-y-1 text-xs">
           {title && (
-            <h5 className={`font-semibold ${styles.text}`}>{title}</h5>
+            <h5 className={`font-semibold tracking-tight ${styles.text}`}>{title}</h5>
           )}
-          <div className={`${styles.text} leading-relaxed opacity-90`}>
+          <div className="text-foreground-strong leading-relaxed">
             {children || content}
           </div>
         </div>

@@ -23,8 +23,8 @@
 | `text-slate-700/600 dark:text-slate-300` | `text-foreground-subtle` | 次级文字 |
 | `text-slate-500 dark:text-slate-400` | `text-muted-foreground` | 辅助文字 |
 | `text-slate-400 dark:text-slate-500/600` | `text-foreground-faint` | 占位/图标/时间戳 |
-| `focus:ring-blue-500` / `focus-within:ring-blue-500` | `focus:ring-ring` | 焦点环统一为品牌蓝 |
-| `bg-blue-600 hover:bg-blue-700 text-white`（主按钮） | `bg-primary hover:bg-primary/90 text-primary-foreground` | `--primary` 已校准为 blue-600 |
+| `focus:ring-blue-500` / `focus-within:ring-blue-500` | `focus:ring-ring` | 焦点环校准为沉稳石墨微光环 |
+| `bg-blue-600 hover:bg-blue-700 text-white`（主按钮） | `bg-primary hover:bg-primary/90 text-primary-foreground` | `--primary` 已升级为黑曜石近黑（暗色为柔白），顶级工程工具质感 |
 
 ## 状态/强调色
 
@@ -53,6 +53,16 @@
 | `danger` | rose | 删除、错误 |
 | `brand` | purple | 品牌辅助、AI 相关入口 |
 | `indigo` / `sky` / `violet` | 同名色板 | 数据源类型徽章等区分色 |
+
+## 竞技排行/梯队色阶（Rank Tiers）
+
+用于排行榜、榜单、金银铜徽章与对比梯队，亮暗两套自适应：
+
+| 梯队 | soft 浅底 | border 边框 | fg 文本 | solid 实体/进度条 |
+|---|---|---|---|---|
+| 第 1 名 / 金牌 (`rank-1`) | `bg-rank-1-soft` | `border-rank-1-border` | `text-rank-1-fg` | `bg-rank-1-solid` |
+| 第 2 名 / 银牌 (`rank-2`) | `bg-rank-2-soft` | `border-rank-2-border` | `text-rank-2-fg` | `bg-rank-2-solid` |
+| 第 3 名 / 铜牌 (`rank-3`) | `bg-rank-3-soft` | `border-rank-3-border` | `text-rank-3-fg` | `bg-rank-3-solid` |
 
 ## 图表色板
 

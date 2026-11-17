@@ -114,11 +114,11 @@ export function ChatSidebar({
     <aside className="w-72 border-r border-border bg-card flex flex-col shrink-0">
       {/* Logo 区域 */}
       <div className="flex items-center gap-2.5 p-4 border-b border-border-subtle">
-        <div className="w-8 h-8 rounded-lg bg-info-solid flex items-center justify-center text-white shadow-xs">
-          <BarChart3 className="w-5 h-5" />
+        <div className="w-8 h-8 rounded-lg bg-foreground text-background flex items-center justify-center shadow-2xs">
+          <BarChart3 className="w-4.5 h-4.5" />
         </div>
         <div className="flex-1 min-w-0">
-          <h1 className="font-bold text-sm leading-tight truncate">OpenUI Analytics</h1>
+          <h1 className="font-bold text-sm leading-tight truncate text-foreground">OpenUI Analytics</h1>
           <p className="text-[11px] text-foreground-faint">Generative UI & MCP</p>
         </div>
       </div>
@@ -127,7 +127,7 @@ export function ChatSidebar({
       <div className="p-3 border-b border-border-subtle">
         <button
           onClick={onCreateNewChat}
-          className="w-full flex items-center justify-center gap-2 px-3.5 py-2.5 rounded-xl bg-info-solid hover:bg-info-solid-hover text-white text-xs font-semibold shadow-xs transition-colors"
+          className="w-full flex items-center justify-center gap-2 px-3.5 py-2 rounded-lg bg-foreground hover:bg-foreground-strong text-background text-xs font-medium shadow-2xs active:scale-[0.99] transition-all"
         >
           <Plus className="w-4 h-4" />
           <span>新建会话</span>

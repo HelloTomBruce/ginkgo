@@ -107,15 +107,15 @@ export const OpenUIRenderer: React.FC<OpenUIRendererProps> = React.memo(function
   return (
     // resetKey=renderContent：流式中间态解析失败后，新 token 到达时自动复位重试
     <ErrorBoundary name="OpenUIRenderer" resetKey={renderContent}>
-      <div className="w-full space-y-3">
+      <div className="w-full space-y-3 animate-surface-appear">
         {/* 流式生成进行中的 Loading 状态条 */}
         {isStreaming && (
-          <div className="flex items-center justify-between px-3 py-2 bg-info-soft/70 border border-info-border/60 rounded-lg text-xs text-info-fg">
+          <div className="flex items-center justify-between px-3 py-2 bg-surface-sunken border border-border rounded-lg text-xs text-foreground-subtle">
             <div className="flex items-center gap-2">
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              <span className="font-medium">大模型正在实时流式构建 OpenUI 视觉组件与计算图表...</span>
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-foreground-faint" />
+              <span className="font-medium">正在流式渲染可视化组件与计算图表...</span>
             </div>
-            <span className="text-[10px] bg-info-soft-strong px-2 py-0.5 rounded-full font-mono">
+            <span className="text-[10px] bg-surface-raised text-foreground-faint px-2 py-0.5 rounded-full font-mono">
               Live Streaming
             </span>
           </div>

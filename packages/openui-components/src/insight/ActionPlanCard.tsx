@@ -86,7 +86,7 @@ export const ActionPlanCard: React.FC<ActionPlanCardProps> = ({
             return (
               <div
                 key={`action-${idx}`}
-                className="group p-3 rounded-lg border border-border/80 bg-surface-sunken/50 dark:bg-surface-inverse/50 hover:bg-muted/70 transition-colors flex items-start gap-3 justify-between"
+                className="group p-3 rounded-lg border border-border/80 bg-surface-sunken hover:bg-muted/70 transition-colors duration-150 flex items-start gap-3 justify-between"
               >
                 <div className="space-y-1 flex-1">
                   <div className="flex items-center gap-2">
@@ -112,11 +112,11 @@ export const ActionPlanCard: React.FC<ActionPlanCardProps> = ({
 
                 <button
                   onClick={() => handleExecuteAction(action)}
-                  className="shrink-0 opacity-80 group-hover:opacity-100 p-1.5 bg-card border border-border rounded-md text-foreground-subtle hover:text-info-fg hover:border-info-border-strong text-xs flex items-center gap-1 shadow-2xs transition-all"
+                  className="shrink-0 opacity-80 group-hover:opacity-100 p-1.5 bg-card border border-border rounded-md text-foreground-subtle hover:text-info-fg hover:border-info-border-strong active:scale-95 text-xs flex items-center gap-1 shadow-2xs transition-all duration-150"
                   title="触发深入分析"
                 >
                   <span className="text-[11px]">拆解</span>
-                  <ArrowRight className="w-3 h-3" />
+                  <ArrowRight className="w-3 h-3 transition-transform duration-150 group-hover:translate-x-0.5" />
                 </button>
               </div>
             );

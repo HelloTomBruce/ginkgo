@@ -108,7 +108,23 @@ export const RankingList: React.FC<RankingListProps> = ({
                   ? Math.min(100, Math.round((numVal / maxValue) * 100))
                   : 0;
 
-              const isTop3 = rank <= 3;
+              const rankBadgeClass =
+                rank === 1
+                  ? "bg-rank-1-soft text-rank-1-fg border border-rank-1-border"
+                  : rank === 2
+                  ? "bg-rank-2-soft text-rank-2-fg border border-rank-2-border"
+                  : rank === 3
+                  ? "bg-rank-3-soft text-rank-3-fg border border-rank-3-border"
+                  : "bg-surface-sunken text-foreground-subtle border border-border";
+
+              const rankBarClass =
+                rank === 1
+                  ? "bg-rank-1-solid"
+                  : rank === 2
+                  ? "bg-rank-2-solid"
+                  : rank === 3
+                  ? "bg-rank-3-solid"
+                  : "bg-info-solid";
 
               return (
                 <div
@@ -118,11 +134,7 @@ export const RankingList: React.FC<RankingListProps> = ({
                   <div className="flex items-center justify-between gap-3 relative z-10 text-xs">
                     <div className="flex items-center gap-2 min-w-0">
                       <span
-                        className={`w-5 h-5 rounded-full flex items-center justify-center font-bold text-[11px] shrink-0 ${
-                          isTop3
-                            ? "bg-warning-soft text-warning-fg border border-warning-border"
-                            : "bg-surface-sunken text-foreground-subtle border border-border"
-                        }`}
+                        className={`w-5 h-5 rounded-full flex items-center justify-center font-bold text-[11px] shrink-0 ${rankBadgeClass}`}
                       >
                         {rank}
                       </span>
@@ -146,9 +158,7 @@ export const RankingList: React.FC<RankingListProps> = ({
                   {/* 行内进度条 */}
                   <div className="w-full h-1.5 bg-surface-sunken rounded-full mt-1.5 overflow-hidden">
                     <div
-                      className={`h-full rounded-full transition-all ${
-                        isTop3 ? "bg-warning-solid" : "bg-info-solid"
-                      }`}
+                      className={`h-full rounded-full transition-[width] duration-700 ease-[cubic-bezier(0.22,1,0.36,1)] transform-gpu ${rankBarClass}`}
                       style={{ width: `${barWidthPct}%` }}
                     />
                   </div>

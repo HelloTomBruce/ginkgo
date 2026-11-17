@@ -82,11 +82,11 @@ export const MetricCard: React.FC<MetricCardProps> = ({
         >
           <defs>
             <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor={strokeColor} stopOpacity={0.25} />
+              <stop offset="0%" stopColor={strokeColor} stopOpacity={0.18} />
               <stop offset="100%" stopColor={strokeColor} stopOpacity={0.0} />
             </linearGradient>
           </defs>
-          <path d={areaPath} fill={`url(#${gradId})`} />
+          <path d={areaPath} fill={`url(#${gradId})`} className="transition-opacity duration-300 ease-out" />
           <path
             d={linePath}
             fill="none"
@@ -94,6 +94,7 @@ export const MetricCard: React.FC<MetricCardProps> = ({
             strokeWidth="1.5"
             strokeLinecap="round"
             strokeLinejoin="round"
+            className="transition-[d,stroke] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]"
           />
         </svg>
       </div>
@@ -101,7 +102,7 @@ export const MetricCard: React.FC<MetricCardProps> = ({
   }, [validPoints, trend, gradId]);
 
   return (
-    <div className="bg-card border border-border rounded-xl p-4 sm:p-5 shadow-xs hover:shadow-md transition-shadow min-w-0 flex flex-col justify-between h-full">
+    <div className="bg-card border border-border rounded-xl p-4 sm:p-5 shadow-xs hover:shadow-md transition-shadow duration-250 ease-[cubic-bezier(0.22,1,0.36,1)] min-w-0 flex flex-col justify-between h-full">
       {/* 顶部区域：标题与核心指标 */}
       <div>
         {/* 标题区：自然多行折行，完整展示业务含义，绝不用 ... 截断 */}
@@ -120,12 +121,12 @@ export const MetricCard: React.FC<MetricCardProps> = ({
           </div>
           {change && (
             <div
-              className={`inline-flex shrink-0 items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full ${
+              className={`inline-flex shrink-0 items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full border ${
                 trend === "up"
-                  ? "bg-success-soft text-success-fg-strong"
+                  ? "bg-success-soft text-success-fg-strong border-success-border/70"
                   : trend === "down"
-                  ? "bg-danger-soft text-danger-fg-strong"
-                  : "bg-muted text-foreground-subtle"
+                  ? "bg-danger-soft text-danger-fg-strong border-danger-border/70"
+                  : "bg-surface-sunken text-foreground-subtle border-border"
               }`}
             >
               {trend === "up" && <TrendingUp className="w-3 h-3 shrink-0" />}

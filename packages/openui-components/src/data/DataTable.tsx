@@ -192,7 +192,7 @@ export const DataTable: React.FC<DataTableProps> = ({
 
       <div className="overflow-x-auto">
         <table className="w-full text-xs text-left">
-          <thead className="bg-surface-sunken dark:bg-surface-inverse/60 text-muted-foreground border-b border-border">
+          <thead className="bg-surface-sunken text-muted-foreground border-b border-border">
             <tr>
               {safeColumns.map((col) => (
                 <th
