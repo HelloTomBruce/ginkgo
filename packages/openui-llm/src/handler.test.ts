@@ -1322,3 +1322,300 @@ describe("finish_task 服务端不变量（WS-5）", () => {
     expect(result.status).toBe("completed");
   });
 });
+
+describe("Provider 韧性层 fallback 链（WS-9）", () => {
+  const savedEnv: Record<string, string | undefined> = {};
+  const ENV_KEYS = [
+    "OPENAI_API_KEY",
+    "LLM_API_KEY",
+    "OPENAI_BASE_URL",
+    "LLM_BASE_URL",
+    "OPENAI_MODEL",
+    "LLM_MODEL",
+    "LLM_MAX_RETRIES",
+    "LLM_REQUEST_TIMEOUT_MS",
+    "LLM_FALLBACK_MODELS",
+  ];
+  let events: Array<Record<string, unknown>>;
+  let POST: (req: Request) => Promise<Response>;
+
+  beforeEach(async () => {
+    for (const key of ENV_KEYS) {
+      savedEnv[key] = process.env[key];
+      delete process.env[key];
+    }
+    events = [];
+    mockStreamOk();
+    POST = createAnalyzeHandler({
+      datasources: await makeFakeManager(),
+      telemetry: { emit: (e) => events.push(e as Record<string, unknown>) },
+    });
+  });
+
+  afterEach(() => {
+    for (const key of ENV_KEYS) {
+      if (savedEnv[key] === undefined) delete process.env[key];
+      else process.env[key] = savedEnv[key];
+    }
+    vi.clearAllMocks();
+  });
+
+  const hasWarn = (code: string) =>
+    events.some((e) => e.type === "warn" && e.code === code);
+
+  it("主模型 503 用尽重试后 fallback 成功:客户端流含 model_fallback 分块并发遥测", async () => {
+    const serverErr = Object.assign(new Error("503 Service Unavailable"), {
+      statusCode: 503,
+    });
+    vi.mocked(streamText)
+      .mockImplementationOnce(
+        () =>
+          ({
+            mergeIntoDataStream: vi.fn(() => {
+              throw serverErr;
+            }),
+          }) as never
+      )
+      .mockImplementationOnce(
+        () =>
+          ({
+            mergeIntoDataStream: (ds: { write: (c: string) => void }) => {
+              ds.write('0:"ok"\n');
+            },
+          }) as never
+      );
+
+    const res = await POST(
+      makeRequest({
+        messages: [],
+        apiKey: "k",
+        resilience: { fallbacks: [{ model: "backup-model" }] },
+      })
+    );
+    expect(res.status).toBe(200);
+    const text = await res.text();
+
+    expect(vi.mocked(streamText)).toHaveBeenCalledTimes(2);
+    expect(text).toContain('0:"ok"');
+    expect(text).toContain('"type":"model_fallback"');
+    expect(text).toContain('"from":"gpt-4o-mini"');
+    expect(text).toContain('"to":"backup-model"');
+    expect(text).toContain('"reason":"server"');
+    expect(hasWarn("MODEL_FALLBACK")).toBe(true);
+    // fallback 模型经 createOpenAI 装配(第二次 provider 调用以 backup-model 建模型)
+    const { createOpenAI } = await import("@ai-sdk/openai");
+    const secondProvider = vi.mocked(createOpenAI).mock.results[1]
+      .value as ReturnType<typeof vi.fn>;
+    expect(secondProvider).toHaveBeenCalledWith("backup-model");
+  });
+
+  it("fallback 也失败:按 onError 报错,不无限切换", async () => {
+    const firstErr = Object.assign(new Error("503 Service Unavailable"), {
+      statusCode: 503,
+    });
+    const secondErr = Object.assign(new Error("backup also down"), {
+      statusCode: 503,
+    });
+    const failing = (err: unknown) =>
+      vi.fn(() => {
+        throw err;
+      });
+    vi.mocked(streamText)
+      .mockImplementationOnce(
+        () => ({ mergeIntoDataStream: failing(firstErr) }) as never
+      )
+      .mockImplementationOnce(
+        () => ({ mergeIntoDataStream: failing(secondErr) }) as never
+      );
+
+    const res = await POST(
+      makeRequest({
+        messages: [],
+        apiKey: "k",
+        resilience: { fallbacks: [{ model: "backup-model" }] },
+      })
+    );
+    const text = await res.text();
+
+    expect(vi.mocked(streamText)).toHaveBeenCalledTimes(2);
+    // 只切换一次:不越过链尾
+    expect(text.match(/model_fallback/g) ?? []).toHaveLength(1);
+    // 错误按 onError 路径写给客户端
+    expect(text).toContain("backup also down");
+    expect(hasWarn("MODEL_FALLBACK")).toBe(true);
+  });
+
+  it("首分块后失败:不重跑、发 MID_STREAM_FAILURE 遥测、按 onError 报错", async () => {
+    const netErr = Object.assign(new Error("socket hang up"), {
+      code: "ECONNRESET",
+    });
+    vi.mocked(streamText).mockImplementation(
+      (opts) =>
+        ({
+          mergeIntoDataStream: vi.fn(() => {
+            (
+              opts.onChunk as ((e: unknown) => void) | undefined
+            )?.({ chunk: { type: "text-delta", textDelta: "部分结果" } });
+            throw netErr;
+          }),
+        }) as never
+    );
+
+    const res = await POST(
+      makeRequest({
+        messages: [],
+        apiKey: "k",
+        resilience: { fallbacks: [{ model: "backup-model" }] },
+      })
+    );
+    const text = await res.text();
+
+    // 客户端已见部分内容:不做透明重跑/不切换模型
+    expect(vi.mocked(streamText)).toHaveBeenCalledTimes(1);
+    expect(text).not.toContain("model_fallback");
+    expect(hasWarn("MID_STREAM_FAILURE")).toBe(true);
+    expect(text).toContain("socket hang up");
+  });
+
+  it("context_overflow 可 fallback 到更大窗模型;auth 错误不 fallback", async () => {
+    const overflowErr = Object.assign(
+      new Error(
+        "This model's maximum context length is 4096 tokens. Please reduce the length."
+      ),
+      { statusCode: 400 }
+    );
+    const authErr = Object.assign(new Error("invalid api key"), {
+      statusCode: 401,
+    });
+    const failing = (err: unknown) =>
+      vi.fn(() => {
+        throw err;
+      });
+
+    // context_overflow:不重试但允许切换
+    vi.mocked(streamText)
+      .mockImplementationOnce(
+        () => ({ mergeIntoDataStream: failing(overflowErr) }) as never
+      )
+      .mockImplementationOnce(
+        () =>
+          ({
+            mergeIntoDataStream: (ds: { write: (c: string) => void }) => {
+              ds.write('0:"ok"\n');
+            },
+          }) as never
+      );
+    const res1 = await POST(
+      makeRequest({
+        messages: [],
+        apiKey: "k",
+        resilience: { fallbacks: [{ model: "big-window-model" }] },
+      })
+    );
+    const text1 = await res1.text();
+    expect(vi.mocked(streamText)).toHaveBeenCalledTimes(2);
+    expect(text1).toContain('"to":"big-window-model"');
+    expect(text1).toContain('"reason":"context_overflow"');
+
+    // auth:凭证问题重试/切换均无意义,单次调用直接报错
+    vi.mocked(streamText).mockImplementation(
+      () => ({ mergeIntoDataStream: failing(authErr) }) as never
+    );
+    const res2 = await POST(
+      makeRequest({
+        messages: [],
+        apiKey: "k",
+        resilience: { fallbacks: [{ model: "backup-model" }] },
+      })
+    );
+    const text2 = await res2.text();
+    expect(vi.mocked(streamText).mock.calls.length).toBe(3);
+    expect(text2).toContain("invalid api key");
+    expect(text2).not.toContain("model_fallback");
+  });
+
+  it("凭证护栏:fallback 指向新 baseURL 但无对应 key 时 400;自带 key 放行", async () => {
+    const res = await POST(
+      makeRequest({
+        messages: [],
+        apiKey: "k",
+        resilience: {
+          fallbacks: [{ model: "m", baseURL: "http://other.example/v1" }],
+        },
+      })
+    );
+    expect(res.status).toBe(400);
+    expect(vi.mocked(streamText)).not.toHaveBeenCalled();
+    expect(hasWarn("CRED_GUARD_REJECTED")).toBe(true);
+
+    // 自带 key 的 fallback 正常放行
+    const okRes = await POST(
+      makeRequest({
+        messages: [],
+        apiKey: "k",
+        resilience: {
+          fallbacks: [
+            { model: "m", baseURL: "http://other.example/v1", apiKey: "k2" },
+          ],
+        },
+      })
+    );
+    expect(okRes.status).toBe(200);
+    expect(vi.mocked(streamText)).toHaveBeenCalledTimes(1);
+  });
+
+  it("环境变量 LLM_FALLBACK_MODELS 提供 fallback 链(请求体未配置时)", async () => {
+    process.env.LLM_FALLBACK_MODELS = JSON.stringify([
+      { model: "env-backup-model" },
+    ]);
+    const serverErr = Object.assign(new Error("503"), { statusCode: 503 });
+    vi.mocked(streamText)
+      .mockImplementationOnce(
+        () =>
+          ({
+            mergeIntoDataStream: vi.fn(() => {
+              throw serverErr;
+            }),
+          }) as never
+      )
+      .mockImplementationOnce(
+        () =>
+          ({
+            mergeIntoDataStream: (ds: { write: (c: string) => void }) => {
+              ds.write('0:"ok"\n');
+            },
+          }) as never
+      );
+
+    const res = await POST(makeRequest({ messages: [], apiKey: "k" }));
+    const text = await res.text();
+
+    expect(vi.mocked(streamText)).toHaveBeenCalledTimes(2);
+    expect(text).toContain('"to":"env-backup-model"');
+    const { createOpenAI } = await import("@ai-sdk/openai");
+    const secondProvider = vi.mocked(createOpenAI).mock.results[1]
+      .value as ReturnType<typeof vi.fn>;
+    expect(secondProvider).toHaveBeenCalledWith("env-backup-model");
+  });
+
+  it("缺省(无 resilience 配置)失败即报错:单次调用,不 fallback", async () => {
+    const serverErr = Object.assign(new Error("503 Service Unavailable"), {
+      statusCode: 503,
+    });
+    vi.mocked(streamText).mockImplementationOnce(
+      () =>
+        ({
+          mergeIntoDataStream: vi.fn(() => {
+            throw serverErr;
+          }),
+        }) as never
+    );
+
+    const res = await POST(makeRequest({ messages: [], apiKey: "k" }));
+    const text = await res.text();
+
+    expect(vi.mocked(streamText)).toHaveBeenCalledTimes(1);
+    expect(text).toContain("503 Service Unavailable");
+    expect(hasWarn("MODEL_FALLBACK")).toBe(false);
+  });
+});

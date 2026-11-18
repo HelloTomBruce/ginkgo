@@ -9,6 +9,7 @@ import {
   extractReasoningMiddleware,
   type CoreMessage,
   type CoreTool,
+  type LanguageModel,
 } from "ai";
 import {
   computeBudget,
@@ -43,6 +44,14 @@ import { createParser } from "@openuidev/lang-core";
 import { getCrossSourceLinks, resolveCrossSourcePairs } from "./crossSourceMap";
 import { SessionStreamHub, defaultStreamHub } from "./streamHub";
 import { createReasoningFetch } from "./reasoningStream";
+import {
+  classifyProviderError,
+  createResilientFetch,
+  isRetriableErrorClass,
+  resolveResiliencePolicy,
+  type ResiliencePolicy,
+  type ResolvedModelSpec,
+} from "./resilience";
 import type { RunId, TelemetrySink } from "./telemetry";
 import { createConsoleSink, jsonByteSize, newRunId } from "./telemetry";
 
@@ -360,6 +369,12 @@ export interface AnalyzeRequestBody {
    * 缺省读 env LLM_TASK_TOKEN_BUDGET（缺省 600k），钳制 10k–5M。
    */
   budgetTokens?: number | string;
+  /**
+   * WS-9 韧性策略（可选注入）：maxRetries/backoffBaseMs/requestTimeoutMs/fallbacks。
+   * 请求体优先于环境变量（LLM_MAX_RETRIES / LLM_REQUEST_TIMEOUT_MS / LLM_FALLBACK_MODELS）；
+   * 缺省 maxRetries=2、requestTimeoutMs=60s、无 fallback（不切换模型）。
+   */
+  resilience?: ResiliencePolicy;
   /** 历史透传字段（如 gitlabUrl/gitlabToken）被忽略的现状保持 */
   [key: string]: unknown;
 }
@@ -551,6 +566,43 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
         });
       }
 
+      // WS-9 韧性策略解析：请求体 resilience ＞ 环境变量（LLM_MAX_RETRIES /
+      // LLM_REQUEST_TIMEOUT_MS / LLM_FALLBACK_MODELS）＞ 缺省
+      const resiliencePolicy = resolveResiliencePolicy(rawBody.resilience);
+
+      // 凭证护栏（沿用 CRED_GUARD 原则）：fallback 指向新 baseURL 时必须自带 apiKey，
+      // 不允许把主请求（可能是环境）凭证带到请求体未授权的 URL
+      const normalizedPrimaryBase = baseURL.replace(/\/+$/, "");
+      for (const fb of resiliencePolicy.fallbacks) {
+        const effectiveBase = (fb.baseURL ?? baseURL).replace(/\/+$/, "");
+        if (effectiveBase !== normalizedPrimaryBase && !fb.apiKey) {
+          telemetry.emit({
+            type: "warn",
+            runId,
+            sessionId: sessionIdForEvents,
+            code: "CRED_GUARD_REJECTED",
+            detail: `fallback 模型 ${fb.model} 指向新 baseURL 但未提供 apiKey，拒绝以主请求凭证请求`,
+          });
+          return Response.json(
+            { error: "fallback 模型指向新 baseURL 时必须自带 apiKey（不允许与服务端环境凭证混用）" },
+            { status: 400 }
+          );
+        }
+      }
+
+      // WS-9 模型链：主模型在前，fallback ModelSpec 按序随后
+      // （缺省无 fallback 时单元素链，语义与现状一致）
+      const primaryProtocol = clientProtocol === "anthropic" ? "anthropic" : "openai";
+      const modelChain: ResolvedModelSpec[] = [
+        { model, apiKey, baseURL, protocol: primaryProtocol },
+        ...resiliencePolicy.fallbacks.map((fb) => ({
+          model: fb.model,
+          apiKey: fb.apiKey ?? apiKey,
+          baseURL: fb.baseURL ?? baseURL,
+          protocol: fb.protocol ?? primaryProtocol,
+        })),
+      ];
+
       // run_start:守卫(凭证/Key)全部通过,分析真正开始
       telemetry.emit({
         type: "run_start",
@@ -561,41 +613,75 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
         maxSteps,
       });
 
-      // 协议分派：anthropic 端点（如 Kimi Coding，实际路径 /v1/messages，baseURL 自动补 /v1）
-      // 或缺省 openai 兼容端点（/chat/completions，baseURL 去尾斜杠）
-      const normalizedBase = baseURL.replace(/\/+$/, "");
-      const anthropicBase = /\/v1$/.test(normalizedBase)
-        ? normalizedBase
-        : `${normalizedBase}/v1`;
-      const baseModel =
-        clientProtocol === "anthropic"
-          ? createAnthropic({ apiKey, baseURL: anthropicBase })(model)
-          : createOpenAI({
-              apiKey,
-              baseURL: normalizedBase,
-              // SSE 层挂两道防御:reasoning 字段标准化 + 重复循环熔断
-              // (推理模型退化时同一行字节级重复数百次,烧尽 maxTokens 才停)
-              fetch: createReasoningFetch(fetch, {
-                onCircuitBreak: (info) => {
-                  telemetry.emit({
-                    type: "warn",
-                    runId,
-                    sessionId: sessionIdForEvents,
-                    code: "REPETITION_CIRCUIT",
-                    detail: `输出重复循环已熔断:连续 ${info.repeats} 行相同,已产出 ${info.totalChars} 字符`,
-                  });
-                },
-              }),
-            })(model);
-
-      // 提取 <think>...</think> 标签为标准 reasoning 分块（统一兼容 DeepSeek/Qwen 以及经由 createReasoningFetch 拦截转换的 GLM/Moonshot 等）
-      const languageModel =
-        baseModel && typeof baseModel === "object"
+      /**
+       * 按模型链上的某个 ModelSpec 装配 languageModel：
+       * - 协议分派：anthropic 端点（如 Kimi Coding，实际路径 /v1/messages，baseURL 自动补 /v1）
+       *   或缺省 openai 兼容端点（/chat/completions，baseURL 去尾斜杠）
+       * - WS-9 韧性：provider fetch 外侧包指数退避重试（尊重 Retry-After + 首字节超时），
+       *   openai 侧内侧再挂 SSE 两道防御（reasoning 字段标准化 + 重复循环熔断）
+       * - 提取 <think>...</think> 标签为标准 reasoning 分块（统一兼容 DeepSeek/Qwen 以及
+       *   经由 createReasoningFetch 拦截转换的 GLM/Moonshot 等）
+       */
+      const buildLanguageModel = (spec: ResolvedModelSpec): LanguageModel => {
+        const normalizedBase = spec.baseURL.replace(/\/+$/, "");
+        const anthropicBase = /\/v1$/.test(normalizedBase)
+          ? normalizedBase
+          : `${normalizedBase}/v1`;
+        const resilienceHooks = {
+          onRetry: (info: {
+            attempt: number;
+            errorClass: string;
+            delayMs: number;
+            reason: string;
+          }) => {
+            telemetry.emit({
+              type: "warn",
+              runId,
+              sessionId: sessionIdForEvents,
+              code: "PROVIDER_RETRY",
+              detail: `第 ${info.attempt} 次重试(${info.errorClass})，等待 ${info.delayMs}ms：${info.reason}`,
+            });
+          },
+        };
+        const guardedFetch =
+          spec.protocol === "anthropic"
+            ? createResilientFetch(fetch, resiliencePolicy, resilienceHooks)
+            : createResilientFetch(
+                createReasoningFetch(fetch, {
+                  onCircuitBreak: (info) => {
+                    telemetry.emit({
+                      type: "warn",
+                      runId,
+                      sessionId: sessionIdForEvents,
+                      code: "REPETITION_CIRCUIT",
+                      detail: `输出重复循环已熔断:连续 ${info.repeats} 行相同,已产出 ${info.totalChars} 字符`,
+                    });
+                  },
+                }),
+                resiliencePolicy,
+                resilienceHooks
+              );
+        const baseModel =
+          spec.protocol === "anthropic"
+            ? createAnthropic({
+                apiKey: spec.apiKey,
+                baseURL: anthropicBase,
+                fetch: guardedFetch,
+              })(spec.model)
+            : createOpenAI({
+                apiKey: spec.apiKey,
+                baseURL: normalizedBase,
+                fetch: guardedFetch,
+              })(spec.model);
+        return baseModel && typeof baseModel === "object"
           ? wrapLanguageModel({
               model: baseModel,
               middleware: extractReasoningMiddleware({ tagName: "think" }),
             })
           : baseModel;
+      };
+
+      const languageModel = buildLanguageModel(modelChain[0]);
 
       // 会话级数据源：请求 id ∩ 全局启用 ∩ 实际存在；未知 id 忽略并告警
       const activeSources = datasources.resolveActive(
@@ -715,88 +801,108 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
 
       // ========== 上下文治理（投影式压缩，设计见 context.ts） ==========
       // sessionCtx 已在上方提前读取(execute 消费 pendingPlan 与此处投影共用)
-      const contextWindow = resolveContextWindow(model, clientContextWindow);
-      const budget = computeBudget(contextWindow, maxOutputTokens);
-      const projection = projectMessages({
-        messages: messages as CoreMessage[],
-        budget,
-        anchorTokens: sessionCtx?.lastPromptTokens,
-        systemTokens: estimateTextTokens(baseSystem),
-      });
+      /**
+       * 按当前模型解析上下文窗口并重算投影预算。WS-9 控制者裁决：客户端 contextWindow
+       * hint 仅对主模型生效；fallback 模型只用查表值（hint 传 undefined），
+       * 切换时在模型链循环内对本模型重解析并重算投影。
+       */
+      const projectForModel = async (
+        modelName: string,
+        hint: unknown,
+        summaryModel: LanguageModel
+      ): Promise<{ system: string; messages: CoreMessage[] }> => {
+        const contextWindow = resolveContextWindow(modelName, hint);
+        const budget = computeBudget(contextWindow, maxOutputTokens);
+        const projection = projectMessages({
+          messages: messages as CoreMessage[],
+          budget,
+          anchorTokens: sessionCtx?.lastPromptTokens,
+          systemTokens: estimateTextTokens(baseSystem),
+        });
 
-      let system = baseSystem;
-      let projectedMessages = projection.messages;
-      if (projection.summarizeUpToIndex >= 0) {
-        const covered = projection.messages.slice(
-          0,
-          projection.summarizeUpToIndex + 1
-        );
-        const lastCovered = covered[covered.length - 1] as
-          | { id?: unknown }
-          | undefined;
-        // 游标优先用消息 id；CoreMessage 无 id 时退化为下标标记（单调递增语义）
-        const marker =
-          typeof lastCovered?.id === "string"
-            ? (lastCovered.id as string)
-            : `index:${projection.summarizeUpToIndex}`;
-        let summary =
-          sessionCtx?.summaryUptoMessageId === marker
-            ? sessionCtx.summary
-            : undefined;
-        if (!summary) {
-          try {
-            const generated = await generateText({
-              model: languageModel,
-              maxTokens: SUMMARY_MAX_TOKENS,
-              temperature: 0,
-              messages: [
-                {
-                  role: "user",
-                  content: buildSummaryPrompt({
-                    covered,
-                    previousSummary: sessionCtx?.summary,
-                  }),
-                },
-              ],
-            });
-            summary = generated.text.trim();
-            if (summary && sessions && typeof clientSessionId === "string") {
-              await sessions
-                .updateContext(clientSessionId, {
-                  summary,
-                  summaryUptoMessageId: marker,
-                })
-                .catch(() => {});
+        let systemOut = baseSystem;
+        let messagesOut = projection.messages;
+        if (projection.summarizeUpToIndex >= 0) {
+          const covered = projection.messages.slice(
+            0,
+            projection.summarizeUpToIndex + 1
+          );
+          const lastCovered = covered[covered.length - 1] as
+            | { id?: unknown }
+            | undefined;
+          // 游标优先用消息 id；CoreMessage 无 id 时退化为下标标记（单调递增语义）
+          const marker =
+            typeof lastCovered?.id === "string"
+              ? (lastCovered.id as string)
+              : `index:${projection.summarizeUpToIndex}`;
+          let summary =
+            sessionCtx?.summaryUptoMessageId === marker
+              ? sessionCtx.summary
+              : undefined;
+          if (!summary) {
+            try {
+              const generated = await generateText({
+                model: summaryModel,
+                maxTokens: SUMMARY_MAX_TOKENS,
+                temperature: 0,
+                messages: [
+                  {
+                    role: "user",
+                    content: buildSummaryPrompt({
+                      covered,
+                      previousSummary: sessionCtx?.summary,
+                    }),
+                  },
+                ],
+              });
+              summary = generated.text.trim();
+              if (summary && sessions && typeof clientSessionId === "string") {
+                await sessions
+                  .updateContext(clientSessionId, {
+                    summary,
+                    summaryUptoMessageId: marker,
+                  })
+                  .catch(() => {});
+              }
+            } catch (err) {
+              // 摘要失败不阻塞分析：退化为 pruning 投影（模型端溢出由压缩恢复语义兜底）
+              telemetry.emit({
+                type: "warn",
+                runId,
+                sessionId: sessionIdForEvents,
+                code: "SUMMARY_FAILED",
+                detail: err instanceof Error ? err.message : String(err),
+              });
             }
-          } catch (err) {
-            // 摘要失败不阻塞分析：退化为 pruning 投影（模型端溢出由压缩恢复语义兜底）
-            telemetry.emit({
-              type: "warn",
-              runId,
-              sessionId: sessionIdForEvents,
-              code: "SUMMARY_FAILED",
-              detail: err instanceof Error ? err.message : String(err),
-            });
+          }
+          if (summary) {
+            systemOut = `${baseSystem}\n\n## 此前会话摘要\n${summary}`;
+            messagesOut = trimAfterSummaryCut(
+              projection.messages.slice(projection.summarizeUpToIndex + 1)
+            );
           }
         }
-        if (summary) {
-          system = `${baseSystem}\n\n## 此前会话摘要\n${summary}`;
-          projectedMessages = trimAfterSummaryCut(
-            projection.messages.slice(projection.summarizeUpToIndex + 1)
-          );
+        if (projection.pruned || projection.summarizeUpToIndex >= 0) {
+          telemetry.emit({
+            type: "context_projection",
+            runId,
+            sessionId: sessionIdForEvents,
+            estimated: projection.estimatedPromptTokens,
+            triggerAt: budget.triggerAt,
+            pruned: projection.prunedCount,
+            summarized: projection.summarizeUpToIndex >= 0,
+          });
         }
-      }
-      if (projection.pruned || projection.summarizeUpToIndex >= 0) {
-        telemetry.emit({
-          type: "context_projection",
-          runId,
-          sessionId: sessionIdForEvents,
-          estimated: projection.estimatedPromptTokens,
-          triggerAt: budget.triggerAt,
-          pruned: projection.prunedCount,
-          summarized: projection.summarizeUpToIndex >= 0,
-        });
-      }
+        return { system: systemOut, messages: messagesOut };
+      };
+
+      const primaryProjection = await projectForModel(
+        model,
+        clientContextWindow,
+        languageModel
+      );
+      const system = primaryProjection.system;
+      const projectedMessages = primaryProjection.messages;
 
       // 跨源映射工具：仅当用户在 cross-source-map.json 配置的源配对
       // 在当前激活源集合中成立时注册（代码不内置任何数据源名）
@@ -855,7 +961,7 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
       let budgetExceeded = false;
 
       const rawResponse = createDataStreamResponse({
-        execute: (dataStream) => {
+        execute: async (dataStream) => {
           // 双重终态机制：显式终态工具 finish_task
           const finishTaskTool = tool({
             description:
@@ -919,166 +1025,242 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
             },
           });
 
-          const result = streamText({
-            model: languageModel,
-            system,
-            // 投影后的消息（存储层历史不动；无治理需求时与入参一致）
-            messages: projectedMessages,
-            temperature,
-            // AI SDK v1 参数名为 maxTokens（透传 max_tokens；Anthropic 端点必填）
-            maxTokens: maxOutputTokens,
-            // 任务中止信号:任一来源(硬停止/预算熔断)取消 provider 生成
-            abortSignal: anySignal([
-              taskAbortController.signal,
-              budgetAbortController.signal,
-            ]),
-            tools: {
-              ...loadedTools,
-              ...crossSourceTools,
-              finish_task: finishTaskTool,
-            },
-            maxSteps,
-            onStepFinish({ text, toolCalls, finishReason, usage }) {
-              stepIndex++;
-              if (typeof text === "string" && text.length > 0) {
-                lastStepText = text;
-                // 不变量证据跨步骤累计(报告与看板可能分步输出)
-                if (text.includes("```openui")) hasDashboardOutput = true;
-                if (text.includes("PlanReviewCard")) hasPlanCardOutput = true;
-              }
-              lastStepFinishReason = finishReason;
-              const stepDurationMs = Date.now() - prevStepTs;
-              prevStepTs = Date.now();
-              telemetry.emit({
-                type: "step_finish",
-                runId,
-                sessionId: sessionIdForEvents,
-                step: stepIndex,
-                finishReason: finishReason ?? "unknown",
-                toolCalls: (toolCalls ?? []).map((c) => c.toolName),
-                promptTokens:
-                  typeof usage?.promptTokens === "number" ? usage.promptTokens : undefined,
-                durationMs: stepDurationMs,
-              });
-              if (usage && typeof usage.promptTokens === "number" && Number.isFinite(usage.promptTokens)) {
-                lastStepPromptTokens = usage.promptTokens;
-                // 单步完成后即时向下发送最新单步 token 用量（实时平滑刷新）
-                dataStream.writeData({
-                  type: "context_usage",
-                  promptTokens: usage.promptTokens,
-                });
-              }
-              // 累计预算熔断:超限写终态并中止 provider(客户端按既有 status=truncated 渲染)
-              if (usage) {
-                const p =
-                  typeof usage.promptTokens === "number" && Number.isFinite(usage.promptTokens)
-                    ? usage.promptTokens
-                    : 0;
-                const c =
-                  typeof usage.completionTokens === "number" && Number.isFinite(usage.completionTokens)
-                    ? usage.completionTokens
-                    : 0;
-                totalTokens += p + c;
-                if (!budgetExceeded && totalTokens > taskTokenBudget) {
-                  budgetExceeded = true;
-                  dataStream.writeData({
-                    type: "task_finish",
-                    termination: "budget_exhausted",
-                    status: "truncated",
+          // WS-9 模型链循环：主模型 fetch 层重试用尽后按序切换 fallback ModelSpec 重发整个
+          // streamText。诚实重试边界——仅当未产出任何 content 分块才允许切换（客户端已见
+          // 部分内容，重跑会重复输出）；此类失败发 MID_STREAM_FAILURE 遥测后按 onError 报错。
+          let chainIndex = 0;
+          let attemptSystem = system;
+          let attemptMessages = projectedMessages;
+
+          for (;;) {
+            const spec = modelChain[chainIndex];
+            let emittedContent = false;
+            try {
+              const result = streamText({
+                // 主模型复用上方为摘要生成装配的 languageModel(同一 ModelSpec),
+                // fallback 模型才现场装配
+                model:
+                  chainIndex === 0
+                    ? languageModel
+                    : buildLanguageModel(spec),
+                system: attemptSystem,
+                // 投影后的消息（存储层历史不动；无治理需求时与入参一致）
+                messages: attemptMessages,
+                temperature,
+                // AI SDK v1 参数名为 maxTokens（透传 max_tokens；Anthropic 端点必填）
+                maxTokens: maxOutputTokens,
+                // 任务中止信号:任一来源(硬停止/预算熔断)取消 provider 生成
+                abortSignal: anySignal([
+                  taskAbortController.signal,
+                  budgetAbortController.signal,
+                ]),
+                tools: {
+                  ...loadedTools,
+                  ...crossSourceTools,
+                  finish_task: finishTaskTool,
+                },
+                maxSteps,
+                // 韧性边界标记：首个内容分块落地即置位，此后失败不再透明重跑/切换
+                onChunk: ({ chunk }) => {
+                  if (
+                    chunk.type === "text-delta" ||
+                    chunk.type === "reasoning"
+                  ) {
+                    emittedContent = true;
+                  }
+                },
+                onStepFinish({ text, toolCalls, finishReason, usage }) {
+                  stepIndex++;
+                  if (typeof text === "string" && text.length > 0) {
+                    lastStepText = text;
+                    // 不变量证据跨步骤累计(报告与看板可能分步输出)
+                    if (text.includes("```openui")) hasDashboardOutput = true;
+                    if (text.includes("PlanReviewCard")) hasPlanCardOutput = true;
+                  }
+                  lastStepFinishReason = finishReason;
+                  const stepDurationMs = Date.now() - prevStepTs;
+                  prevStepTs = Date.now();
+                  telemetry.emit({
+                    type: "step_finish",
+                    runId,
+                    sessionId: sessionIdForEvents,
+                    step: stepIndex,
+                    finishReason: finishReason ?? "unknown",
+                    toolCalls: (toolCalls ?? []).map((c) => c.toolName),
+                    promptTokens:
+                      typeof usage?.promptTokens === "number" ? usage.promptTokens : undefined,
+                    durationMs: stepDurationMs,
                   });
-                  // 仅取消 provider(独立 controller),不触发 hub 的 error 语义——
-                  // 流随后自然关闭,订阅者正常收到已写入的终态分块
-                  budgetAbortController.abort();
+                  if (usage && typeof usage.promptTokens === "number" && Number.isFinite(usage.promptTokens)) {
+                    lastStepPromptTokens = usage.promptTokens;
+                    // 单步完成后即时向下发送最新单步 token 用量（实时平滑刷新）
+                    dataStream.writeData({
+                      type: "context_usage",
+                      promptTokens: usage.promptTokens,
+                    });
+                  }
+                  // 累计预算熔断:超限写终态并中止 provider(客户端按既有 status=truncated 渲染)
+                  if (usage) {
+                    const p =
+                      typeof usage.promptTokens === "number" && Number.isFinite(usage.promptTokens)
+                        ? usage.promptTokens
+                        : 0;
+                    const c =
+                      typeof usage.completionTokens === "number" && Number.isFinite(usage.completionTokens)
+                        ? usage.completionTokens
+                        : 0;
+                    totalTokens += p + c;
+                    if (!budgetExceeded && totalTokens > taskTokenBudget) {
+                      budgetExceeded = true;
+                      dataStream.writeData({
+                        type: "task_finish",
+                        termination: "budget_exhausted",
+                        status: "truncated",
+                      });
+                      // 仅取消 provider(独立 controller),不触发 hub 的 error 语义——
+                      // 流随后自然关闭,订阅者正常收到已写入的终态分块
+                      budgetAbortController.abort();
+                      telemetry.emit({
+                        type: "warn",
+                        runId,
+                        sessionId: sessionIdForEvents,
+                        code: "BUDGET_EXHAUSTED",
+                        detail: `累计 ${totalTokens} tokens 超预算 ${taskTokenBudget},已中止任务`,
+                      });
+                    }
+                  }
+                },
+                // token 锚点回写与流式用量下发：
+                // 关键修复：必须使用最后一步实际发往 LLM 的单步 promptTokens，不能使用 AI SDK 多步工具调用的累加值
+                onFinish({ usage }) {
+                  const actualPromptTokens = lastStepPromptTokens ?? usage?.promptTokens;
+                  if (typeof actualPromptTokens === "number" && Number.isFinite(actualPromptTokens)) {
+                    dataStream.writeData({
+                      type: "context_usage",
+                      promptTokens: actualPromptTokens,
+                    });
+                  }
+
+                  // 双重终态判定：若未被显式 finish_task 捕获，则评估预算熔断/自然停止/截断兜底
+                  let termination: string;
+                  let status: string;
+                  if (!explicitFinishDetails) {
+                    if (budgetExceeded) {
+                      // 预算终态已在 onStepFinish 写入,此处仅对齐遥测口径,不重复下发
+                      termination = "budget_exhausted";
+                      status = "truncated";
+                    } else if (lastStepFinishReason === "stop" || lastStepFinishReason === undefined) {
+                      termination = "natural";
+                      status = "completed";
+                    } else if (lastStepFinishReason === "length") {
+                      termination = "step_limit_reached";
+                      status = "truncated";
+                    } else {
+                      termination = lastStepFinishReason ?? "unknown";
+                      status = "completed";
+                    }
+                    if (!budgetExceeded) {
+                      dataStream.writeData({
+                        type: "task_finish",
+                        termination,
+                        status,
+                      });
+                    }
+                  } else {
+                    termination = "explicit";
+                    status = explicitFinishDetails.status;
+                  }
+                  telemetry.emit({
+                    type: "task_finish",
+                    runId,
+                    sessionId: sessionIdForEvents,
+                    termination,
+                    status,
+                    totalPromptTokens:
+                      typeof usage?.promptTokens === "number" ? usage.promptTokens : undefined,
+                    totalCompletionTokens:
+                      typeof usage?.completionTokens === "number" ? usage.completionTokens : undefined,
+                    durationMs: Date.now() - runStartTs,
+                  });
+
+                  // WS-4:plan 阶段从最终文本提取结构化 methods,登记为 pendingPlan
+                  // (execute 轮消费后清空;提取失败静默——execute 侧有散文匹配兜底)
+                  if (mode === "plan" && sessions && typeof clientSessionId === "string" && clientSessionId) {
+                    const planIds = extractPlanMethods(lastStepText ?? "");
+                    if (planIds.length > 0) {
+                      void sessions
+                        .updateContext(clientSessionId, { pendingPlan: { methodIds: planIds } })
+                        .catch(() => {});
+                    }
+                  }
+
+                  if (
+                    sessions &&
+                    typeof clientSessionId === "string" &&
+                    clientSessionId &&
+                    actualPromptTokens
+                  ) {
+                    void sessions
+                      .updateContext(clientSessionId, {
+                        lastPromptTokens: actualPromptTokens,
+                      })
+                      .catch(() => {});
+                  }
+                },
+              });
+
+              await result.mergeIntoDataStream(dataStream, { sendReasoning: true });
+              return;
+            } catch (err) {
+              const errorClass = classifyProviderError(err);
+              // 切换前提:未产出任何 content 分块,且链上还有 fallback,且错误类别允许
+              // (context_overflow 不重试但可换更大窗模型;rate_limit/server/network 用尽重试后切换)
+              const canSwitch =
+                !emittedContent &&
+                chainIndex < modelChain.length - 1 &&
+                (errorClass === "context_overflow" ||
+                  isRetriableErrorClass(errorClass));
+              if (!canSwitch) {
+                if (emittedContent) {
                   telemetry.emit({
                     type: "warn",
                     runId,
                     sessionId: sessionIdForEvents,
-                    code: "BUDGET_EXHAUSTED",
-                    detail: `累计 ${totalTokens} tokens 超预算 ${taskTokenBudget},已中止任务`,
+                    code: "MID_STREAM_FAILURE",
+                    detail: `首分块后失败(${errorClass}),不做透明重跑: ${
+                      err instanceof Error ? err.message : String(err)
+                    }`,
                   });
                 }
+                throw err;
               }
-            },
-            // token 锚点回写与流式用量下发：
-            // 关键修复：必须使用最后一步实际发往 LLM 的单步 promptTokens，不能使用 AI SDK 多步工具调用的累加值
-            onFinish({ usage }) {
-              const actualPromptTokens = lastStepPromptTokens ?? usage?.promptTokens;
-              if (typeof actualPromptTokens === "number" && Number.isFinite(actualPromptTokens)) {
-                dataStream.writeData({
-                  type: "context_usage",
-                  promptTokens: actualPromptTokens,
-                });
-              }
-
-              // 双重终态判定：若未被显式 finish_task 捕获，则评估预算熔断/自然停止/截断兜底
-              let termination: string;
-              let status: string;
-              if (!explicitFinishDetails) {
-                if (budgetExceeded) {
-                  // 预算终态已在 onStepFinish 写入,此处仅对齐遥测口径,不重复下发
-                  termination = "budget_exhausted";
-                  status = "truncated";
-                } else if (lastStepFinishReason === "stop" || lastStepFinishReason === undefined) {
-                  termination = "natural";
-                  status = "completed";
-                } else if (lastStepFinishReason === "length") {
-                  termination = "step_limit_reached";
-                  status = "truncated";
-                } else {
-                  termination = lastStepFinishReason ?? "unknown";
-                  status = "completed";
-                }
-                if (!budgetExceeded) {
-                  dataStream.writeData({
-                    type: "task_finish",
-                    termination,
-                    status,
-                  });
-                }
-              } else {
-                termination = "explicit";
-                status = explicitFinishDetails.status;
-              }
+              const next = modelChain[chainIndex + 1];
               telemetry.emit({
-                type: "task_finish",
+                type: "warn",
                 runId,
                 sessionId: sessionIdForEvents,
-                termination,
-                status,
-                totalPromptTokens:
-                  typeof usage?.promptTokens === "number" ? usage.promptTokens : undefined,
-                totalCompletionTokens:
-                  typeof usage?.completionTokens === "number" ? usage.completionTokens : undefined,
-                durationMs: Date.now() - runStartTs,
+                code: "MODEL_FALLBACK",
+                detail: `${spec.model} 失败(${errorClass}),切换 fallback 模型 ${next.model}`,
               });
-
-              // WS-4:plan 阶段从最终文本提取结构化 methods,登记为 pendingPlan
-              // (execute 轮消费后清空;提取失败静默——execute 侧有散文匹配兜底)
-              if (mode === "plan" && sessions && typeof clientSessionId === "string" && clientSessionId) {
-                const planIds = extractPlanMethods(lastStepText ?? "");
-                if (planIds.length > 0) {
-                  void sessions
-                    .updateContext(clientSessionId, { pendingPlan: { methodIds: planIds } })
-                    .catch(() => {});
-                }
-              }
-
-              if (
-                sessions &&
-                typeof clientSessionId === "string" &&
-                clientSessionId &&
-                actualPromptTokens
-              ) {
-                void sessions
-                  .updateContext(clientSessionId, {
-                    lastPromptTokens: actualPromptTokens,
-                  })
-                  .catch(() => {});
-              }
-            },
-          });
-
-          result.mergeIntoDataStream(dataStream, { sendReasoning: true });
+              // 向客户端声明切换:客户端可据此解释后续输出的模型来源变化
+              dataStream.writeData({
+                type: "model_fallback",
+                from: spec.model,
+                to: next.model,
+                reason: errorClass,
+              });
+              chainIndex++;
+              // 控制者裁决:fallback 模型重解析上下文窗口(客户端 hint 仅主模型生效,
+              // 这里传 undefined 只用查表值),并用重解析结果重算投影预算
+              const nextProjection = await projectForModel(
+                next.model,
+                undefined,
+                buildLanguageModel(next)
+              );
+              attemptSystem = nextProjection.system;
+              attemptMessages = nextProjection.messages;
+            }
+          }
         },
         onError: (err: unknown) => {
           telemetry.emit({
