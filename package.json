@@ -11,6 +11,7 @@
     "start": "next start -p 3006",
     "lint": "eslint",
     "test": "vitest run",
+    "eval:tier-b": "pnpm --filter @openui-analytics/llm eval:tier-b",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

@@ -24,3 +24,10 @@ export {
   createReasoningFetch,
   createReasoningContentTransformStream,
 } from "./reasoningStream";
+export { createConsoleSink, compositeSink } from "./telemetry";
+export { createMetricsSink, type MetricsRegistry } from "./telemetryMetrics";
+export {
+  createOtelSink,
+  type OtelSinkOptions,
+  type OtelTracerLike,
+} from "./otelSink";

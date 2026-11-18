@@ -102,6 +102,11 @@ function extractText(dataStreamText: string): string {
 describe.skipIf(!hasApiKey)("Tier B 真实模型行为评估(需 OPENAI_API_KEY)", () => {
   const parser = createParser(serverLibrary.toJSONSchema(), "Root");
   let manager: DatasourceManager;
+  /** WS-13 常态化:按模型分文件落盘,run 级汇总与既有基线硬阈值对比(合规率降 >5pt 拦截) */
+  const modelName = process.env.OPENAI_MODEL ?? process.env.LLM_MODEL ?? "gpt-4o-mini";
+  const safeModel = modelName.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const baselineDir = path.join(path.dirname(new URL(import.meta.url).pathname), "baselines");
+  const runMetrics: TrajectoryMetric[] = [];
 
   it("夹具装载", { timeout: 120_000 }, async () => {
     manager = await makeFixtureManager();
@@ -168,18 +173,16 @@ describe.skipIf(!hasApiKey)("Tier B 真实模型行为评估(需 OPENAI_API_KEY)
           true
         );
 
-        // 基线落盘 + 差异打印(人工审阅;不做硬断言,避免模型正常波动卡 CI)
-        const baselineDir = path.join(path.dirname(new URL(import.meta.url).pathname), "baselines");
+        // 基线落盘 + 差异打印(人工审阅;硬阈值在 run 级汇总用例统一判定,避免单题波动卡 CI)
         fs.mkdirSync(baselineDir, { recursive: true });
-        const baselinePath = path.join(baselineDir, "tier-b-baseline.json");
-        const model = process.env.OPENAI_MODEL ?? process.env.LLM_MODEL ?? "gpt-4o-mini";
+        const baselinePath = path.join(baselineDir, `${safeModel}.json`);
         type BaselineEntry = {
           model: string;
           evaluatedAt: string;
           question: string;
           metric: TrajectoryMetric;
         };
-        const entry: BaselineEntry = { model, evaluatedAt: new Date().toISOString(), question, metric };
+        const entry: BaselineEntry = { model: modelName, evaluatedAt: new Date().toISOString(), question, metric };
         let history: BaselineEntry[] = [];
         if (fs.existsSync(baselinePath)) {
           try {
@@ -204,7 +207,62 @@ describe.skipIf(!hasApiKey)("Tier B 真实模型行为评估(需 OPENAI_API_KEY)
         }
         history.push(entry);
         fs.writeFileSync(baselinePath, JSON.stringify(history, null, 2));
+        runMetrics.push(metric);
       }
     );
   }
+
+  // WS-13 常态化:run 级汇总(在全部问题用例之后执行)——合规率与成本预算硬阈值
+  it(
+    "基线对比与预算闸门",
+    { timeout: 30_000 },
+    () => {
+      expect(runMetrics.length).toBeGreaterThan(0);
+      const passRate = runMetrics.filter((m) => m.passed).length / runMetrics.length;
+      const totalTokens = runMetrics.reduce(
+        (sum, m) => sum + (m.totalPromptTokens ?? 0) + (m.totalCompletionTokens ?? 0),
+        0
+      );
+      const budget = Number(process.env.LLM_TIER_B_BUDGET);
+      const prevSummaryPath = path.join(baselineDir, `${safeModel}-summary.json`);
+      let prevSummary: { passRate: number; evaluatedAt: string } | undefined;
+      if (fs.existsSync(prevSummaryPath)) {
+        try {
+          prevSummary = JSON.parse(fs.readFileSync(prevSummaryPath, "utf-8")) as {
+            passRate: number;
+            evaluatedAt: string;
+          };
+        } catch {
+          prevSummary = undefined;
+        }
+      }
+
+      if (prevSummary) {
+        const drop = prevSummary.passRate - passRate;
+        console.log(
+          `[Tier B 汇总] 合规率 ${prevSummary.passRate.toFixed(3)}→${passRate.toFixed(3)}(降 ${drop.toFixed(3)}),总 token ${totalTokens}`
+        );
+        expect(
+          drop,
+          `终态合规率较基线下降 ${(drop * 100).toFixed(1)}pt(阈值 5pt):${prevSummary.evaluatedAt} → 本轮。若为模型正常波动请人工更新基线。`
+        ).toBeLessThanOrEqual(0.05);
+      }
+      if (Number.isFinite(budget) && budget > 0) {
+        expect(
+          totalTokens,
+          `本轮总 token ${totalTokens} 超出 LLM_TIER_B_BUDGET=${budget}:评测成本失控,请检查模型/步数配置`
+        ).toBeLessThanOrEqual(budget);
+      }
+
+      fs.mkdirSync(baselineDir, { recursive: true });
+      fs.writeFileSync(
+        prevSummaryPath,
+        JSON.stringify(
+          { model: modelName, evaluatedAt: new Date().toISOString(), passRate, totalTokens },
+          null,
+          2
+        )
+      );
+    }
+  );
 });

@@ -9,7 +9,8 @@
     "./context": "./src/context.ts"
   },
   "scripts": {
-    "test": "vitest run"
+    "test": "vitest run",
+    "eval:tier-b": "vitest run src/evals/tier-b.real-model.test.ts"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "1.2.12",

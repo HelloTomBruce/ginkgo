@@ -1,0 +1,53 @@
+# WS-13 Tier B 真实模型评估：手动触发 + 每周例行。
+# 不进 PR 门禁（成本与时长）；需仓库 Secret OPENAI_API_KEY。
+# 基线机制：合规率较上轮基线降 >5pt 或总 token 超 LLM_TIER_B_BUDGET 时判红；
+# 基线文件作为 artifact 上传，人工审阅后决定是否回写仓库。
+name: Tier B Eval
+
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: "评测模型（写入 OPENAI_MODEL）"
+        default: "gpt-4o-mini"
+  schedule:
+    # 每周一 03:00 UTC
+    - cron: "0 3 * * 1"
+
+jobs:
+  tier-b:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run Tier B eval
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL: ${{ github.event.inputs.model || 'gpt-4o-mini' }}
+          # 成本闸门：单轮评测 token 预算，超限判红（防 schedule 失控烧钱）
+          LLM_TIER_B_BUDGET: "2000000"
+        run: pnpm eval:tier-b
+
+      - name: Upload baselines
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: tier-b-baselines-${{ github.event.inputs.model || 'scheduled' }}
+          path: packages/openui-llm/src/evals/baselines/
+          retention-days: 30
