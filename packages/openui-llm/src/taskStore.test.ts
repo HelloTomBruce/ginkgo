@@ -4,8 +4,10 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import RedisMock from "ioredis-mock";
 import { InMemoryTaskStore, type TaskSnapshot, type TaskStore } from "./taskStore";
 import { FileTaskStore } from "./fileTaskStore";
+import { RedisTaskStore } from "./redisTaskStore";
 import { SessionStreamHub } from "./streamHub";
 
 const encoder = new TextEncoder();
@@ -110,10 +112,29 @@ const implementations = [
       };
     },
   },
+  {
+    // ioredis-mock 全局共享同一逻辑 Redis（同 host:port/db 即同上下文）：
+    // 每个用例独立 mock client 注入，用例间 flushall 隔离键空间。
+    name: "RedisTaskStore(ioredis-mock)",
+    create: async () => {
+      const client = new RedisMock();
+      return {
+        store: new RedisTaskStore({ client }),
+        cleanup: async () => {
+          await client.flushall();
+        },
+      };
+    },
+  },
 ] satisfies {
   name: string;
-  create: () => Promise<{ store: TaskStore; cleanup: () => Promise<void> }>;
+  create: () => Promise<{ store: TaskStore; cleanup: () => Promise<void> }>; 
 }[];
+
+/** Redis 后端的订阅建立是异步往返；内存/文件同步完成，settle 对三者统一无害。 */
+async function settle(): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, 5));
+}
 
 describe.each(implementations)("TaskStore 契约：$name", ({ create }) => {
   let store: TaskStore;
@@ -153,18 +174,45 @@ describe.each(implementations)("TaskStore 契约：$name", ({ create }) => {
     expect(await store.getChunks(task.sessionKey)).toEqual([]);
   });
 
-  it("进程内订阅接收 live chunk，退订后不再接收", async () => {
+  it("进程内订阅接收 live chunk 与 1 起单调递增的分块序号，退订后不再接收", async () => {
     const task = snapshot("tenant-a:sess_subscribe");
     await store.create(task);
-    const received: string[] = [];
-    const unsubscribe = store.subscribeChunks(task.sessionKey, (chunk) => {
-      received.push(decoder.decode(chunk));
+    const received: Array<{ text: string; seq: number }> = [];
+    const unsubscribe = store.subscribeChunks(task.sessionKey, (chunk, seq) => {
+      received.push({ text: decoder.decode(chunk), seq });
     });
+    await settle();
 
     await store.appendChunk(task.sessionKey, encoder.encode("live-1"));
-    unsubscribe();
     await store.appendChunk(task.sessionKey, encoder.encode("live-2"));
-    expect(received).toEqual(["live-1"]);
+    // Redis 语义：pub/sub 投递是网络往返（异步），消费方不能假设同步送达；
+    // 内存/文件实现同步投递，settle 对三者统一无害。
+    await settle();
+    expect(received).toEqual([
+      { text: "live-1", seq: 1 },
+      { text: "live-2", seq: 2 },
+    ]);
+
+    unsubscribe();
+    await store.appendChunk(task.sessionKey, encoder.encode("live-3"));
+    expect(received).toHaveLength(2);
+  });
+
+  it("任务转入终态时 onClose 回调终态与错误消息，供非 owner 订阅者收尾", async () => {
+    const task = snapshot("tenant-a:sess_close");
+    await store.create(task);
+    const closed: Array<{ status: string; errorMessage?: string }> = [];
+    const unsubscribe = store.subscribeChunks(
+      task.sessionKey,
+      () => {},
+      (status, errorMessage) => closed.push({ status, errorMessage })
+    );
+    await settle();
+
+    await store.setStatus(task.sessionKey, "error", "boom");
+    await settle();
+    expect(closed).toEqual([{ status: "error", errorMessage: "boom" }]);
+    unsubscribe();
   });
 
   it("publishAbort 广播 sessionKey 与 reason，支持退订", async () => {
@@ -172,19 +220,39 @@ describe.each(implementations)("TaskStore 契约：$name", ({ create }) => {
     const unsubscribe = store.subscribeAbort((sessionKey, reason) => {
       received.push([sessionKey, reason]);
     });
+    await settle();
 
     await store.publishAbort("tenant-a:sess_abort", "user");
+    await settle();
+    expect(received).toEqual([["tenant-a:sess_abort", "user"]]);
     unsubscribe();
     await store.publishAbort("tenant-a:sess_abort", "timeout");
     expect(received).toEqual([["tenant-a:sess_abort", "user"]]);
   });
+});
 
-  it("单机实现的 lease/sweep 为 no-op", async () => {
+describe("单机实现的 lease/sweep 为 no-op", () => {
+  it.each([
+    // 经接口类型调用：具体类型的无参 no-op 实现不影响调用方签名契约
+    { name: "InMemoryTaskStore", store: new InMemoryTaskStore() as TaskStore },
+  ])("$name：refreshLease 无副作用、sweepOrphans 恒空", async ({ store }) => {
     await store.create(snapshot("tenant-a:sess_lease"));
     await expect(
       store.refreshLease?.("tenant-a:sess_lease", "instance-a:100", 15_000)
     ).resolves.toBeUndefined();
     await expect(store.sweepOrphans?.(async () => false)).resolves.toEqual([]);
+    // FileTaskStore 同为 no-op（恢复语义在专属 describe 覆盖），此处一并断言
+  });
+
+  it("FileTaskStore：refreshLease 无副作用、sweepOrphans 恒空", async () => {
+    const dir = await makeTempDir();
+    const store: TaskStore = new FileTaskStore({ dir });
+    await store.create(snapshot("tenant-a:sess_lease_file"));
+    await expect(
+      store.refreshLease?.("tenant-a:sess_lease_file", "instance-a:100", 15_000)
+    ).resolves.toBeUndefined();
+    await expect(store.sweepOrphans?.(async () => false)).resolves.toEqual([]);
+    await fs.rm(dir, { recursive: true, force: true });
   });
 });
 

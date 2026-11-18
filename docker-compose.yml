@@ -1,0 +1,45 @@
+# LLM Harness 多副本本地拓扑（WS-8 手动验证用；见 docs/llm-harness-multi-instance.md）
+# 用法：docker compose up -d redis && docker compose up app-a app-b
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  app-a:
+    image: node:22-alpine
+    working_dir: /app
+    # 挂载仓库（首次需先在宿主 pnpm install；容器内复用 node_modules）
+    volumes:
+      - .:/app
+    command: sh -c "corepack enable && pnpm dev --port 3006 --hostname 0.0.0.0"
+    environment:
+      LLM_TASK_STORE: redis
+      REDIS_URL: redis://redis:6379
+      LLM_INSTANCE_ID: app-a
+    ports:
+      - "3006:3006"
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  app-b:
+    image: node:22-alpine
+    working_dir: /app
+    volumes:
+      - .:/app
+    command: sh -c "corepack enable && pnpm dev --port 3007 --hostname 0.0.0.0"
+    environment:
+      LLM_TASK_STORE: redis
+      REDIS_URL: redis://redis:6379
+      LLM_INSTANCE_ID: app-b
+    ports:
+      - "3007:3007"
+    depends_on:
+      redis:
+        condition: service_healthy

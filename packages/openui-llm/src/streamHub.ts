@@ -58,8 +58,8 @@ const TASK_TIMEOUT_MIN_MS = 30_000;
 const TASK_TIMEOUT_MAX_MS = 3_600_000;
 const TASK_TIMEOUT_DEFAULT_MS = 600_000;
 const TERMINAL_RETENTION_MS = 30_000;
-const LEASE_REFRESH_INTERVAL_MS = 5_000;
-const LEASE_TTL_MS = 15_000;
+const LEASE_TTL_DEFAULT_MS = 15_000;
+const SWEEP_INTERVAL_DEFAULT_MS = 30_000;
 
 export interface SessionStreamHubOptions {
   sink?: TelemetrySink;
@@ -69,6 +69,10 @@ export interface SessionStreamHubOptions {
   store?: TaskStore;
   /** owner 标识；多副本部署应注入稳定且唯一的实例 id */
   instanceId?: string;
+  /** 租约 TTL（多副本 owner 心跳窗口）；缺省 15000ms */
+  leaseTtlMs?: number;
+  /** 孤儿清扫周期（带 ±20% 抖动）；缺省 30000ms */
+  sweepIntervalMs?: number;
 }
 
 export class SessionStreamHub {
@@ -80,6 +84,11 @@ export class SessionStreamHub {
   private readonly sink: TelemetrySink;
   private readonly store: TaskStore;
   private readonly instanceId: string;
+  private readonly leaseTtlMs: number;
+  private readonly leaseRefreshIntervalMs: number;
+  private readonly sweepIntervalMs: number;
+  /** 孤儿清扫器的永续定时器（带抖动递归，unref 不阻塞退出） */
+  private sweepTimer?: ReturnType<typeof setTimeout>;
 
   constructor(opts: SessionStreamHubOptions = {}) {
     this.sink = opts.sink ?? createConsoleSink();
@@ -94,6 +103,16 @@ export class SessionStreamHub {
       ),
       TASK_TIMEOUT_MAX_MS
     );
+    this.leaseTtlMs = Math.max(1000, opts.leaseTtlMs ?? LEASE_TTL_DEFAULT_MS);
+    // 心跳周期 = TTL/3：容忍两次刷新失败仍不丢租约
+    this.leaseRefreshIntervalMs = Math.max(1000, Math.floor(this.leaseTtlMs / 3));
+    this.sweepIntervalMs = Math.max(1000, opts.sweepIntervalMs ?? SWEEP_INTERVAL_DEFAULT_MS);
+
+    // 孤儿清扫器：周期回收租约失踪的 running 任务——仅多副本后端（声明
+    // multiReplica）启动；单机后端的清扫无意义，也不改变其定时器语义。
+    if (this.store.sweepOrphans && this.store.multiReplica) {
+      this.scheduleSweep();
+    }
 
     // 非 owner 只发布 abort；真正的 AbortController/上游 Reader 由 owner 在此回调中处理。
     this.store.subscribeAbort((sessionKey, reason) => {
@@ -102,6 +121,44 @@ export class SessionStreamHub {
       // 与本实例的注册/中止同锁串行，避免跨实例 abort 与进行中的替换交错。
       void this.runKeyOperation(sessionKey, () => this.abortOwnedTask(task, reason)).catch(() => {});
     });
+  }
+
+  /** 清扫周期带 ±20% 抖动：多实例错峰，避免同步扫描风暴。 */
+  private scheduleSweep(): void {
+    const jitter = this.sweepIntervalMs * 0.2 * (Math.random() * 2 - 1);
+    this.sweepTimer = setTimeout(() => {
+      void this.runSweep();
+    }, Math.max(1000, this.sweepIntervalMs + jitter));
+    this.unrefTimer(this.sweepTimer);
+  }
+
+  /**
+   * 执行一轮孤儿回收（供测试与运维调用；定时清扫器亦复用此路径）。
+   * 返回本次回收的 sessionKey 列表。
+   */
+  async sweepOnce(): Promise<string[]> {
+    try {
+      const reclaimed =
+        (await this.store.sweepOrphans?.(async (ownerInstanceId, sessionKey) => {
+          // 本实例的 running 任务以本地运行时为准：心跳写入失败也不能误杀活任务；
+          // 其他实例无法验证，交给租约存在性判定（store 内部已先查租约，存在即跳过）。
+          if (ownerInstanceId === this.instanceId) return this.tasks.has(sessionKey);
+          return false;
+        })) ?? [];
+      for (const sessionKey of reclaimed) {
+        this.sink.emit({ type: "abort", sessionId: sessionKey, reason: "timeout" });
+      }
+      return reclaimed;
+    } catch {
+      // 清扫失败不拖垮主链路，下一周期重试
+      return [];
+    } finally {
+      this.scheduleSweep();
+    }
+  }
+
+  private async runSweep(): Promise<void> {
+    await this.sweepOnce();
   }
 
   async hasRunningTask(sessionId: string, tenantId?: string): Promise<boolean> {
@@ -156,7 +213,6 @@ export class SessionStreamHub {
     const sessionKey = sessionStorageKey(sessionId, tenantId);
     const snapshot = await this.store.get(sessionKey);
     if (!snapshot) return null;
-    const chunks = await this.store.getChunks(sessionKey);
     const ownedTask = this.tasks.get(sessionKey);
     // 仅文件后端恢复出的 process_restart 任务需要「先重放历史再抛错」；
     // 默认内存后端的自然 error 必须保持原有消费结果，不得扩大重连语义。
@@ -166,6 +222,60 @@ export class SessionStreamHub {
     let subscriber: StreamSubscriber | null = null;
     let unsubscribeChunks: (() => void) | undefined;
     let errorReplayIndex = 0;
+
+    // 非 owner 的 running 任务采用「先订阅、后重放、按 seq 去重」协议：
+    // 订阅先于列表读取建立——订阅建立到列表读取之间发布的分块两边都有
+    // （seq <= 重放长度则去重），列表读取之后发布的分块只在订阅侧出现，
+    // 消掉「先重放后订阅」的间隙永久丢失。
+    let chunks: Uint8Array[] = [];
+    let replayLength = 0;
+    let liveStarted = false;
+    let pendingClose: { status: TaskStatus; errorMessage?: string } | undefined;
+    const liveBuffer: Array<{ chunk: Uint8Array; seq: number }> = [];
+    let controllerRef: ReadableStreamDefaultController<Uint8Array> | null = null;
+    const enqueueLive = (chunk: Uint8Array): void => {
+      if (!controllerRef) return;
+      try {
+        controllerRef.enqueue(chunk);
+      } catch {
+        unsubscribeChunks?.();
+        unsubscribeChunks = undefined;
+      }
+    };
+    const applyClose = (): void => {
+      const close = pendingClose;
+      pendingClose = undefined;
+      if (!close || !controllerRef) return;
+      unsubscribeChunks?.();
+      unsubscribeChunks = undefined;
+      try {
+        if (close.status === "completed") controllerRef.close();
+        else controllerRef.error(new Error(close.errorMessage ?? "Stream error"));
+      } catch {
+        // 客户端已断开时 controller 可能拒绝 close/error
+      }
+    };
+    if (snapshot.status === "running" && !ownedTask) {
+      unsubscribeChunks = this.store.subscribeChunks(
+        sessionKey,
+        (chunk, seq) => {
+          if (!liveStarted) {
+            liveBuffer.push({ chunk, seq });
+            return;
+          }
+          enqueueLive(chunk);
+        },
+        (status, errorMessage) => {
+          pendingClose = { status, errorMessage };
+          if (liveStarted) applyClose();
+        }
+      );
+      chunks = await this.store.getChunks(sessionKey);
+      replayLength = chunks.length;
+    } else {
+      chunks = await this.store.getChunks(sessionKey);
+    }
+
     const stream = new ReadableStream<Uint8Array>({
       start: (controller) => {
         if (snapshot.status === "error" && !recoveredFromRestart) {
@@ -189,14 +299,28 @@ export class SessionStreamHub {
           subscriber = { controller };
           ownedTask.subscribers.add(subscriber);
         } else {
-          // 非 owner 通过 store 重放并续接；同一进程双 hub 与后续 Redis 后端共用此路径。
-          unsubscribeChunks = this.store.subscribeChunks(sessionKey, (chunk) => {
-            try {
-              controller.enqueue(chunk);
-            } catch {
-              unsubscribeChunks?.();
-            }
-          });
+          // 非 owner：重放已完成，切换到 live 直推并冲刷缓冲（seq 去重）。
+          controllerRef = controller;
+          liveStarted = true;
+          for (const buffered of liveBuffer.splice(0)) {
+            if (buffered.seq <= replayLength) continue; // 重放已含，去重
+            enqueueLive(buffered.chunk);
+          }
+          if (pendingClose) {
+            applyClose();
+          } else {
+            // 兑底：订阅建立前的终态广播已丢失（竞态窗），读一次状态补收尾；
+            // 若仍 running，后续终态广播会经订阅送达。
+            void this.store
+              .get(sessionKey)
+              .then((fresh) => {
+                if (fresh && fresh.status !== "running" && controllerRef) {
+                  pendingClose = { status: fresh.status, errorMessage: fresh.errorMessage };
+                  applyClose();
+                }
+              })
+              .catch(() => {});
+          }
         }
       },
       pull: (controller) => {
@@ -271,9 +395,16 @@ export class SessionStreamHub {
       }, this.taskTimeoutMs);
       this.unrefTimer(task.deadlineTimer);
       if (this.store.refreshLease) {
+        // 冷启动窗口：注册后立即续一次租约，此后按 TTL/3 周期刷新——
+        // 否则在首个刷新周期前挂掉的 owner 会让租约整段 TTL 不可判定。
+        void this.store
+          .refreshLease(sessionKey, this.instanceId, this.leaseTtlMs)
+          .catch(() => {});
         task.leaseTimer = setInterval(() => {
-          void this.store.refreshLease?.(sessionKey, this.instanceId, LEASE_TTL_MS).catch(() => {});
-        }, LEASE_REFRESH_INTERVAL_MS);
+          void this.store
+            .refreshLease?.(sessionKey, this.instanceId, this.leaseTtlMs)
+            .catch(() => {});
+        }, this.leaseRefreshIntervalMs);
         this.unrefTimer(task.leaseTimer);
       }
 

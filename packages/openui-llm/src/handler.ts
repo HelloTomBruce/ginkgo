@@ -44,6 +44,7 @@ import { createParser } from "@openuidev/lang-core";
 import { getCrossSourceLinks, resolveCrossSourcePairs } from "./crossSourceMap";
 import { DEFAULT_TENANT_ID, SessionStreamHub, defaultStreamHub } from "./streamHub";
 import { FileTaskStore } from "./fileTaskStore";
+import { RedisTaskStore } from "./redisTaskStore";
 import type { TaskStore } from "./taskStore";
 import { createReasoningFetch } from "./reasoningStream";
 import {
@@ -62,6 +63,34 @@ export const SCHEMA_DIGEST_TOTAL_BUDGET_BYTES = 8 * 1024;
 
 /** WS-4:plan 代码块解析器(模块级构造一次;解析 PlanReviewCard.methods 用) */
 const planParser = createParser(serverLibrary.toJSONSchema(), "Root");
+
+/**
+ * env → TaskStore（显式注入 opts.taskStore 时本函数不被调用——注入优先于 env，
+ * 非法 env 值不影响注入方）。redis 模式为多副本后端，要求 REDIS_URL。
+ */
+function resolveTaskStoreFromEnv(): TaskStore | undefined {
+  const storeKind = process.env.LLM_TASK_STORE ?? "memory";
+  if (storeKind === "memory") return undefined;
+  if (storeKind === "file") {
+    return new FileTaskStore({ dir: process.env.LLM_TASK_STORE_DIR ?? "data/stream-tasks" });
+  }
+  if (storeKind === "redis") {
+    const url = process.env.REDIS_URL;
+    if (!url) {
+      throw new Error(
+        "LLM_TASK_STORE=redis 需要 REDIS_URL（如 redis://localhost:6379）；单进程部署请改用 memory 或 file。"
+      );
+    }
+    return new RedisTaskStore({ url });
+  }
+  throw new Error(`不支持的 LLM_TASK_STORE=${storeKind}（可选 memory/file/redis）`);
+}
+
+/** 读正整数 env（缺省/非法返回 undefined，由选项缺省值接管） */
+function envPositiveNumber(name: string): number | undefined {
+  const n = Number(process.env[name]);
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+}
 
 /**
  * 组装启用源的结构卡摘要：逐源读卡（渲染职责在 datasources 包），
@@ -414,20 +443,18 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
   const telemetry = opts.telemetry ?? createConsoleSink();
 
   // env 解析集中在 handler 工厂；hub 只接收 TaskStore 接口，defaultStreamHub 永远保持内存缺省。
-  const storeKind = opts.streamHub ? "memory" : (process.env.LLM_TASK_STORE ?? "memory");
-  if (storeKind !== "memory" && storeKind !== "file") {
-    throw new Error(`不支持的 LLM_TASK_STORE=${storeKind}（可选 memory/file）`);
-  }
-  const taskStore = opts.streamHub
-    ? undefined
-    : (opts.taskStore ??
-      (storeKind === "file"
-        ? new FileTaskStore({ dir: process.env.LLM_TASK_STORE_DIR ?? "data/stream-tasks" })
-        : undefined));
+  // 显式注入 streamHub/taskStore 时跳过 env store 解析与校验（注入优先于 env）。
+  const taskStore = opts.streamHub ? undefined : (opts.taskStore ?? resolveTaskStoreFromEnv());
   const streamHub =
     opts.streamHub ??
     (taskStore || opts.instanceId
-      ? new SessionStreamHub({ store: taskStore, instanceId: opts.instanceId, sink: telemetry })
+      ? new SessionStreamHub({
+          store: taskStore,
+          instanceId: opts.instanceId,
+          sink: telemetry,
+          leaseTtlMs: envPositiveNumber("LLM_LEASE_TTL_MS"),
+          sweepIntervalMs: envPositiveNumber("LLM_SWEEP_INTERVAL_MS"),
+        })
       : defaultStreamHub);
 
   // 方法论库：注入或缺省内置；索引文本在工厂期渲染一次（库不变无需逐请求重算）

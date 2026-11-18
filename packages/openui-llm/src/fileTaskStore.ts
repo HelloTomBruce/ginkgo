@@ -62,7 +62,8 @@ export class FileTaskStore implements TaskStore {
       if (this.tasks.get(sessionKey) !== record) return;
       await fs.appendFile(this.filePath(sessionKey), `${Buffer.from(chunk).toString("base64")}\n`);
       record.chunks.push(chunk);
-      this.events.emit(this.chunkEvent(sessionKey), chunk);
+      // 分块序号 = 落盘后列表长度（与内存/Redis 实现同语义），重连方依此去重
+      this.events.emit(this.chunkEvent(sessionKey), chunk, record.chunks.length);
     });
   }
 
@@ -74,6 +75,7 @@ export class FileTaskStore implements TaskStore {
     await this.ensureLoaded();
     const record = this.tasks.get(sessionKey);
     if (!record) return;
+    const previous = record.snapshot.status;
     record.snapshot = {
       ...record.snapshot,
       status,
@@ -84,6 +86,10 @@ export class FileTaskStore implements TaskStore {
       if (this.tasks.get(sessionKey) !== record) return;
       await this.persist(record);
     });
+    // running→终态时广播关闭：非 owner 订阅者（重连续接方）据此收尾
+    if (status !== "running" && previous === "running") {
+      this.events.emit(this.closeEvent(sessionKey), status, errorMessage);
+    }
     if (status !== "running") this.scheduleCleanup(sessionKey);
   }
 
@@ -114,10 +120,25 @@ export class FileTaskStore implements TaskStore {
     return count;
   }
 
-  subscribeChunks(sessionKey: string, onChunk: (chunk: Uint8Array) => void): () => void {
+  subscribeChunks(
+    sessionKey: string,
+    onChunk: (chunk: Uint8Array, seq: number) => void,
+    onClose?: (status: TaskStatus, errorMessage?: string) => void
+  ): () => void {
     const event = this.chunkEvent(sessionKey);
     this.events.on(event, onChunk);
-    return () => this.events.off(event, onChunk);
+    let unsubscribeClose: (() => void) | undefined;
+    if (onClose) {
+      const closeEvent = this.closeEvent(sessionKey);
+      const closeListener = (status: TaskStatus, errorMessage?: string) =>
+        onClose(status, errorMessage);
+      this.events.on(closeEvent, closeListener);
+      unsubscribeClose = () => this.events.off(closeEvent, closeListener);
+    }
+    return () => {
+      this.events.off(event, onChunk);
+      unsubscribeClose?.();
+    };
   }
 
   async publishAbort(sessionKey: string, reason: AbortReason): Promise<void> {
@@ -132,6 +153,7 @@ export class FileTaskStore implements TaskStore {
   }
 
   /** 单进程文件后端不需要分布式租约。 */
+  // 无参实现即可满足可选接口方法签名（TS 兼容少参方法）；单机无租约语义
   async refreshLease(): Promise<void> {}
 
   /** 文件后端不跨副本，running 恢复已在加载时转为 process_restart。 */
@@ -254,5 +276,9 @@ export class FileTaskStore implements TaskStore {
 
   private chunkEvent(sessionKey: string): string {
     return `chunk:${sessionKey}`;
+  }
+
+  private closeEvent(sessionKey: string): string {
+    return `close:${sessionKey}`;
   }
 }
