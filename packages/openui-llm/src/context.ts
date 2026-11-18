@@ -92,8 +92,12 @@ export function estimateTextTokens(text: string): number {
   return Math.ceil((cjk / 1.5 + (text.length - cjk) / 4) * 1.1); // 10% 余量
 }
 
-/** 单条消息估算：文本内容 + 结构化 parts 的序列化开销 + 固定结构开销 */
-export function estimateMessageTokens(message: unknown): number {
+/** 单条消息估算：文本内容 + 结构化 parts 的序列化开销 + 固定结构开销。
+ *  countText 可注入真实 tokenizer（WS-12）；缺省 CJK 启发式，行为不变。 */
+export function estimateMessageTokens(
+  message: unknown,
+  countText: (text: string) => number = estimateTextTokens
+): number {
   const m = message as { role?: string; content?: unknown } | null;
   if (!m || typeof m !== "object") return 0;
   let tokens = 8; // role/分隔等结构开销
@@ -103,26 +107,29 @@ export function estimateMessageTokens(message: unknown): number {
   // 若 parts 存在且为非空数组，parts 已完整覆盖 text 和 tool-invocation，只估算 parts；
   // 否则再估算 content 与 toolInvocations，避免同一份文本/工具结果被重复翻倍统计。
   if (Array.isArray(rest.parts) && rest.parts.length > 0) {
-    tokens += estimateTextTokens(safeSerialize(rest.parts));
+    tokens += countText(safeSerialize(rest.parts));
   } else {
     if (typeof m.content === "string") {
-      tokens += estimateTextTokens(m.content);
+      tokens += countText(m.content);
     } else if (m.content !== undefined && m.content !== null) {
-      tokens += estimateTextTokens(safeSerialize(m.content));
+      tokens += countText(safeSerialize(m.content));
     }
     if (rest.toolInvocations !== undefined) {
-      tokens += estimateTextTokens(safeSerialize(rest.toolInvocations));
+      tokens += countText(safeSerialize(rest.toolInvocations));
     }
   }
   if (rest.annotations !== undefined) {
-    tokens += estimateTextTokens(safeSerialize(rest.annotations));
+    tokens += countText(safeSerialize(rest.annotations));
   }
   return tokens;
 }
 
-export function estimateMessagesTokens(messages: unknown[]): number {
+export function estimateMessagesTokens(
+  messages: unknown[],
+  countText: (text: string) => number = estimateTextTokens
+): number {
   let total = 0;
-  for (const m of messages) total += estimateMessageTokens(m);
+  for (const m of messages) total += estimateMessageTokens(m, countText);
   return total;
 }
 
@@ -210,10 +217,14 @@ export function projectMessages(opts: {
   anchorTokens?: number;
   /** system prompt 估算 token */
   systemTokens?: number;
+  /** 真实 tokenizer（WS-12 可选注入；缺省 CJK 启发式，行为不变） */
+  tokenizer?: { encode(text: string): number };
 }): ProjectionResult {
   const { messages, budget } = opts;
   const overhead = opts.systemTokens ?? 0;
-  const heuristic = estimateMessagesTokens(messages);
+  const countText: (text: string) => number =
+    opts.tokenizer?.encode.bind(opts.tokenizer) ?? estimateTextTokens;
+  const heuristic = estimateMessagesTokens(messages, countText);
   const estimated =
     Math.max(heuristic, opts.anchorTokens ?? 0) + overhead;
 
@@ -232,7 +243,7 @@ export function projectMessages(opts: {
   let acc = 0;
   let retainFrom = messages.length;
   for (let i = messages.length - 1; i >= 0; i--) {
-    const t = estimateMessageTokens(messages[i]);
+    const t = estimateMessageTokens(messages[i], countText);
     if (acc + t > budget.retainTokens && retainFrom < messages.length) {
       retainFrom = i + 1;
       break;
@@ -282,8 +293,8 @@ export function projectMessages(opts: {
     .slice(0, retainFrom)
     .reduce((n, m) => n + toolNamesOf(m).length, 0);
 
-  // pruning 后重估（锚点已失效——内容变了，回到纯启发式）
-  const afterPrune = estimateMessagesTokens(projected) + overhead;
+  // pruning 后重估（锚点已失效——内容变了，回到计数器估算）
+  const afterPrune = estimateMessagesTokens(projected, countText) + overhead;
   const needSummary = afterPrune > budget.triggerAt;
 
   return {

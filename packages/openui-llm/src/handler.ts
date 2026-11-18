@@ -101,6 +101,21 @@ function envPositiveNumber(name: string): number | undefined {
 }
 
 /**
+ * WS-12 请求级 tokenizer 解析：注入优先；env LLM_TOKENIZER=tiktoken 时
+ * 按 config/model-tokenizer.json 映射动态加载（每请求解析 encoding，
+ * 实例在 tokenizer.ts 内按 encoding 缓存）。未安装/未启用回退启发式。
+ */
+async function resolveRequestTokenizer(
+  injected: { encode(text: string): number } | undefined,
+  model: string
+): Promise<{ encode(text: string): number } | undefined> {
+  if (injected) return injected;
+  if (process.env.LLM_TOKENIZER !== "tiktoken") return undefined;
+  const { createTiktokenEstimator, resolveEncodingForModel } = await import("./tokenizer");
+  return createTiktokenEstimator(resolveEncodingForModel(model));
+}
+
+/**
  * 组装启用源的结构卡摘要：逐源读卡（渲染职责在 datasources 包），
  * 依据用户提问相关度优先展开核心表，按总量预算降序纳入，超限的源省略并标注。
  * 读卡失败静默跳过（不阻塞分析）。返回摘要文本与因预算被省略的源数（供遥测告警）。
@@ -404,6 +419,12 @@ export interface AnalyzeHandlerOptions {
   quota?: QuotaPolicy;
   /** 模型计价表（可选注入；缺省读 config/model-pricing.json，缺表只记量不记钱） */
   pricing?: ModelPricingTable;
+  /**
+   * 真实 tokenizer（可选注入，WS-12）：只影响投影预判定；usage.promptTokens
+   * 实测锚点仍是最高优先级。缺省 CJK 启发式，行为不变；env LLM_TOKENIZER=tiktoken
+   * 时按 config/model-tokenizer.json 映射动态加载 js-tiktoken（未安装回退启发式）。
+   */
+  tokenizer?: { encode(text: string): number };
 }
 
 export interface AnalyzeRequestBody {
@@ -973,6 +994,7 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
           budget,
           anchorTokens: sessionCtx?.lastPromptTokens,
           systemTokens: estimateTextTokens(baseSystem),
+          tokenizer: await resolveRequestTokenizer(opts.tokenizer, model),
         });
 
         let systemOut = baseSystem;
