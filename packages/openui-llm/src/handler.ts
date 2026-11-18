@@ -1060,11 +1060,17 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
                   finish_task: finishTaskTool,
                 },
                 maxSteps,
-                // 韧性边界标记：首个内容分块落地即置位，此后失败不再透明重跑/切换
+                // 韧性边界标记：text/reasoning/tool-call 任一分块落地即置位——
+                // 这些分块都会写进客户端流（客户端可见即视为已产出）；tool-call 不置位
+                // 的话，工具已执行后重发 streamText 会重复执行数据源查询（副作用）
                 onChunk: ({ chunk }) => {
                   if (
                     chunk.type === "text-delta" ||
-                    chunk.type === "reasoning"
+                    chunk.type === "reasoning" ||
+                    chunk.type === "tool-call" ||
+                    chunk.type === "tool-call-streaming-start" ||
+                    chunk.type === "tool-call-delta" ||
+                    chunk.type === "tool-result"
                   ) {
                     emittedContent = true;
                   }
@@ -1209,9 +1215,40 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
                 },
               });
 
-              await result.mergeIntoDataStream(dataStream, { sendReasoning: true });
+              // 消费「会抛错」的流：mergeIntoDataStream 在真实 SDK 下永不 reject——
+              // 其内部 merge() 把 provider 失败吞成 data stream error part，fallback
+              // 决策必须建立在真实抛错的迭代上。字节输出与 mergeIntoDataStream 等价
+              // （同一 toDataStreamInternal 管线），错误则抛给下方 catch 做分类。
+              const reader = result
+                .toDataStream({ sendReasoning: true })
+                .getReader();
+              const decoder = new TextDecoder();
+              // toDataStream 产出的是规范化 data stream 分块串（0:/2:/3:/d: 前缀）
+              type DataStreamChunk = Parameters<typeof dataStream.write>[0];
+              try {
+                for (;;) {
+                  const { done, value } = await reader.read();
+                  if (done) break;
+                  dataStream.write(
+                    decoder.decode(value, { stream: true }) as DataStreamChunk
+                  );
+                }
+                const tail = decoder.decode();
+                if (tail) dataStream.write(tail as DataStreamChunk);
+              } finally {
+                reader.releaseLock();
+              }
               return;
             } catch (err) {
+              // 用户停止/预算熔断触发的流错误走白名单：保持既有「流自然收尾 + onError
+              // 路径」语义（错误分块 + STREAM_ERROR 遥测），不得 fallback 或误报
+              // MID_STREAM_FAILURE
+              if (
+                taskAbortController.signal.aborted ||
+                budgetAbortController.signal.aborted
+              ) {
+                throw err;
+              }
               const errorClass = classifyProviderError(err);
               // 切换前提:未产出任何 content 分块,且链上还有 fallback,且错误类别允许
               // (context_overflow 不重试但可换更大窗模型;rate_limit/server/network 用尽重试后切换)

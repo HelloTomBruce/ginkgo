@@ -77,16 +77,38 @@ function makeRequest(body: Record<string, unknown>): Request {
   });
 }
 
-function mockStreamOk() {
-  vi.mocked(streamText).mockReturnValue({
-    toDataStreamResponse: () =>
-      new Response('0:"ok"\n', {
-        headers: { "x-vercel-ai-data-stream": "v1" },
+/**
+ * 构造贴近真实 SDK 契约的 streamText mock 返回值：字节经 toDataStream 交付、读取时抛错。
+ * 不能用 mergeIntoDataStream 同步 throw 的形态——真实 SDK 中 merge() 内部把错误吞成
+ * data stream error part（ai@4.3.19 index.mjs merge() 实现），永不 reject；
+ * fallback/MID_STREAM_FAILURE 逻辑消费的是会抛错的流迭代。
+ */
+function streamResult(handlers: {
+  chunks?: string[];
+  error?: unknown;
+  onStart?: () => void;
+}): ReturnType<typeof streamText> {
+  return {
+    toDataStream: () =>
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          handlers.onStart?.();
+          const encoder = new TextEncoder();
+          for (const chunk of handlers.chunks ?? []) {
+            controller.enqueue(encoder.encode(chunk));
+          }
+          if (handlers.error !== undefined) {
+            controller.error(handlers.error);
+          } else {
+            controller.close();
+          }
+        },
       }),
-    mergeIntoDataStream: (dataStream: { write: (chunk: string) => void }) => {
-      dataStream.write('0:"ok"\n');
-    },
-  } as unknown as ReturnType<typeof streamText>);
+  } as unknown as ReturnType<typeof streamText>;
+}
+
+function mockStreamOk() {
+  vi.mocked(streamText).mockReturnValue(streamResult({ chunks: ['0:"ok"\n'] }));
 }
 
 describe("createAnalyzeHandler", () => {
@@ -798,9 +820,9 @@ describe("双重终态识别与步数预算", () => {
   });
 
   it("未调用 finish_task 且模型正常 stop 时，触发 natural 终态兜底", async () => {
-    vi.mocked(streamText).mockImplementation((opts) => {
-      return {
-        mergeIntoDataStream: vi.fn(() => {
+    vi.mocked(streamText).mockImplementation((opts) =>
+      streamResult({
+        onStart: () => {
           opts.onStepFinish?.({
             stepType: "tool-result",
             toolCalls: [],
@@ -809,9 +831,9 @@ describe("双重终态识别与步数预算", () => {
             usage: { promptTokens: 5000, completionTokens: 100 },
           } as never);
           opts.onFinish?.({ usage: { promptTokens: 5000 } } as never);
-        }),
-      } as never;
-    });
+        },
+      }) as never
+    );
 
     const manager = await makeFakeManager();
     const POST = createAnalyzeHandler({ datasources: manager });
@@ -823,9 +845,9 @@ describe("双重终态识别与步数预算", () => {
   });
 
   it("当因为达到上限截断时（finishReason=length），触发 step_limit_reached 终态", async () => {
-    vi.mocked(streamText).mockImplementation((opts) => {
-      return {
-        mergeIntoDataStream: vi.fn(() => {
+    vi.mocked(streamText).mockImplementation((opts) =>
+      streamResult({
+        onStart: () => {
           opts.onStepFinish?.({
             stepType: "tool-result",
             toolCalls: [],
@@ -834,9 +856,9 @@ describe("双重终态识别与步数预算", () => {
             usage: { promptTokens: 5000, completionTokens: 100 },
           } as never);
           opts.onFinish?.({ usage: { promptTokens: 5000 } } as never);
-        }),
-      } as never;
-    });
+        },
+      }) as never
+    );
 
     const manager = await makeFakeManager();
     const POST = createAnalyzeHandler({ datasources: manager });
@@ -872,25 +894,18 @@ describe("双重终态识别与步数预算", () => {
     vi.mocked(streamText).mockClear();
     let finishStream: () => void;
     vi.mocked(streamText).mockReturnValue({
-      toDataStreamResponse: () =>
-        new Response('0:"ok"\n', {
-          headers: { "x-vercel-ai-data-stream": "v1" },
+      toDataStream: () =>
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode('0:"chunk1"\n'));
+            void new Promise<void>((resolve) => {
+              finishStream = resolve;
+            }).then(() => {
+              controller.enqueue(new TextEncoder().encode('0:"chunk2"\n'));
+              controller.close();
+            });
+          },
         }),
-      mergeIntoDataStream: (dataStream: { merge: (stream: ReadableStream) => void }) => {
-        dataStream.merge(
-          new ReadableStream({
-            start(controller) {
-              controller.enqueue('0:"chunk1"\n');
-              void new Promise<void>((resolve) => {
-                finishStream = resolve;
-              }).then(() => {
-                controller.enqueue('0:"chunk2"\n');
-                controller.close();
-              });
-            },
-          })
-        );
-      },
     } as unknown as ReturnType<typeof streamText>);
 
     const manager = await makeFakeManager();
@@ -990,9 +1005,9 @@ describe("成本预算与并发准入（WS-3）", () => {
   });
 
   it("累计 usage 超预算：写 budget_exhausted 终态恰一次、中止 provider、不发自然终态", async () => {
-    vi.mocked(streamText).mockImplementation((opts) => {
-      return {
-        mergeIntoDataStream: vi.fn(() => {
+    vi.mocked(streamText).mockImplementation((opts) =>
+      streamResult({
+        onStart: () => {
           // 两步各 600k,预算 10k(请求体钳制下限)→ 第一步即熔断
           opts.onStepFinish?.({
             stepType: "tool-result",
@@ -1004,9 +1019,9 @@ describe("成本预算与并发准入（WS-3）", () => {
           opts.onFinish?.({
             usage: { promptTokens: 800_000, completionTokens: 400_000 },
           } as never);
-        }),
-      } as never;
-    });
+        },
+      }) as never
+    );
 
     const manager = await makeFakeManager();
     const POST = createAnalyzeHandler({ datasources: manager });
@@ -1024,9 +1039,9 @@ describe("成本预算与并发准入（WS-3）", () => {
   });
 
   it("未超预算：不出现 budget_exhausted 终态(正常 natural 闭环)", async () => {
-    vi.mocked(streamText).mockImplementation((opts) => {
-      return {
-        mergeIntoDataStream: vi.fn(() => {
+    vi.mocked(streamText).mockImplementation((opts) =>
+      streamResult({
+        onStart: () => {
           opts.onStepFinish?.({
             stepType: "tool-result",
             toolCalls: [],
@@ -1035,9 +1050,9 @@ describe("成本预算与并发准入（WS-3）", () => {
             usage: { promptTokens: 5000, completionTokens: 100 },
           } as never);
           opts.onFinish?.({ usage: { promptTokens: 5000 } } as never);
-        }),
-      } as never;
-    });
+        },
+      }) as never
+    );
 
     const manager = await makeFakeManager();
     const POST = createAnalyzeHandler({ datasources: manager });
@@ -1052,19 +1067,18 @@ describe("成本预算与并发准入（WS-3）", () => {
   it("并发准入：running 任务数达上限时新任务 429,重连不受限", async () => {
     process.env.LLM_MAX_CONCURRENT_TASKS = "1";
     let finishStream: () => void;
-    vi.mocked(streamText).mockImplementation(() => {
-      return {
-        mergeIntoDataStream: vi.fn((dataStream: {
-          write: (chunk: string) => void;
-        }) => {
-          // 模拟在途流:写一个 chunk 后挂起,直到测试显式放行
-          dataStream.write('0:"working"\n');
-          void new Promise<void>((resolve) => {
-            finishStream = resolve;
-          });
+    vi.mocked(streamText).mockImplementation(() => ({
+      toDataStream: () =>
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            // 模拟在途流:写一个 chunk 后挂起不关闭,直到测试显式放行
+            controller.enqueue(new TextEncoder().encode('0:"working"\n'));
+            void new Promise<void>((resolve) => {
+              finishStream = resolve;
+            }).then(() => controller.close());
+          },
         }),
-      } as never;
-    });
+    }) as never);
 
     const manager = await makeFakeManager();
     const POST = createAnalyzeHandler({ datasources: manager });
@@ -1140,9 +1154,9 @@ describe("Plan→execute 结构化交接（WS-4）", () => {
   }
 
   function mockPlanTextStream(finalText: string) {
-    vi.mocked(streamText).mockImplementation((opts) => {
-      return {
-        mergeIntoDataStream: vi.fn(() => {
+    vi.mocked(streamText).mockImplementation((opts) =>
+      streamResult({
+        onStart: () => {
           opts.onStepFinish?.({
             stepType: "text",
             toolCalls: [],
@@ -1151,9 +1165,9 @@ describe("Plan→execute 结构化交接（WS-4）", () => {
             usage: { promptTokens: 100, completionTokens: 50 },
           } as never);
           opts.onFinish?.({ usage: { promptTokens: 100 } } as never);
-        }),
-      } as never;
-    });
+        },
+      }) as never
+    );
   }
 
   it("extractPlanMethods:含 methods 代码块提取 id;无 methods/坏 DSL/无代码块返回空", async () => {
@@ -1294,9 +1308,9 @@ describe("finish_task 服务端不变量（WS-5）", () => {
   });
 
   it("已输出看板代码块后宣告 completed:正常闭环(terminated=true)", async () => {
-    vi.mocked(streamText).mockImplementation((opts) => {
-      return {
-        mergeIntoDataStream: vi.fn(() => {
+    vi.mocked(streamText).mockImplementation((opts) =>
+      streamResult({
+        onStart: () => {
           opts.onStepFinish?.({
             stepType: "text",
             toolCalls: [],
@@ -1305,9 +1319,9 @@ describe("finish_task 服务端不变量（WS-5）", () => {
             usage: { promptTokens: 100, completionTokens: 50 },
           } as never);
           opts.onFinish?.({ usage: { promptTokens: 100 } } as never);
-        }),
-      } as never;
-    });
+        },
+      }) as never
+    );
 
     const manager = await makeFakeManager();
     const POST = createAnalyzeHandler({ datasources: manager });
@@ -1367,22 +1381,11 @@ describe("Provider 韧性层 fallback 链（WS-9）", () => {
     const serverErr = Object.assign(new Error("503 Service Unavailable"), {
       statusCode: 503,
     });
+    // 失败形态:读取流时异步抛错(贴近真实 SDK 的 reject 时机,merge() 不再替我们吞错)
     vi.mocked(streamText)
+      .mockImplementationOnce(() => streamResult({ error: serverErr }) as never)
       .mockImplementationOnce(
-        () =>
-          ({
-            mergeIntoDataStream: vi.fn(() => {
-              throw serverErr;
-            }),
-          }) as never
-      )
-      .mockImplementationOnce(
-        () =>
-          ({
-            mergeIntoDataStream: (ds: { write: (c: string) => void }) => {
-              ds.write('0:"ok"\n');
-            },
-          }) as never
+        () => streamResult({ chunks: ['0:"ok"\n'] }) as never
       );
 
     const res = await POST(
@@ -1416,17 +1419,9 @@ describe("Provider 韧性层 fallback 链（WS-9）", () => {
     const secondErr = Object.assign(new Error("backup also down"), {
       statusCode: 503,
     });
-    const failing = (err: unknown) =>
-      vi.fn(() => {
-        throw err;
-      });
     vi.mocked(streamText)
-      .mockImplementationOnce(
-        () => ({ mergeIntoDataStream: failing(firstErr) }) as never
-      )
-      .mockImplementationOnce(
-        () => ({ mergeIntoDataStream: failing(secondErr) }) as never
-      );
+      .mockImplementationOnce(() => streamResult({ error: firstErr }) as never)
+      .mockImplementationOnce(() => streamResult({ error: secondErr }) as never);
 
     const res = await POST(
       makeRequest({
@@ -1451,13 +1446,13 @@ describe("Provider 韧性层 fallback 链（WS-9）", () => {
     });
     vi.mocked(streamText).mockImplementation(
       (opts) =>
-        ({
-          mergeIntoDataStream: vi.fn(() => {
+        streamResult({
+          error: netErr,
+          onStart: () => {
             (
               opts.onChunk as ((e: unknown) => void) | undefined
             )?.({ chunk: { type: "text-delta", textDelta: "部分结果" } });
-            throw netErr;
-          }),
+          },
         }) as never
     );
 
@@ -1487,23 +1482,11 @@ describe("Provider 韧性层 fallback 链（WS-9）", () => {
     const authErr = Object.assign(new Error("invalid api key"), {
       statusCode: 401,
     });
-    const failing = (err: unknown) =>
-      vi.fn(() => {
-        throw err;
-      });
-
     // context_overflow:不重试但允许切换
     vi.mocked(streamText)
+      .mockImplementationOnce(() => streamResult({ error: overflowErr }) as never)
       .mockImplementationOnce(
-        () => ({ mergeIntoDataStream: failing(overflowErr) }) as never
-      )
-      .mockImplementationOnce(
-        () =>
-          ({
-            mergeIntoDataStream: (ds: { write: (c: string) => void }) => {
-              ds.write('0:"ok"\n');
-            },
-          }) as never
+        () => streamResult({ chunks: ['0:"ok"\n'] }) as never
       );
     const res1 = await POST(
       makeRequest({
@@ -1519,7 +1502,7 @@ describe("Provider 韧性层 fallback 链（WS-9）", () => {
 
     // auth:凭证问题重试/切换均无意义,单次调用直接报错
     vi.mocked(streamText).mockImplementation(
-      () => ({ mergeIntoDataStream: failing(authErr) }) as never
+      () => streamResult({ error: authErr }) as never
     );
     const res2 = await POST(
       makeRequest({
@@ -1570,21 +1553,9 @@ describe("Provider 韧性层 fallback 链（WS-9）", () => {
     ]);
     const serverErr = Object.assign(new Error("503"), { statusCode: 503 });
     vi.mocked(streamText)
+      .mockImplementationOnce(() => streamResult({ error: serverErr }) as never)
       .mockImplementationOnce(
-        () =>
-          ({
-            mergeIntoDataStream: vi.fn(() => {
-              throw serverErr;
-            }),
-          }) as never
-      )
-      .mockImplementationOnce(
-        () =>
-          ({
-            mergeIntoDataStream: (ds: { write: (c: string) => void }) => {
-              ds.write('0:"ok"\n');
-            },
-          }) as never
+        () => streamResult({ chunks: ['0:"ok"\n'] }) as never
       );
 
     const res = await POST(makeRequest({ messages: [], apiKey: "k" }));
@@ -1603,12 +1574,7 @@ describe("Provider 韧性层 fallback 链（WS-9）", () => {
       statusCode: 503,
     });
     vi.mocked(streamText).mockImplementationOnce(
-      () =>
-        ({
-          mergeIntoDataStream: vi.fn(() => {
-            throw serverErr;
-          }),
-        }) as never
+      () => streamResult({ error: serverErr }) as never
     );
 
     const res = await POST(makeRequest({ messages: [], apiKey: "k" }));
@@ -1617,5 +1583,97 @@ describe("Provider 韧性层 fallback 链（WS-9）", () => {
     expect(vi.mocked(streamText)).toHaveBeenCalledTimes(1);
     expect(text).toContain("503 Service Unavailable");
     expect(hasWarn("MODEL_FALLBACK")).toBe(false);
+  });
+
+  it("tool-call 分块后失败:不重跑,防重复执行已发出的数据源工具调用", async () => {
+    const netErr = Object.assign(new Error("socket hang up"), {
+      code: "ECONNRESET",
+    });
+    vi.mocked(streamText).mockImplementation(
+      (opts) =>
+        streamResult({
+          error: netErr,
+          onStart: () => {
+            // 工具调用已发出(客户端流中可见 tool-call 分块),首个 text-delta 前失败
+            (
+              opts.onChunk as ((e: unknown) => void) | undefined
+            )?.({
+              chunk: {
+                type: "tool-call",
+                toolCallId: "call_1",
+                toolName: "jira_jira_search",
+                args: { jql: "project = DEMO" },
+              },
+            });
+          },
+        }) as never
+    );
+
+    const res = await POST(
+      makeRequest({
+        messages: [],
+        apiKey: "k",
+        resilience: { fallbacks: [{ model: "backup-model" }] },
+      })
+    );
+    const text = await res.text();
+
+    // tool-call 分块已写进客户端流:同样视为「已产出」,重发会重复执行工具(副作用)
+    expect(vi.mocked(streamText)).toHaveBeenCalledTimes(1);
+    expect(text).not.toContain("model_fallback");
+    expect(hasWarn("MID_STREAM_FAILURE")).toBe(true);
+    expect(hasWarn("MODEL_FALLBACK")).toBe(false);
+    expect(text).toContain("socket hang up");
+  });
+
+  it("用户停止(abort)触发的流错误:不 fallback、不 MID_STREAM_FAILURE,按既有 onError 收尾", async () => {
+    const abortErr = new Error("The operation was aborted");
+    vi.mocked(streamText).mockImplementation(
+      (opts) =>
+        ({
+          toDataStream: () =>
+            new ReadableStream<Uint8Array>({
+              start(controller) {
+                const signal = opts.abortSignal as AbortSignal | undefined;
+                const fail = () => controller.error(abortErr);
+                if (signal?.aborted) {
+                  fail();
+                  return;
+                }
+                signal?.addEventListener("abort", fail, { once: true });
+                controller.enqueue(new TextEncoder().encode('0:"working"\n'));
+              },
+            }),
+        }) as never
+    );
+
+    const res = await POST(
+      makeRequest({
+        messages: [],
+        apiKey: "k",
+        sessionId: "sess_ws9_abort",
+        resilience: { fallbacks: [{ model: "backup-model" }] },
+      })
+    );
+    expect(res.status).toBe(200);
+
+    // 用户显式停止 → taskAbortController 触发 → 流读取错误必须走 abort 白名单
+    const stopRes = await POST(
+      makeRequest({ action: "stop", sessionId: "sess_ws9_abort" } as never)
+    );
+    expect(((await stopRes.json()) as { stopped?: boolean }).stopped).toBe(true);
+
+    // 白名单:不 fallback、不 MID_STREAM_FAILURE
+    expect(vi.mocked(streamText)).toHaveBeenCalledTimes(1);
+    expect(hasWarn("MID_STREAM_FAILURE")).toBe(false);
+    expect(hasWarn("MODEL_FALLBACK")).toBe(false);
+
+    // 既有 error 语义:hub 以 error 终止订阅(res.text() 按现状拒绝,WS-2 设计),
+    // 原始 abort 错误经 onError 转 STREAM_ERROR 遥测
+    await new Promise((r) => setTimeout(r, 20));
+    expect(
+      events.some((e) => e.type === "error" && e.code === "STREAM_ERROR")
+    ).toBe(true);
+    await expect(res.text()).rejects.toThrow("Stream error");
   });
 });

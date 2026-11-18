@@ -100,30 +100,35 @@ async function runTrajectory(opts: {
     };
     captured = o as Record<string, unknown>;
     return {
-      // 必须同步:handler 不 await mergeIntoDataStream,execute 返回后
-      // createDataStreamResponse 即关流——异步写入会全部丢失。
+      // 必须同步:真实 SDK 的 merge() 把流错误吞成 error part(永不 reject),
+      // handler 改为消费 toDataStream 的读取迭代——mock 同步完成剧本回调后
+      // 立即关闭流,execute 才能在首个 await 前拿到全部事件。
       // 工具 execute 与 finish_task 的副作用均在首个 await 前完成,void 调用即可
-      mergeIntoDataStream: vi.fn(() => {
-        for (const step of opts.steps) {
-          if (opts.invokeTools) {
-            for (const name of step.toolCalls ?? []) {
-              const t = o.tools?.[name];
-              if (t?.execute) void t.execute({}, {});
+      toDataStream: () =>
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            for (const step of opts.steps) {
+              if (opts.invokeTools) {
+                for (const name of step.toolCalls ?? []) {
+                  const t = o.tools?.[name];
+                  if (t?.execute) void t.execute({}, {});
+                }
+              }
+              o.onStepFinish?.({
+                stepType: step.toolCalls?.length ? "tool-result" : "text",
+                toolCalls: (step.toolCalls ?? []).map((n) => ({ toolName: n })),
+                finishReason: step.finishReason,
+                text: step.text ?? "",
+                usage: step.usage,
+              });
             }
-          }
-          o.onStepFinish?.({
-            stepType: step.toolCalls?.length ? "tool-result" : "text",
-            toolCalls: (step.toolCalls ?? []).map((n) => ({ toolName: n })),
-            finishReason: step.finishReason,
-            text: step.text ?? "",
-            usage: step.usage,
-          });
-        }
-        if (opts.callFinishTask) {
-          void o.tools?.finish_task?.execute?.(opts.callFinishTask, {});
-        }
-        o.onFinish?.({ usage: opts.finishUsage });
-      }),
+            if (opts.callFinishTask) {
+              void o.tools?.finish_task?.execute?.(opts.callFinishTask, {});
+            }
+            o.onFinish?.({ usage: opts.finishUsage });
+            controller.close();
+          },
+        }),
     } as never;
   });
 
