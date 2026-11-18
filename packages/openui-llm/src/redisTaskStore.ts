@@ -54,11 +54,39 @@ export interface RedisLike {
   srem(key: string, ...members: string[]): Promise<unknown>;
   scard(key: string): Promise<number>;
   smembers(key: string): Promise<string[]>;
+  /** 成本台账：member 唯一（重复写入同 member 仅更新 score），score=finishedAt */
+  zadd(key: string, score: number, member: string): Promise<unknown>;
+  zrangebyscore(key: string, min: number | string, max: number | string): Promise<string[]>;
   publish(channel: string, message: string): Promise<unknown>;
   duplicate(): RedisLike;
   subscribe(...channels: string[]): Promise<unknown>;
   unsubscribe(...channels: string[]): Promise<unknown>;
   on(event: "message", listener: (channel: string, message: string) => void): this;
+}
+
+/**
+ * 动态加载 ioredis 构造器（peer optional，单机部署不安装不受影响）：
+ * 缺失时抛含安装指引的明确错误。RedisTaskStore 与 RedisCostLedger 共用。
+ */
+export async function importRedisConstructor(): Promise<new (url: string) => RedisLike> {
+  try {
+    // SAFETY: ioredis 为 CJS default 导出构造器；动态 import 的模块形状无法静态断言，
+    // 运行时由 new 调用与命令面结构兼容性（RedisLike）约束。
+    const mod = (await import("ioredis")) as unknown as {
+      default?: new (url: string) => RedisLike;
+    };
+    // SAFETY: 无 bundler interop 的 ESM 命名空间形态下 default 可能不存在，回落到模块本身。
+    return (
+      mod.default ?? (mod as unknown as new (url: string) => RedisLike)
+    );
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException)?.code === "ERR_MODULE_NOT_FOUND") {
+      throw new Error(
+        "需要 ioredis，但当前进程未安装：多副本部署请执行 `pnpm add ioredis` 后重启；单进程部署请改用 LLM_TASK_STORE=memory 或 file。"
+      );
+    }
+    throw error;
+  }
 }
 
 export interface RedisTaskStoreOptions {
@@ -106,24 +134,7 @@ export class RedisTaskStore implements TaskStore {
       if (!opts.url) {
         throw new Error("RedisTaskStore 需要 url 或注入 client");
       }
-      let createClient: new (url: string) => RedisLike;
-      try {
-        // peer optional：单进程部署不安装 ioredis 时，此 import 在此失败
-        // SAFETY: ioredis 为 CJS default 导出构造器；动态 import 的模块形状无法静态断言，
-        // 运行时由下方 new 调用与命令面结构兼容性（RedisLike）约束。
-        const mod = (await import("ioredis")) as unknown as {
-          default?: new (url: string) => RedisLike;
-        };
-        // SAFETY: 无 bundler interop 的 ESM 命名空间形态下 default 可能不存在，回落到模块本身。
-        createClient = mod.default ?? (mod as unknown as new (url: string) => RedisLike);
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException)?.code === "ERR_MODULE_NOT_FOUND") {
-          throw new Error(
-            "LLM_TASK_STORE=redis 需要 ioredis，但当前进程未安装：多副本部署请执行 `pnpm add ioredis` 后重启；单进程部署请改用 LLM_TASK_STORE=memory 或 file。"
-          );
-        }
-        throw error;
-      }
+      const createClient = await importRedisConstructor();
       this.#client = new createClient(opts.url);
       this.#subscriber = opts.subscriber ?? this.#client.duplicate();
     }

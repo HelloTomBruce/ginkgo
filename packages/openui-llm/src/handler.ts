@@ -56,6 +56,14 @@ import {
   type ResolvedModelSpec,
 } from "./resilience";
 import type { RunId, TelemetrySink } from "./telemetry";
+import {
+  computeCostUsd,
+  DEFAULT_QUOTA_WINDOW_MS,
+  InMemoryCostLedger,
+  ModelPricingTable,
+  type CostLedger,
+  type QuotaPolicy,
+} from "./costLedger";
 import { createConsoleSink, jsonByteSize, newRunId } from "./telemetry";
 
 /** 全部启用源结构卡注入 prompt 的总量预算（与单卡 2KB 预算配套，快照测试守护） */
@@ -384,6 +392,18 @@ export interface AnalyzeHandlerOptions {
    * hub 内部事件（abort/reader error）才会汇入同一事件流。
    */
   telemetry?: TelemetrySink;
+  /**
+   * 成本台账（可选注入；缺省不启用——未注入且未配置配额时零行为变化）。
+   * 多副本部署必须注入 RedisCostLedger：进程内实现等于每实例一份额度，语义错误。
+   */
+  costLedger?: CostLedger;
+  /**
+   * 租户配额策略（可选注入；缺省读 env LLM_TENANT_TOKEN_LIMIT，未配置则零拦截）。
+   * 与 LLM_TASK_TOKEN_BUDGET 正交：一个管单次敞口、一个管租户累计。
+   */
+  quota?: QuotaPolicy;
+  /** 模型计价表（可选注入；缺省读 config/model-pricing.json，缺表只记量不记钱） */
+  pricing?: ModelPricingTable;
 }
 
 export interface AnalyzeRequestBody {
@@ -476,6 +496,21 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
     64
   );
 
+  // WS-11 成本台账与配额：env 兜底（注入优先）。未配置配额且未注入台账时不建台账，
+  // 记账与准入零行为变化；配置了配额但未注入台账则缺省内存台账（多副本部署必须
+  // 显式注入 RedisCostLedger，进程内额度跨实例不可见——见 docs/llm-harness-multi-instance.md）。
+  const envTenantTokenLimit = Number(process.env.LLM_TENANT_TOKEN_LIMIT);
+  const quota =
+    opts.quota ??
+    (Number.isFinite(envTenantTokenLimit) && envTenantTokenLimit > 0
+      ? {
+          tenantTokenLimit: envTenantTokenLimit,
+          windowMs: envPositiveNumber("LLM_QUOTA_WINDOW_MS") ?? DEFAULT_QUOTA_WINDOW_MS,
+        }
+      : undefined);
+  const costLedger = opts.costLedger ?? (quota ? new InMemoryCostLedger() : undefined);
+  const pricingTable = costLedger ? (opts.pricing ?? new ModelPricingTable()) : undefined;
+
   const POST = async function (req: Request) {
     const runId = newRunId();
     try {
@@ -545,6 +580,27 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
           { error: "服务端分析任务并发已达上限，请稍后重试" },
           { status: 429 }
         );
+      }
+      // WS-11 租户配额准入：仅约束新任务（重连是接入既有任务，不产生新的模型开销）。
+      // 滚动窗累计 >= 上限即 429；与并发准入同位递（仅新任务计数）。
+      if (quota?.tenantTokenLimit && !isReconnect) {
+        const windowUsage = await costLedger!.sumUsage(
+          tenantId,
+          quota.windowMs ?? DEFAULT_QUOTA_WINDOW_MS
+        );
+        if (windowUsage.tokens >= quota.tenantTokenLimit) {
+          telemetry.emit({
+            type: "warn",
+            runId,
+            sessionId: sessionIdForEvents,
+            code: "QUOTA_EXCEEDED",
+            detail: `租户 ${tenantId} 滚动窗累计 ${windowUsage.tokens} tokens 已达上限 ${quota.tenantTokenLimit},拒绝新任务`,
+          });
+          return Response.json(
+            { error: "租户额度已用尽，请稍后重试" },
+            { status: 429 }
+          );
+        }
       }
       if (
         clientSessionId &&
@@ -1288,6 +1344,36 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
                     durationMs: Date.now() - runStartTs,
                   });
 
+                  // WS-11 成本入账：口径与 task_finish 遥测一致（SDK 累计值）；
+                  // fire-and-forget，台账失败不阻塞主链路。
+                  if (costLedger) {
+                    const recordedPrompt =
+                      typeof usage?.promptTokens === "number" ? usage.promptTokens : 0;
+                    const recordedCompletion =
+                      typeof usage?.completionTokens === "number" ? usage.completionTokens : 0;
+                    const pricing = pricingTable?.priceFor(model);
+                    void costLedger
+                      .record({
+                        runId,
+                        tenantId,
+                        sessionId: sessionIdForEvents,
+                        model,
+                        promptTokens: recordedPrompt,
+                        completionTokens: recordedCompletion,
+                        ...(pricing
+                          ? {
+                              costUsd: computeCostUsd(
+                                pricing,
+                                recordedPrompt,
+                                recordedCompletion
+                              ),
+                            }
+                          : {}),
+                        finishedAt: Date.now(),
+                      })
+                      .catch(() => {});
+                  }
+
                   // WS-4:plan 阶段从最终文本提取结构化 methods,登记为 pendingPlan
                   // (execute 轮消费后清空;提取失败静默——execute 侧有散文匹配兜底)
                   if (mode === "plan" && sessions && typeof clientSessionId === "string" && clientSessionId) {
@@ -1444,6 +1530,8 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
   POST.abortSession = (sessionId: string, tenantId?: string) =>
     streamHub.abortTask(sessionId, "user", tenantId);
   POST.streamHub = streamHub;
+  // WS-11 应用层出口：GET /api/usage 经此读取台账（未启用时为 undefined）
+  POST.costLedger = costLedger;
 
   return POST;
 }

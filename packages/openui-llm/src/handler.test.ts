@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createAnalyzeHandler, type SessionContextMeta, type SessionContextStore } from "./handler";
 import { InMemoryTaskStore } from "./taskStore";
+import { InMemoryCostLedger, type ModelPricingTable } from "./costLedger";
 import type {
   DatasourceManager,
   McpToolBinding,
@@ -1732,5 +1733,60 @@ describe("Provider 韧性层 fallback 链（WS-9）", () => {
       events.some((e) => e.type === "error" && e.code === "STREAM_ERROR")
     ).toBe(true);
     await expect(res.text()).rejects.toThrow("Stream error");
+  });
+});
+
+describe("WS-11 成本入账", () => {
+  const savedEnv: Record<string, string | undefined> = {};
+  beforeEach(async () => {
+    for (const key of ["OPENAI_API_KEY", "LLM_API_KEY", "OPENAI_BASE_URL", "LLM_BASE_URL"]) {
+      savedEnv[key] = process.env[key];
+      delete process.env[key];
+    }
+    mockStreamOk();
+  });
+  afterEach(() => {
+    for (const [key, value] of Object.entries(savedEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+
+  it("成功流在 onFinish 入账一条 UsageRecord，口径与 task_finish 遥测一致（SDK 累计值）", async () => {
+    vi.mocked(streamText).mockImplementation((opts) =>
+      streamResult({
+        onStart: () => {
+          opts.onFinish?.({ usage: { promptTokens: 5000, completionTokens: 100 } } as never);
+        },
+      }) as never
+    );
+
+    const manager = await makeFakeManager();
+    const ledger = new InMemoryCostLedger();
+    const pricing = { priceFor: () => ({ input: 2.5, output: 10 }) } as unknown as ModelPricingTable;
+    const POST = createAnalyzeHandler({
+      datasources: manager,
+      costLedger: ledger,
+      quota: { tenantTokenLimit: 1_000_000, windowMs: 3_600_000 },
+      pricing,
+    });
+    const res = await POST(makeRequest({ messages: [], apiKey: "k" }));
+    expect(res.status).toBe(200);
+    await res.text();
+    // record 是 fire-and-forget：等微任务落定
+    await new Promise((r) => setTimeout(r, 10));
+
+    const usage = await ledger.sumUsage("anon", 86_400_000);
+    expect(usage.tokens).toBe(5100);
+    expect(usage.costUsd).toBeCloseTo((5000 / 1e6) * 2.5 + (100 / 1e6) * 10, 6);
+  });
+
+  it("未注入台账且未配置配额时不入账、不拦截（零行为变化）", async () => {
+    const manager = await makeFakeManager();
+    const POST = createAnalyzeHandler({ datasources: manager });
+    const res = await POST(makeRequest({ messages: [], apiKey: "k" }));
+    expect(res.status).toBe(200);
+    await res.text();
+    expect(POST.costLedger).toBeUndefined();
   });
 });
