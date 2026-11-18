@@ -71,12 +71,12 @@ describe("SessionStreamHub 遥测事件", () => {
     const sink = spySink();
     const hub = new SessionStreamHub({ sink });
     // 任务随后台 Reader 尽快完成,但保留在 map 中 30s 保留窗内
-    hub.registerAndConsume("s1", makeStreamResponse(['0:"a"\n']), { runId: "run-1" });
+    await hub.registerAndConsume("s1", makeStreamResponse(['0:"a"\n']), { runId: "run-1" });
 
-    hub.abortTask("s_none", "user"); // 不存在的会话:无事件
+    await hub.abortTask("s_none", "user"); // 不存在的会话:无事件
     expect(sink.events).toHaveLength(0);
 
-    hub.abortTask("s1", "timeout");
+    await hub.abortTask("s1", "timeout");
     const abortEvent = sink.events.find((e) => e.type === "abort") as
       | Extract<HarnessEvent, { type: "abort" }>
       | undefined;
@@ -96,8 +96,8 @@ describe("SessionStreamHub 遥测事件", () => {
     const pending = new Response(
       new ReadableStream<Uint8Array>({ start() {} /* 不 close */ })
     );
-    hub.registerAndConsume("s2", pending, { runId: "run-old" });
-    hub.registerAndConsume("s2", makeStreamResponse(['0:"b"\n']), { runId: "run-new" });
+    await hub.registerAndConsume("s2", pending, { runId: "run-old" });
+    await hub.registerAndConsume("s2", makeStreamResponse(['0:"b"\n']), { runId: "run-new" });
 
     const abortEvent = sink.events.find((e) => e.type === "abort") as
       | Extract<HarnessEvent, { type: "abort" }>
@@ -113,7 +113,7 @@ describe("SessionStreamHub 遥测事件", () => {
   it("上游响应无 body:发 error 事件且任务经清理不留 map", async () => {
     const sink = spySink();
     const hub = new SessionStreamHub({ sink });
-    hub.registerAndConsume("s3", new Response(null), { runId: "run-3" });
+    await hub.registerAndConsume("s3", new Response(null), { runId: "run-3" });
     await new Promise((r) => setTimeout(r, 0));
 
     const errEvent = sink.events.find((e) => e.type === "error") as
@@ -125,6 +125,6 @@ describe("SessionStreamHub 遥测事件", () => {
       code: "STREAM_BODY_UNREADABLE",
       runId: "run-3",
     });
-    expect(hub.hasTask("s3")).toBe(true); // 30s 保留窗内仍可查(hasTask 语义不变)
+    expect(await hub.hasTask("s3")).toBe(true); // 30s 保留窗内仍可查(hasTask 语义不变)
   });
 });

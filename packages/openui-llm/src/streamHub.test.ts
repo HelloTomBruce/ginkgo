@@ -41,12 +41,12 @@ describe("SessionStreamHub", () => {
     const hub = new SessionStreamHub();
     const raw = makeFakeStreamResponse(['0:"hello"\n', '0:" world"\n'], 5);
 
-    const subResponse = hub.registerAndConsume("sess_1", raw);
-    expect(hub.hasRunningTask("sess_1")).toBe(true);
+    const subResponse = await hub.registerAndConsume("sess_1", raw);
+    expect(await hub.hasRunningTask("sess_1")).toBe(true);
 
     const result = await collectStreamText(subResponse);
     expect(result).toBe('0:"hello"\n0:" world"\n');
-    expect(hub.hasRunningTask("sess_1")).toBe(false);
+    expect(await hub.hasRunningTask("sess_1")).toBe(false);
   });
 
   it("客户端中途刷新（创建新订阅）：重放历史 chunk 并继续接收后续 live 数据", async () => {
@@ -56,7 +56,7 @@ describe("SessionStreamHub", () => {
       20
     );
 
-    const sub1 = hub.registerAndConsume("sess_reconn", raw);
+    const sub1 = await hub.registerAndConsume("sess_reconn", raw);
 
     // 模拟 sub1 收到前 2 个 chunk 后断开连接（页面刷新）
     const reader1 = sub1.body!.getReader();
@@ -69,8 +69,8 @@ describe("SessionStreamHub", () => {
     expect(text1).toContain('0:"chunk1"');
 
     // 页面刷新后重新接入（reconnect）
-    expect(hub.hasRunningTask("sess_reconn")).toBe(true);
-    const sub2 = hub.createResponse("sess_reconn")!;
+    expect(await hub.hasRunningTask("sess_reconn")).toBe(true);
+    const sub2 = (await hub.createResponse("sess_reconn"))!;
     expect(sub2).toBeDefined();
 
     // sub2 应当接收到全量的 chunk（重放 + 后续 live）
@@ -85,16 +85,16 @@ describe("SessionStreamHub", () => {
       50
     );
 
-    hub.registerAndConsume("sess_abort", raw);
-    expect(hub.hasRunningTask("sess_abort")).toBe(true);
+    await hub.registerAndConsume("sess_abort", raw);
+    expect(await hub.hasRunningTask("sess_abort")).toBe(true);
 
     // 等待第一个 chunk 输出
     await new Promise((resolve) => setTimeout(resolve, 20));
 
     // 用户在前端点击中止
-    const stopped = hub.abortTask("sess_abort");
+    const stopped = await hub.abortTask("sess_abort");
     expect(stopped).toBe(true);
-    expect(hub.hasRunningTask("sess_abort")).toBe(false);
+    expect(await hub.hasRunningTask("sess_abort")).toBe(false);
   });
 
   it("中止时上游 reader 阻塞在 read() 也能即刻取消（不等待下一个 chunk）", async () => {
@@ -110,17 +110,17 @@ describe("SessionStreamHub", () => {
       },
     });
 
-    hub.registerAndConsume("sess_hang", new Response(stream));
-    expect(hub.hasRunningTask("sess_hang")).toBe(true);
+    await hub.registerAndConsume("sess_hang", new Response(stream));
+    expect(await hub.hasRunningTask("sess_hang")).toBe(true);
 
     // reader 正阻塞在 read() 时中止
-    const stopped = hub.abortTask("sess_hang");
+    const stopped = await hub.abortTask("sess_hang");
     expect(stopped).toBe(true);
 
     // cancelUpstream 被调用，上游收到取消（abort 不再依赖下一个 chunk 到来）
     await new Promise((resolve) => setTimeout(resolve, 10));
     expect(upstreamCancelled).toBe(true);
-    expect(hub.hasRunningTask("sess_hang")).toBe(false);
+    expect(await hub.hasRunningTask("sess_hang")).toBe(false);
   });
 
   it("上游响应无 body：任务转入 error 并统一清理，不滞留 map", async () => {
@@ -129,19 +129,57 @@ describe("SessionStreamHub", () => {
     try {
       const hub = new SessionStreamHub();
       // Response(null) 的 body 为 null
-      hub.registerAndConsume("sess_nobody", new Response(null));
+      await hub.registerAndConsume("sess_nobody", new Response(null));
 
-      const task = hub.getTask("sess_nobody");
+      const task = await hub.getTask("sess_nobody");
       expect(task).toBeDefined();
       expect(task?.status).toBe("error");
 
       // 首个订阅者拿到的是 error 流（而非挂起）
-      const sub = hub.createResponse("sess_nobody")!;
+      const sub = (await hub.createResponse("sess_nobody"))!;
       await expect(collectStreamText(sub)).rejects.toThrow();
 
       // 30 秒后自动清理
       vi.advanceTimersByTime(31000);
-      expect(hub.hasTask("sess_nobody")).toBe(false);
+      expect(await hub.hasTask("sess_nobody")).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("共享快照写入注入的 ownerInstanceId，运行时对象仍不进 TaskStore", async () => {
+    const hub = new SessionStreamHub({ instanceId: "instance-test:123" });
+    const stuck = new Response(new ReadableStream<Uint8Array>({ start() {} }));
+    await hub.registerAndConsume("sess_owner", stuck, { runId: "run-owner" });
+
+    const task = await hub.getTask("sess_owner");
+    expect(task).toMatchObject({
+      sessionKey: "anon:sess_owner",
+      runId: "run-owner",
+      ownerInstanceId: "instance-test:123",
+      status: "running",
+    });
+    expect(task).not.toHaveProperty("abortController");
+    expect(task).not.toHaveProperty("subscribers");
+    await hub.abortTask("sess_owner");
+  });
+
+  it("同会话新任务顶替后，旧任务的 30 秒清理定时器不得误删新任务", async () => {
+    vi.useFakeTimers();
+    try {
+      const hub = new SessionStreamHub();
+      await hub.registerAndConsume(
+        "sess_replace",
+        new Response(new ReadableStream<Uint8Array>({ start() {} }))
+      );
+      await hub.registerAndConsume(
+        "sess_replace",
+        new Response(new ReadableStream<Uint8Array>({ start() {} }))
+      );
+
+      await vi.advanceTimersByTimeAsync(31_000);
+      expect(await hub.hasRunningTask("sess_replace")).toBe(true);
+      await hub.abortTask("sess_replace");
     } finally {
       vi.useRealTimers();
     }
@@ -149,7 +187,7 @@ describe("SessionStreamHub", () => {
 });
 
 describe("SessionStreamHub 任务级看门狗（WS-2）", () => {
-  it("任务超过 taskTimeoutMs 未完成：自动中止，abort 事件 reason=timeout", () => {
+  it("任务超过 taskTimeoutMs 未完成：自动中止，abort 事件 reason=timeout", async () => {
     vi.useFakeTimers();
     try {
       const events: HarnessEvent[] = [];
@@ -160,12 +198,13 @@ describe("SessionStreamHub 任务级看门狗（WS-2）", () => {
       });
       // 永不产出、永不结束的上游（模拟 provider 挂起）
       const stuck = new Response(new ReadableStream<Uint8Array>({ start() {} }));
-      hub.registerAndConsume("sess_watchdog", stuck, { runId: "run-wd" });
-      expect(hub.hasRunningTask("sess_watchdog")).toBe(true);
+      await hub.registerAndConsume("sess_watchdog", stuck, { runId: "run-wd" });
+      expect(await hub.hasRunningTask("sess_watchdog")).toBe(true);
 
-      vi.advanceTimersByTime(36_000);
+      // abortTask 现在需要等待 TaskStore 写入，推进定时器也排空其异步收尾。
+      await vi.advanceTimersByTimeAsync(36_000);
 
-      expect(hub.hasRunningTask("sess_watchdog")).toBe(false);
+      expect(await hub.hasRunningTask("sess_watchdog")).toBe(false);
       const abortEvent = events.find((e) => e.type === "abort") as
         | Extract<HarnessEvent, { type: "abort" }>
         | undefined;
@@ -188,45 +227,45 @@ describe("SessionStreamHub 任务级看门狗（WS-2）", () => {
         sink: { emit: (e) => events.push(e) },
         taskTimeoutMs: 5000,
       });
-      hub.registerAndConsume(
+      await hub.registerAndConsume(
         "sess_ok",
         makeFakeStreamResponse(['0:"a"\n'], 0),
         { runId: "run-ok" }
       );
       // 推进假定时器并排空微任务，让后台 Reader 消费完流
       await vi.advanceTimersByTimeAsync(100);
-      expect(hub.hasRunningTask("sess_ok")).toBe(false);
+      expect(await hub.hasRunningTask("sess_ok")).toBe(false);
 
       // 越过看门狗时限:不得对已完成任务发 abort
       vi.advanceTimersByTime(10000);
       expect(events.filter((e) => e.type === "abort")).toHaveLength(0);
-      expect(hub.hasTask("sess_ok")).toBe(true);
+      expect(await hub.hasTask("sess_ok")).toBe(true);
     } finally {
       vi.useRealTimers();
     }
   });
 
-  it("taskTimeoutMs 钳制:低于下限 30s 的配置被收敛,5s 时不得提前中止", () => {
+  it("taskTimeoutMs 钳制:低于下限 30s 的配置被收敛,5s 时不得提前中止", async () => {
     vi.useFakeTimers();
     try {
       const hub = new SessionStreamHub({ taskTimeoutMs: 1 });
       const stuck = new Response(new ReadableStream<Uint8Array>({ start() {} }));
-      hub.registerAndConsume("sess_clamp", stuck);
+      await hub.registerAndConsume("sess_clamp", stuck);
       vi.advanceTimersByTime(5000);
-      expect(hub.hasRunningTask("sess_clamp")).toBe(true);
+      expect(await hub.hasRunningTask("sess_clamp")).toBe(true);
     } finally {
       vi.useRealTimers();
     }
   });
 
-  it("外部注入 abortController:abortTask 后同一 signal 被触发（handler 借此传导进 streamText）", () => {
+  it("外部注入 abortController:abortTask 后同一 signal 被触发（handler 借此传导进 streamText）", async () => {
     const hub = new SessionStreamHub();
     const controller = new AbortController();
     const stuck = new Response(new ReadableStream<Uint8Array>({ start() {} }));
-    hub.registerAndConsume("sess_signal", stuck, { abortController: controller });
+    await hub.registerAndConsume("sess_signal", stuck, { abortController: controller });
 
-    hub.abortTask("sess_signal", "user");
+    await hub.abortTask("sess_signal", "user");
     expect(controller.signal.aborted).toBe(true);
-    expect(hub.hasRunningTask("sess_signal")).toBe(false);
+    expect(await hub.hasRunningTask("sess_signal")).toBe(false);
   });
 });

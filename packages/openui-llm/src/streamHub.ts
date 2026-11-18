@@ -2,13 +2,12 @@
  * 会话流中继中枢（SessionStreamHub）：
  * 实现服务端与客户端生命周期解耦的后台流式任务管理。
  *
- * 核心机制：
- * 1. 后台持续运行：LLM 与工具调用的流式执行由服务端独立 Reader 驱动，不受客户端单次 TCP 连接断开影响。
- * 2. 分块缓冲（Chunk Buffering）：当前轮次生成的所有数据分块（token / tool-call / UI 数据）全量缓存在任务中。
- * 3. 无缝重连（Re-attach）：客户端刷新页面或重连时，秒级重放已产生的所有历史分块，并实时续接后续增量分块。
- * 4. 显式中止（Abort）：支持前端主动暂停/中止后台在途任务。
+ * 本地 Map 只保存 owner 侧运行时对象（AbortController、订阅者、上游 Reader 取消器）；
+ * 可共享的任务快照与分块全部经 TaskStore 存取，内存/文件/多副本后端可替换。
  */
 
+import { hostname } from "node:os";
+import { InMemoryTaskStore, type TaskSnapshot, type TaskStatus, type TaskStore } from "./taskStore";
 import type { AbortReason, RunId, TelemetrySink } from "./telemetry";
 import { createConsoleSink } from "./telemetry";
 
@@ -16,19 +15,23 @@ export interface StreamSubscriber {
   controller: ReadableStreamDefaultController<Uint8Array>;
 }
 
-export interface SessionStreamTask {
+/** 对外只读任务视图：共享快照加重连所需的历史分块，不暴露 owner 运行时对象。 */
+export interface SessionStreamTask extends TaskSnapshot {
   sessionId: string;
-  /** 创建该任务的请求 id(遥测事件串联;watchdog 定时中止时也用) */
-  runId?: RunId;
   chunks: Uint8Array[];
+}
+
+interface OwnedStreamTask {
+  sessionKey: string;
+  sessionId: string;
+  runId?: RunId;
   subscribers: Set<StreamSubscriber>;
-  status: "running" | "completed" | "error";
   abortController: AbortController;
-  error?: unknown;
-  /** 中止时立即取消上游 reader：解除 read() 阻塞，让 abort 即刻生效（而非等下一个 chunk） */
+  /** 中止时立即取消上游 reader，解除 read() 阻塞并停止 provider 继续计费 */
   cancelUpstream?: () => Promise<void>;
-  /** 任务级看门狗定时器：终态（完成/错误/中止）即清除 */
+  /** 任务级看门狗与租约心跳均在终态清除 */
   deadlineTimer?: ReturnType<typeof setTimeout>;
+  leaseTimer?: ReturnType<typeof setInterval>;
 }
 
 /** 缺省租户：未注入 authenticate 时所有请求归入同一匿名租户 */
@@ -43,20 +46,32 @@ export function sessionStorageKey(sessionId: string, tenantId?: string): string 
 const TASK_TIMEOUT_MIN_MS = 30_000;
 const TASK_TIMEOUT_MAX_MS = 3_600_000;
 const TASK_TIMEOUT_DEFAULT_MS = 600_000;
+const TERMINAL_RETENTION_MS = 30_000;
+const LEASE_REFRESH_INTERVAL_MS = 5_000;
+const LEASE_TTL_MS = 15_000;
 
 export interface SessionStreamHubOptions {
   sink?: TelemetrySink;
   /** 任务 wall-clock 上限；缺省读 env LLM_TASK_TIMEOUT_MS，再缺省 10 分钟 */
   taskTimeoutMs?: number;
+  /** 共享状态存储；缺省保持进程内 Map 语义 */
+  store?: TaskStore;
+  /** owner 标识；多副本部署应注入稳定且唯一的实例 id */
+  instanceId?: string;
 }
 
 export class SessionStreamHub {
-  private tasks = new Map<string, SessionStreamTask>();
+  /** 仅 owner 侧进程内运行时对象；任务状态与 chunks 不在此镜像。 */
+  private readonly tasks = new Map<string, OwnedStreamTask>();
   private readonly taskTimeoutMs: number;
-  private sink: TelemetrySink;
+  private readonly sink: TelemetrySink;
+  private readonly store: TaskStore;
+  private readonly instanceId: string;
 
   constructor(opts: SessionStreamHubOptions = {}) {
     this.sink = opts.sink ?? createConsoleSink();
+    this.store = opts.store ?? new InMemoryTaskStore();
+    this.instanceId = opts.instanceId ?? `${hostname()}:${process.pid}`;
     const envMs = Number(process.env.LLM_TASK_TIMEOUT_MS);
     const envValid = Number.isFinite(envMs) && envMs > 0;
     this.taskTimeoutMs = Math.min(
@@ -66,81 +81,103 @@ export class SessionStreamHub {
       ),
       TASK_TIMEOUT_MAX_MS
     );
-  }
 
-  hasRunningTask(sessionId: string, tenantId?: string): boolean {
-    const task = this.tasks.get(sessionStorageKey(sessionId, tenantId));
-    return task?.status === "running";
-  }
-
-  hasTask(sessionId: string, tenantId?: string): boolean {
-    return this.tasks.has(sessionStorageKey(sessionId, tenantId));
-  }
-
-  getTask(sessionId: string, tenantId?: string): SessionStreamTask | undefined {
-    return this.tasks.get(sessionStorageKey(sessionId, tenantId));
-  }
-
-  /** 当前 running 状态的任务数(并发准入的计数来源) */
-  runningCount(): number {
-    let n = 0;
-    for (const t of this.tasks.values()) {
-      if (t.status === "running") n++;
-    }
-    return n;
-  }
-
-  abortTask(sessionId: string, reason: AbortReason = "user", tenantId?: string): boolean {
-    const key = sessionStorageKey(sessionId, tenantId);
-    const task = this.tasks.get(key);
-    if (!task) return false;
-    this.clearDeadline(task);
-    this.sink.emit({
-      type: "abort",
-      runId: task.runId,
-      sessionId,
-      reason,
+    // 非 owner 只发布 abort；真正的 AbortController/上游 Reader 由 owner 在此回调中处理。
+    this.store.subscribeAbort((sessionKey, reason) => {
+      const task = this.tasks.get(sessionKey);
+      if (!task) return;
+      void this.abortOwnedTask(task, reason).catch(() => {});
     });
-    task.abortController.abort();
-    // reader 可能正阻塞在 read()（上游慢思考/hang 住），cancel 让 abort 即刻生效，
-    // 否则要等下一个 chunk 恰好到来才检查 aborted，上游会继续消耗 token
-    void task.cancelUpstream?.().catch(() => {});
-    task.status = "error";
-    this.closeSubscribers(task);
-    this.tasks.delete(key);
+  }
+
+  async hasRunningTask(sessionId: string, tenantId?: string): Promise<boolean> {
+    const snapshot = await this.store.get(sessionStorageKey(sessionId, tenantId));
+    return snapshot?.status === "running";
+  }
+
+  async hasTask(sessionId: string, tenantId?: string): Promise<boolean> {
+    return (await this.store.get(sessionStorageKey(sessionId, tenantId))) !== undefined;
+  }
+
+  async getTask(sessionId: string, tenantId?: string): Promise<SessionStreamTask | undefined> {
+    const sessionKey = sessionStorageKey(sessionId, tenantId);
+    const snapshot = await this.store.get(sessionKey);
+    if (!snapshot) return undefined;
+    return {
+      ...snapshot,
+      sessionId,
+      chunks: await this.store.getChunks(sessionKey),
+    };
+  }
+
+  /** 当前 running 状态的任务数（并发准入的计数来源，多副本后端可给全局值） */
+  async runningCount(): Promise<number> {
+    return this.store.runningCount();
+  }
+
+  async abortTask(
+    sessionId: string,
+    reason: AbortReason = "user",
+    tenantId?: string
+  ): Promise<boolean> {
+    const sessionKey = sessionStorageKey(sessionId, tenantId);
+    const snapshot = await this.store.get(sessionKey);
+    if (!snapshot) return false;
+
+    const task = this.tasks.get(sessionKey);
+    if (task) await this.abortOwnedTask(task, reason);
+    // owner 走现状本地 abort；非 owner 仅广播，由 owner 的 subscribeAbort 回调执行。
+    await this.store.publishAbort(sessionKey, reason);
     return true;
   }
 
-  /**
-   * 为当前任务创建一个新的 HTTP 响应流（供初始调用或重连调用订阅）
-   */
-  createResponse(sessionId: string, tenantId?: string): Response | null {
-    const task = this.tasks.get(sessionStorageKey(sessionId, tenantId));
-    if (!task) return null;
+  /** 为当前任务创建 HTTP 响应流：重放历史分块，running 任务再续接 live 分块。 */
+  async createResponse(sessionId: string, tenantId?: string): Promise<Response | null> {
+    const sessionKey = sessionStorageKey(sessionId, tenantId);
+    const snapshot = await this.store.get(sessionKey);
+    if (!snapshot) return null;
+    const chunks = await this.store.getChunks(sessionKey);
+    const ownedTask = this.tasks.get(sessionKey);
 
-    let sub: StreamSubscriber | null = null;
+    let subscriber: StreamSubscriber | null = null;
+    let unsubscribeChunks: (() => void) | undefined;
+    let errorReplayIndex = 0;
     const stream = new ReadableStream<Uint8Array>({
-      start(controller) {
-        // 1. 瞬时重放当前轮次所有已产生分块（恢复至断开前状态）
-        for (const chunk of task.chunks) {
-          controller.enqueue(chunk);
-        }
-        if (task.status === "completed") {
+      start: (controller) => {
+        // error() 会立即丢弃已排队分块；error 终态改在 pull 中逐块重放后再抛错。
+        if (snapshot.status === "error") return;
+        for (const chunk of chunks) controller.enqueue(chunk);
+        if (snapshot.status === "completed") {
           controller.close();
           return;
         }
-        if (task.status === "error") {
-          controller.error(task.error ?? new Error("Stream terminated"));
+
+        if (ownedTask) {
+          // owner 的后台 Reader 已直接广播给本地订阅者，不能再订阅 store 否则双发。
+          subscriber = { controller };
+          ownedTask.subscribers.add(subscriber);
+        } else {
+          // 非 owner 通过 store 重放并续接；同一进程双 hub 与后续 Redis 后端共用此路径。
+          unsubscribeChunks = this.store.subscribeChunks(sessionKey, (chunk) => {
+            try {
+              controller.enqueue(chunk);
+            } catch {
+              unsubscribeChunks?.();
+            }
+          });
+        }
+      },
+      pull: (controller) => {
+        if (snapshot.status !== "error") return;
+        if (errorReplayIndex < chunks.length) {
+          controller.enqueue(chunks[errorReplayIndex++]);
           return;
         }
-        // 2. 注册为实时订阅者，后续分块继续 live 推送
-        sub = { controller };
-        task.subscribers.add(sub);
+        controller.error(new Error(snapshot.errorMessage ?? "Stream terminated"));
       },
-      cancel() {
-        if (sub) {
-          task.subscribers.delete(sub);
-        }
+      cancel: () => {
+        if (subscriber && ownedTask) ownedTask.subscribers.delete(subscriber);
+        unsubscribeChunks?.();
       },
     });
 
@@ -154,52 +191,55 @@ export class SessionStreamHub {
   }
 
   /**
-   * 注册由 createDataStreamResponse 产生的原始流，启动服务端后台 Reader 持续消费，
-   * 并返回首个订阅者的 HTTP Response。
-   * meta.runId 用于遥测事件串联；meta.abortController 允许调用方（handler）把同一
-   * signal 传入 streamText，使 abortTask 真正传导到 provider 取消生成（停止计费）。
+   * 注册原始流并启动 owner 侧后台 Reader。meta.abortController 与 handler 的 streamText
+   * 共用，使用户停止/看门狗超时可真正取消 provider 生成。
    */
-  registerAndConsume(
+  async registerAndConsume(
     sessionId: string,
     rawResponse: Response,
     meta?: { runId?: RunId; abortController?: AbortController; tenantId?: string }
-  ): Response {
+  ): Promise<Response> {
     const tenantId = meta?.tenantId ?? DEFAULT_TENANT_ID;
-    const key = sessionStorageKey(sessionId, tenantId);
-    // 若原会话（同租户命名空间）已有未完成旧任务，先中止
-    if (this.hasRunningTask(sessionId, tenantId)) {
-      this.abortTask(sessionId, "new_task", tenantId);
+    const sessionKey = sessionStorageKey(sessionId, tenantId);
+    if (await this.hasRunningTask(sessionId, tenantId)) {
+      await this.abortTask(sessionId, "new_task", tenantId);
     }
 
-    const abortController = meta?.abortController ?? new AbortController();
-    const task: SessionStreamTask = {
+    const now = Date.now();
+    await this.store.create({
+      sessionKey,
+      runId: meta?.runId,
+      ownerInstanceId: this.instanceId,
+      status: "running",
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const task: OwnedStreamTask = {
+      sessionKey,
       sessionId,
       runId: meta?.runId,
-      chunks: [],
       subscribers: new Set(),
-      status: "running",
-      abortController,
+      abortController: meta?.abortController ?? new AbortController(),
     };
-    this.tasks.set(key, task);
+    this.tasks.set(sessionKey, task);
 
-    // 任务级看门狗：wall-clock 超限即中止（防 provider 挂起永久占用 Reader）
     task.deadlineTimer = setTimeout(() => {
-      this.abortTask(sessionId, "timeout", tenantId);
+      void this.abortTask(sessionId, "timeout", tenantId).catch(() => {});
     }, this.taskTimeoutMs);
-    // 常驻服务无需 unref（终态即清除）；仅防 CLI/测试环境被定时器拖住退出
-    const t = task.deadlineTimer as { unref?: () => void };
-    if (typeof t === "object" && t !== null && typeof t.unref === "function") {
-      t.unref();
+    this.unrefTimer(task.deadlineTimer);
+    if (this.store.refreshLease) {
+      task.leaseTimer = setInterval(() => {
+        void this.store.refreshLease?.(sessionKey, this.instanceId, LEASE_TTL_MS).catch(() => {});
+      }, LEASE_REFRESH_INTERVAL_MS);
+      this.unrefTimer(task.leaseTimer);
     }
 
-    // 服务端独立异步 Reader：持续从 rawResponse.body 读取并广播
     void (async () => {
       const reader = rawResponse.body?.getReader();
       if (!reader) {
-        // 上游响应无 body：任务即刻转入 error 并走统一清理，
-        // 绝不能 early-return 绕过清理（否则 task 永久滞留 map，重连恒拿 error 流）
-        task.status = "error";
-        task.error = new Error("Upstream response has no body");
+        const error = new Error("Upstream response has no body");
+        await this.store.setStatus(sessionKey, "error", error.message);
         this.sink.emit({
           type: "error",
           runId: task.runId,
@@ -207,93 +247,150 @@ export class SessionStreamHub {
           code: "STREAM_BODY_UNREADABLE",
           detail: "rawResponse.body is not readable; terminating task",
         });
-        this.closeSubscribers(task);
-        this.scheduleCleanup(key, task);
+        this.clearTimers(task);
+        this.closeSubscribers(task, "error", error);
+        this.scheduleCleanup(task);
         return;
       }
+
       task.cancelUpstream = async () => {
         await reader.cancel().catch(() => {});
       };
+      let terminalStatus: TaskStatus = "running";
+      let terminalError: unknown;
       try {
         while (true) {
           if (task.abortController.signal.aborted) {
             await task.cancelUpstream();
-            task.status = "error";
+            terminalStatus = "error";
+            const abortError = new Error("Stream aborted");
+            terminalError = abortError;
+            await this.store.setStatus(sessionKey, "error", abortError.message);
             break;
           }
           const { done, value } = await reader.read();
-          // read() 解除阻塞（含被 cancel）后先复查中止态：
-          // cancel 会让 read 以 done=true 返回，不能误判为正常完成
+          // cancel 会让 read 以 done=true 返回，必须先复查 abort，不能误判正常完成。
           if (task.abortController.signal.aborted) {
-            task.status = "error";
+            terminalStatus = "error";
+            const abortError = new Error("Stream aborted");
+            terminalError = abortError;
+            await this.store.setStatus(sessionKey, "error", abortError.message);
             break;
           }
           if (done) {
-            task.status = "completed";
+            terminalStatus = "completed";
+            await this.store.setStatus(sessionKey, "completed");
             break;
           }
           if (value) {
-            task.chunks.push(value);
-            for (const sub of [...task.subscribers]) {
+            // 先持久化再广播：重放视图与 live 视图看到同一条提交边界。
+            await this.store.appendChunk(sessionKey, value);
+            for (const subscriber of [...task.subscribers]) {
               try {
-                sub.controller.enqueue(value);
+                subscriber.controller.enqueue(value);
               } catch {
-                task.subscribers.delete(sub);
+                task.subscribers.delete(subscriber);
               }
             }
           }
         }
-      } catch (err) {
-        task.status = "error";
-        task.error = err;
+      } catch (error) {
+        terminalStatus = "error";
+        terminalError = error;
+        await this.store.setStatus(
+          sessionKey,
+          "error",
+          error instanceof Error ? error.message : String(error)
+        );
         this.sink.emit({
           type: "error",
           runId: task.runId,
           sessionId,
           code: "READER_ERROR",
-          detail: err instanceof Error ? err.message : String(err),
+          detail: error instanceof Error ? error.message : String(error),
         });
       } finally {
-        this.clearDeadline(task);
-        this.closeSubscribers(task);
-        this.scheduleCleanup(key, task);
+        this.clearTimers(task);
+        this.closeSubscribers(task, terminalStatus, terminalError);
+        this.scheduleCleanup(task);
       }
     })();
 
-    return this.createResponse(sessionId, tenantId)!;
+    return (await this.createResponse(sessionId, tenantId))!;
   }
 
-  /** 任务到达终态（完成/错误/中止）时清除看门狗定时器 */
-  private clearDeadline(task: SessionStreamTask): void {
+  private async abortOwnedTask(task: OwnedStreamTask, reason: AbortReason): Promise<void> {
+    if (task.abortController.signal.aborted) return;
+    this.clearTimers(task);
+    this.sink.emit({
+      type: "abort",
+      runId: task.runId,
+      sessionId: task.sessionId,
+      reason,
+    });
+    task.abortController.abort();
+    void task.cancelUpstream?.().catch(() => {});
+    // 保留既有客户端错误语义；具体 reason 由遥测事件承载。
+    const error = new Error("Stream error");
+    this.closeSubscribers(task, "error", error);
+    this.tasks.delete(task.sessionKey);
+    await this.store.setStatus(task.sessionKey, "error", reason);
+    // 保持既有显式中止语义：abort 后立即移除，不占用 30 秒终态重放窗。
+    await this.store.delete(task.sessionKey);
+  }
+
+  private clearTimers(task: OwnedStreamTask): void {
     if (task.deadlineTimer) {
       clearTimeout(task.deadlineTimer);
       task.deadlineTimer = undefined;
     }
+    if (task.leaseTimer) {
+      clearInterval(task.leaseTimer);
+      task.leaseTimer = undefined;
+    }
   }
 
-  /** 任务终态后在内存保留 30 秒，供刚刷新完成的页面做最后重放，之后自动清理 */
-  private scheduleCleanup(key: string, task: SessionStreamTask): void {
-    setTimeout(() => {
-      if (this.tasks.get(key) === task) {
-        this.tasks.delete(key);
-      }
-    }, 30000);
+  /** owner 运行时对象与共享记录均在终态保留 30 秒，供刷新页面做最后重放。 */
+  private scheduleCleanup(task: OwnedStreamTask): void {
+    const timer = setTimeout(() => {
+      // 同会话可能已在保留窗内注册新任务；旧任务定时器不得删除新任务的共享记录。
+      if (this.tasks.get(task.sessionKey) !== task) return;
+      this.tasks.delete(task.sessionKey);
+      void this.store.delete(task.sessionKey).catch(() => {});
+    }, TERMINAL_RETENTION_MS);
+    this.unrefTimer(timer);
   }
 
-  private closeSubscribers(task: SessionStreamTask) {
-    for (const sub of task.subscribers) {
+  private closeSubscribers(
+    task: OwnedStreamTask,
+    status: TaskStatus,
+    error?: unknown
+  ): void {
+    for (const subscriber of task.subscribers) {
       try {
-        if (task.status === "completed") {
-          sub.controller.close();
-        } else if (task.status === "error") {
-          sub.controller.error(task.error ?? new Error("Stream error"));
+        if (status === "completed") {
+          subscriber.controller.close();
+        } else if (status === "error") {
+          subscriber.controller.error(error ?? new Error("Stream error"));
         }
       } catch {
-        // ignore
+        // 客户端已断开时 controller 可能拒绝 close/error，清理其余订阅者即可。
       }
     }
     task.subscribers.clear();
   }
+
+  private unrefTimer(timer: ReturnType<typeof setTimeout> | ReturnType<typeof setInterval>): void {
+    const candidate = timer as { unref?: () => void };
+    if (
+      typeof candidate === "object" &&
+      candidate !== null &&
+      typeof candidate.unref === "function"
+    ) {
+      candidate.unref();
+    }
+  }
 }
 
+/** 全局缺省单例始终使用内存后端；env 文件后端由 createAnalyzeHandler 工厂显式构造。 */
 export const defaultStreamHub = new SessionStreamHub();

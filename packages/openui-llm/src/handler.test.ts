@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createAnalyzeHandler, type SessionContextMeta, type SessionContextStore } from "./handler";
+import { InMemoryTaskStore } from "./taskStore";
 import type {
   DatasourceManager,
   McpToolBinding,
@@ -916,7 +917,7 @@ describe("双重终态识别与步数预算", () => {
       makeRequest({ messages: [], apiKey: "k", sessionId: "sess_recon_test" })
     );
     expect(res1.status).toBe(200);
-    expect(POST.isSessionRunning("sess_recon_test")).toBe(true);
+    expect(await POST.isSessionRunning("sess_recon_test")).toBe(true);
     expect(vi.mocked(streamText)).toHaveBeenCalledTimes(1);
 
     // 第二次请求（模拟页面刷新后 reconnect）：
@@ -936,7 +937,63 @@ describe("双重终态识别与步数预算", () => {
     );
     const stopJson = await stopRes.json();
     expect(stopJson).toEqual({ ok: true, stopped: true });
-    expect(POST.isSessionRunning("sess_recon_test")).toBe(false);
+    expect(await POST.isSessionRunning("sess_recon_test")).toBe(false);
+  });
+});
+
+describe("WS-8 TaskStore 工厂接线", () => {
+  afterEach(() => {
+    delete process.env.LLM_TASK_STORE;
+    delete process.env.LLM_TASK_STORE_DIR;
+    vi.clearAllMocks();
+  });
+
+  it("显式 taskStore/instanceId 注入：新 hub 使用该存储并写入 owner 标识", async () => {
+    mockStreamOk();
+    const taskStore = new InMemoryTaskStore();
+    const POST = createAnalyzeHandler({
+      datasources: await makeFakeManager(),
+      taskStore,
+      instanceId: "handler-test:123",
+    });
+
+    const response = await POST(
+      makeRequest({ messages: [], apiKey: "k", sessionId: "sess_store_injected" })
+    );
+    await response.text();
+    expect(await taskStore.get("anon:sess_store_injected")).toMatchObject({
+      ownerInstanceId: "handler-test:123",
+      status: "completed",
+    });
+  });
+
+  it("LLM_TASK_STORE=file：handler 新实例从 LLM_TASK_STORE_DIR 恢复 completed 重放", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "llm-handler-store-"));
+    process.env.LLM_TASK_STORE = "file";
+    process.env.LLM_TASK_STORE_DIR = dir;
+    mockStreamOk();
+    try {
+      const manager = await makeFakeManager();
+      const firstPOST = createAnalyzeHandler({ datasources: manager });
+      const first = await firstPOST(
+        makeRequest({ messages: [], apiKey: "k", sessionId: "sess_file_factory" })
+      );
+      const expected = await first.text();
+      expect(vi.mocked(streamText)).toHaveBeenCalledTimes(1);
+
+      const restartedPOST = createAnalyzeHandler({ datasources: manager });
+      const replay = await restartedPOST(
+        makeRequest({
+          messages: [],
+          sessionId: "sess_file_factory",
+          reconnect: true,
+        })
+      );
+      expect(await replay.text()).toBe(expected);
+      expect(vi.mocked(streamText)).toHaveBeenCalledTimes(1);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 
@@ -1088,7 +1145,7 @@ describe("成本预算与并发准入（WS-3）", () => {
       makeRequest({ messages: [], apiKey: "k", sessionId: "sess_conc_a" })
     );
     expect(resA.status).toBe(200);
-    expect(POST.isSessionRunning("sess_conc_a")).toBe(true);
+    expect(await POST.isSessionRunning("sess_conc_a")).toBe(true);
 
     // 新任务 B:被准入拒绝
     const resB = await POST(

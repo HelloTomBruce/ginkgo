@@ -15,7 +15,11 @@ export type {
 export { resolveCrossSourcePairs } from "./crossSourceMap";
 export type { CrossSourcePair } from "./crossSourceMap";
 export { SessionStreamHub, defaultStreamHub } from "./streamHub";
-export type { SessionStreamTask } from "./streamHub";
+export type { SessionStreamHubOptions, SessionStreamTask } from "./streamHub";
+export { InMemoryTaskStore } from "./taskStore";
+export type { TaskSnapshot, TaskStatus, TaskStore } from "./taskStore";
+export { FileTaskStore } from "./fileTaskStore";
+export type { FileTaskStoreOptions } from "./fileTaskStore";
 export {
   createReasoningFetch,
   createReasoningContentTransformStream,

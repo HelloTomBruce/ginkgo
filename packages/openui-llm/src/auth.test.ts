@@ -108,32 +108,32 @@ describe("WS-10 hub 租户命名空间（10.1）", () => {
       })
     );
 
-    hub.registerAndConsume("sess_1", raw, { tenantId: "tenant-a" });
-    expect(hub.hasRunningTask("sess_1", "tenant-a")).toBe(true);
+    await hub.registerAndConsume("sess_1", raw, { tenantId: "tenant-a" });
+    expect(await hub.hasRunningTask("sess_1", "tenant-a")).toBe(true);
 
     // 租户 B 带同 sessionId：视为无任务
-    expect(hub.hasTask("sess_1", "tenant-b")).toBe(false);
-    expect(hub.hasRunningTask("sess_1", "tenant-b")).toBe(false);
-    expect(hub.getTask("sess_1", "tenant-b")).toBeUndefined();
-    expect(hub.createResponse("sess_1", "tenant-b")).toBeNull();
-    expect(hub.abortTask("sess_1", "user", "tenant-b")).toBe(false);
+    expect(await hub.hasTask("sess_1", "tenant-b")).toBe(false);
+    expect(await hub.hasRunningTask("sess_1", "tenant-b")).toBe(false);
+    expect(await hub.getTask("sess_1", "tenant-b")).toBeUndefined();
+    expect(await hub.createResponse("sess_1", "tenant-b")).toBeNull();
+    expect(await hub.abortTask("sess_1", "user", "tenant-b")).toBe(false);
 
     // A 的任务不受影响，仍在 running
-    expect(hub.hasRunningTask("sess_1", "tenant-a")).toBe(true);
-    expect(hub.abortTask("sess_1", "user", "tenant-a")).toBe(true);
-    expect(hub.hasRunningTask("sess_1", "tenant-a")).toBe(false);
+    expect(await hub.hasRunningTask("sess_1", "tenant-a")).toBe(true);
+    expect(await hub.abortTask("sess_1", "user", "tenant-a")).toBe(true);
+    expect(await hub.hasRunningTask("sess_1", "tenant-a")).toBe(false);
   });
 
-  it("缺省 tenantId 即匿名租户 \"anon\"：与不传 tenantId 完全等价", () => {
+  it("缺省 tenantId 即匿名租户 \"anon\"：与不传 tenantId 完全等价", async () => {
     const hub = new SessionStreamHub();
     const stuck = new Response(new ReadableStream<Uint8Array>({ start() {} }));
-    hub.registerAndConsume("sess_def", stuck);
+    await hub.registerAndConsume("sess_def", stuck);
 
-    expect(hub.hasRunningTask("sess_def")).toBe(true);
-    expect(hub.hasRunningTask("sess_def", "anon")).toBe(true);
-    expect(hub.hasTask("sess_def", "anon")).toBe(true);
+    expect(await hub.hasRunningTask("sess_def")).toBe(true);
+    expect(await hub.hasRunningTask("sess_def", "anon")).toBe(true);
+    expect(await hub.hasTask("sess_def", "anon")).toBe(true);
     // 显式 anon 与非 anon 租户互不串
-    expect(hub.hasRunningTask("sess_def", "tenant-x")).toBe(false);
+    expect(await hub.hasRunningTask("sess_def", "tenant-x")).toBe(false);
   });
 });
 
@@ -218,8 +218,8 @@ describe("WS-10 authenticate 钩子与 401（10.2）", () => {
     const runStart = events.find((e) => e.type === "run_start");
     expect(runStart).toMatchObject({ tenantId: "user-7" });
     // principal 缺省回退：会话任务落在 user-7 命名空间
-    expect(POST.isSessionRunning("sess_t", "user-7")).toBe(true);
-    expect(POST.isSessionRunning("sess_t", "anon")).toBe(false);
+    expect(await POST.isSessionRunning("sess_t", "user-7")).toBe(true);
+    expect(await POST.isSessionRunning("sess_t", "anon")).toBe(false);
   });
 });
 
@@ -274,7 +274,7 @@ describe("WS-10 跨租户重接防护（10.3）", () => {
       )
     );
     expect(resA.status).toBe(200);
-    expect(POST.isSessionRunning("sess_shared", "tenant-a")).toBe(true);
+    expect(await POST.isSessionRunning("sess_shared", "tenant-a")).toBe(true);
     expect(vi.mocked(streamText)).toHaveBeenCalledTimes(1);
 
     // 租户 B 带同 sessionId reconnect：不命中 A 的任务，只能作为新任务启动
@@ -287,7 +287,7 @@ describe("WS-10 跨租户重接防护（10.3）", () => {
     expect(resB.status).toBe(200);
     expect(vi.mocked(streamText)).toHaveBeenCalledTimes(2);
     // A 的任务仍在 running，未被重连顶替
-    expect(POST.isSessionRunning("sess_shared", "tenant-a")).toBe(true);
+    expect(await POST.isSessionRunning("sess_shared", "tenant-a")).toBe(true);
 
     // 租户 B 的 stop：只停自己的任务
     const stopB = await POST(
@@ -297,8 +297,8 @@ describe("WS-10 跨租户重接防护（10.3）", () => {
       )
     );
     expect(((await stopB.json()) as { stopped: boolean }).stopped).toBe(true);
-    expect(POST.isSessionRunning("sess_shared", "tenant-b")).toBe(false);
-    expect(POST.isSessionRunning("sess_shared", "tenant-a")).toBe(true);
+    expect(await POST.isSessionRunning("sess_shared", "tenant-b")).toBe(false);
+    expect(await POST.isSessionRunning("sess_shared", "tenant-a")).toBe(true);
 
     // 收尾：放行两个在途流
     finishStream!();
@@ -311,7 +311,7 @@ describe("WS-10 跨租户重接防护（10.3）", () => {
       )
     );
     expect(((await stopA.json()) as { stopped: boolean }).stopped).toBe(true);
-    expect(POST.isSessionRunning("sess_shared", "tenant-a")).toBe(false);
+    expect(await POST.isSessionRunning("sess_shared", "tenant-a")).toBe(false);
   });
 });
 

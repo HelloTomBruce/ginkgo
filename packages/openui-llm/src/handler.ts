@@ -43,6 +43,8 @@ import { serverLibrary } from "./serverLibrary";
 import { createParser } from "@openuidev/lang-core";
 import { getCrossSourceLinks, resolveCrossSourcePairs } from "./crossSourceMap";
 import { DEFAULT_TENANT_ID, SessionStreamHub, defaultStreamHub } from "./streamHub";
+import { FileTaskStore } from "./fileTaskStore";
+import type { TaskStore } from "./taskStore";
 import { createReasoningFetch } from "./reasoningStream";
 import {
   classifyProviderError,
@@ -335,6 +337,10 @@ export interface AnalyzeHandlerOptions {
   sessions?: SessionContextStore;
   /** 会话流中继中枢（可选注入；缺省全局单例 defaultStreamHub） */
   streamHub?: SessionStreamHub;
+  /** 共享任务存储（可选注入；仅在未注入 streamHub 时生效，优先于 env） */
+  taskStore?: TaskStore;
+  /** owner 实例标识（可选注入；缺省 hostname:pid） */
+  instanceId?: string;
   /** 认证口径知识库（可选注入；缺省尝试读取 config/certified-queries.json） */
   certifiedStore?: CertifiedQueryStore;
   /**
@@ -404,7 +410,25 @@ export interface AnalyzeRequestBody {
  */
 export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
   const { datasources, sessions } = opts;
-  const streamHub = opts.streamHub ?? defaultStreamHub;
+  // 注入替换缺省(需要 console+OTel 双写时由 app 侧传 compositeSink(consoleSink, otelSink))
+  const telemetry = opts.telemetry ?? createConsoleSink();
+
+  // env 解析集中在 handler 工厂；hub 只接收 TaskStore 接口，defaultStreamHub 永远保持内存缺省。
+  const storeKind = opts.streamHub ? "memory" : (process.env.LLM_TASK_STORE ?? "memory");
+  if (storeKind !== "memory" && storeKind !== "file") {
+    throw new Error(`不支持的 LLM_TASK_STORE=${storeKind}（可选 memory/file）`);
+  }
+  const taskStore = opts.streamHub
+    ? undefined
+    : (opts.taskStore ??
+      (storeKind === "file"
+        ? new FileTaskStore({ dir: process.env.LLM_TASK_STORE_DIR ?? "data/stream-tasks" })
+        : undefined));
+  const streamHub =
+    opts.streamHub ??
+    (taskStore || opts.instanceId
+      ? new SessionStreamHub({ store: taskStore, instanceId: opts.instanceId, sink: telemetry })
+      : defaultStreamHub);
 
   // 方法论库：注入或缺省内置；索引文本在工厂期渲染一次（库不变无需逐请求重算）
   const methodLibrary: MethodLibrary =
@@ -417,9 +441,6 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
     new CertifiedQueryStore({
       configPath: path.join(process.cwd(), "config/certified-queries.json"),
     });
-
-  // 注入替换缺省(需要 console+OTel 双写时由 app 侧传 compositeSink(consoleSink, otelSink))
-  const telemetry = opts.telemetry ?? createConsoleSink();
 
   // WS-3 进程级并发准入上限:同时 running 的会话任务数超限即拒绝新任务(reconnect 不占名额)
   const envConcurrent = Number(process.env.LLM_MAX_CONCURRENT_TASKS);
@@ -451,7 +472,7 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
         const sid = rawBody.sessionId;
         if (sid) {
           // 跨租户防护：只命中同租户的任务，他人 sessionId 按无任务处理
-          streamHub.abortTask(sid, "user", tenantId);
+          await streamHub.abortTask(sid, "user", tenantId);
         }
         return Response.json({ ok: true, stopped: true });
       }
@@ -484,7 +505,7 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
       if (
         !isReconnect &&
         clientSessionId &&
-        streamHub.runningCount() >= maxConcurrentTasks
+        (await streamHub.runningCount()) >= maxConcurrentTasks
       ) {
         telemetry.emit({
           type: "warn",
@@ -498,15 +519,20 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
           { status: 429 }
         );
       }
-      if (clientSessionId && isReconnect && streamHub.hasTask(clientSessionId, tenantId)) {
+      if (
+        clientSessionId &&
+        isReconnect &&
+        (await streamHub.hasTask(clientSessionId, tenantId))
+      ) {
+        const task = await streamHub.getTask(clientSessionId, tenantId);
         telemetry.emit({
           type: "reconnect",
           runId,
           sessionId: clientSessionId,
-          replayedChunks: streamHub.getTask(clientSessionId, tenantId)?.chunks.length ?? 0,
+          replayedChunks: task?.chunks.length ?? 0,
         });
         // 跨租户防护：只接入同租户的任务
-        const reconnResp = streamHub.createResponse(clientSessionId, tenantId);
+        const reconnResp = await streamHub.createResponse(clientSessionId, tenantId);
         if (reconnResp) return reconnResp;
       }
 
@@ -1358,7 +1384,7 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
       });
 
       if (clientSessionId) {
-        return streamHub.registerAndConsume(clientSessionId, rawResponse, {
+        return await streamHub.registerAndConsume(clientSessionId, rawResponse, {
           runId,
           abortController: taskAbortController,
           tenantId,
