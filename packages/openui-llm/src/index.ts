@@ -8,6 +8,7 @@ export { createAnalyzeHandler } from "./handler";
 export type {
   AnalyzeHandlerOptions,
   AnalyzeRequestBody,
+  AuthContext,
   SessionContextMeta,
   SessionContextStore,
 } from "./handler";

@@ -21,6 +21,9 @@ export type HarnessEvent =
       mode: string;
       model: string;
       maxSteps: number;
+      /** WS-10 注入 authenticate 时透传：调用方标识与租户命名空间 */
+      principal?: string;
+      tenantId?: string;
     }
   | {
       type: "step_finish";

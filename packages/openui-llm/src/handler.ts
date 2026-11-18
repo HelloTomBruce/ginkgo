@@ -42,7 +42,7 @@ import { getOpenUISystemPrompt, getOpenUIPlanPrompt, getExecuteSystemPrompt } fr
 import { serverLibrary } from "./serverLibrary";
 import { createParser } from "@openuidev/lang-core";
 import { getCrossSourceLinks, resolveCrossSourcePairs } from "./crossSourceMap";
-import { SessionStreamHub, defaultStreamHub } from "./streamHub";
+import { DEFAULT_TENANT_ID, SessionStreamHub, defaultStreamHub } from "./streamHub";
 import { createReasoningFetch } from "./reasoningStream";
 import {
   classifyProviderError,
@@ -310,6 +310,19 @@ export interface SessionContextStore {
   updateContext(sessionId: string, patch: SessionContextMeta): Promise<void>;
 }
 
+/**
+ * WS-10 鉴权上下文：authenticate 钩子的返回类型。
+ * principal 必填（API key id / user id），tenantId 缺省以 principal 作为租户命名空间。
+ */
+export interface AuthContext {
+  /** 调用方标识（API key id / user id），必填 */
+  principal: string;
+  /** 租户隔离命名空间；缺省 = principal */
+  tenantId?: string;
+  /** 供配额/审计透传的自定义声明（如 allowEnvCredentials） */
+  claims?: Record<string, unknown>;
+}
+
 export interface AnalyzeHandlerOptions {
   /** 应用持有的数据源单例（src/lib/datasources.ts），包不自建 */
   datasources: DatasourceManager;
@@ -324,6 +337,12 @@ export interface AnalyzeHandlerOptions {
   streamHub?: SessionStreamHub;
   /** 认证口径知识库（可选注入；缺省尝试读取 config/certified-queries.json） */
   certifiedStore?: CertifiedQueryStore;
+  /**
+   * 鉴权钩子（WS-10，可选注入）：返回 null/undefined 即 401。
+   * 不注入时保持现状（包不鉴权）——所有请求视为同一匿名租户 "anon"，
+   * 行为与今天完全一致。
+   */
+  authenticate?: (req: Request) => Promise<AuthContext | null>;
   /**
    * 结构化遥测 sink（可选注入；缺省 NDJSON console）。
    * 注意：注入自建 SessionStreamHub 时需在 hub 构造函数传入同一 sink，
@@ -412,11 +431,27 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
   const POST = async function (req: Request) {
     const runId = newRunId();
     try {
+      // WS-10 鉴权接缝：注入 authenticate 时先行鉴权（null/undefined → 401）；
+      // 未注入时所有请求视为匿名租户 "anon"，行为与今天完全一致。
+      // 租户解析唯一入口：下游所有 hub 调用只透传 tenantId，不各自拼 sessionKey。
+      const auth = opts.authenticate ? await opts.authenticate(req) : null;
+      if (opts.authenticate && !auth) {
+        telemetry.emit({
+          type: "warn",
+          runId,
+          code: "AUTH_REJECTED",
+          detail: "authenticate 返回 null，拒绝请求",
+        });
+        return Response.json({ error: "未授权" }, { status: 401 });
+      }
+      const tenantId = auth ? (auth.tenantId ?? auth.principal) : DEFAULT_TENANT_ID;
+
       const rawBody = (await req.json()) as AnalyzeRequestBody;
       if (rawBody && typeof rawBody === "object" && rawBody.action === "stop") {
         const sid = rawBody.sessionId;
         if (sid) {
-          streamHub.abortTask(sid, "user");
+          // 跨租户防护：只命中同租户的任务，他人 sessionId 按无任务处理
+          streamHub.abortTask(sid, "user", tenantId);
         }
         return Response.json({ ok: true, stopped: true });
       }
@@ -463,19 +498,28 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
           { status: 429 }
         );
       }
-      if (clientSessionId && isReconnect && streamHub.hasTask(clientSessionId)) {
+      if (clientSessionId && isReconnect && streamHub.hasTask(clientSessionId, tenantId)) {
         telemetry.emit({
           type: "reconnect",
           runId,
           sessionId: clientSessionId,
-          replayedChunks: streamHub.getTask(clientSessionId)?.chunks.length ?? 0,
+          replayedChunks: streamHub.getTask(clientSessionId, tenantId)?.chunks.length ?? 0,
         });
-        const reconnResp = streamHub.createResponse(clientSessionId);
+        // 跨租户防护：只接入同租户的任务
+        const reconnResp = streamHub.createResponse(clientSessionId, tenantId);
         if (reconnResp) return reconnResp;
       }
 
-      const apiKey = clientKey || process.env.OPENAI_API_KEY || process.env.LLM_API_KEY;
-      const baseURL = clientBaseURL || process.env.OPENAI_BASE_URL || process.env.LLM_BASE_URL || "https://api.openai.com/v1";
+      // WS-10 多租户凭证隔离：claims.allowEnvCredentials === false 时跳过 env 凭证回退
+      // （多租户 SaaS 形态下环境凭证属于平台，不被租户借用）
+      const allowEnvCredentials = auth?.claims?.allowEnvCredentials !== false;
+      const apiKey =
+        clientKey ||
+        (allowEnvCredentials ? process.env.OPENAI_API_KEY || process.env.LLM_API_KEY : undefined);
+      const baseURL =
+        clientBaseURL ||
+        (allowEnvCredentials ? process.env.OPENAI_BASE_URL || process.env.LLM_BASE_URL : undefined) ||
+        "https://api.openai.com/v1";
       const model = clientModel || process.env.OPENAI_MODEL || process.env.LLM_MODEL || "gpt-4o-mini";
       // 温度由客户端设置页透传，钳制在 0–2，默认 0.2（数据分析场景）
       const parsedTemp = Number(clientTemperature);
@@ -611,6 +655,8 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
         mode,
         model,
         maxSteps,
+        // 注入 authenticate 时透传鉴权上下文（未注入时字段缺省，行为与现状一致）
+        ...(auth ? { principal: auth.principal, tenantId } : {}),
       });
 
       /**
@@ -1315,6 +1361,7 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
         return streamHub.registerAndConsume(clientSessionId, rawResponse, {
           runId,
           abortController: taskAbortController,
+          tenantId,
         });
       }
       return rawResponse;
@@ -1339,8 +1386,10 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
     }
   };
 
-  POST.isSessionRunning = (sessionId: string) => streamHub.hasRunningTask(sessionId);
-  POST.abortSession = (sessionId: string) => streamHub.abortTask(sessionId);
+  POST.isSessionRunning = (sessionId: string, tenantId?: string) =>
+    streamHub.hasRunningTask(sessionId, tenantId);
+  POST.abortSession = (sessionId: string, tenantId?: string) =>
+    streamHub.abortTask(sessionId, "user", tenantId);
   POST.streamHub = streamHub;
 
   return POST;

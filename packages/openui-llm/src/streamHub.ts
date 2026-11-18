@@ -31,6 +31,14 @@ export interface SessionStreamTask {
   deadlineTimer?: ReturnType<typeof setTimeout>;
 }
 
+/** 缺省租户：未注入 authenticate 时所有请求归入同一匿名租户 */
+export const DEFAULT_TENANT_ID = "anon";
+
+/** WS-10 多租户存储键：tenantId 命名空间隔离 sessionId（拼键唯一入口，调用方只传分离值） */
+export function sessionStorageKey(sessionId: string, tenantId?: string): string {
+  return `${tenantId ?? DEFAULT_TENANT_ID}:${sessionId}`;
+}
+
 /** 任务级看门狗超时的钳制边界 */
 const TASK_TIMEOUT_MIN_MS = 30_000;
 const TASK_TIMEOUT_MAX_MS = 3_600_000;
@@ -60,17 +68,17 @@ export class SessionStreamHub {
     );
   }
 
-  hasRunningTask(sessionId: string): boolean {
-    const task = this.tasks.get(sessionId);
+  hasRunningTask(sessionId: string, tenantId?: string): boolean {
+    const task = this.tasks.get(sessionStorageKey(sessionId, tenantId));
     return task?.status === "running";
   }
 
-  hasTask(sessionId: string): boolean {
-    return this.tasks.has(sessionId);
+  hasTask(sessionId: string, tenantId?: string): boolean {
+    return this.tasks.has(sessionStorageKey(sessionId, tenantId));
   }
 
-  getTask(sessionId: string): SessionStreamTask | undefined {
-    return this.tasks.get(sessionId);
+  getTask(sessionId: string, tenantId?: string): SessionStreamTask | undefined {
+    return this.tasks.get(sessionStorageKey(sessionId, tenantId));
   }
 
   /** 当前 running 状态的任务数(并发准入的计数来源) */
@@ -82,8 +90,9 @@ export class SessionStreamHub {
     return n;
   }
 
-  abortTask(sessionId: string, reason: AbortReason = "user"): boolean {
-    const task = this.tasks.get(sessionId);
+  abortTask(sessionId: string, reason: AbortReason = "user", tenantId?: string): boolean {
+    const key = sessionStorageKey(sessionId, tenantId);
+    const task = this.tasks.get(key);
     if (!task) return false;
     this.clearDeadline(task);
     this.sink.emit({
@@ -98,15 +107,15 @@ export class SessionStreamHub {
     void task.cancelUpstream?.().catch(() => {});
     task.status = "error";
     this.closeSubscribers(task);
-    this.tasks.delete(sessionId);
+    this.tasks.delete(key);
     return true;
   }
 
   /**
    * 为当前任务创建一个新的 HTTP 响应流（供初始调用或重连调用订阅）
    */
-  createResponse(sessionId: string): Response | null {
-    const task = this.tasks.get(sessionId);
+  createResponse(sessionId: string, tenantId?: string): Response | null {
+    const task = this.tasks.get(sessionStorageKey(sessionId, tenantId));
     if (!task) return null;
 
     let sub: StreamSubscriber | null = null;
@@ -153,11 +162,13 @@ export class SessionStreamHub {
   registerAndConsume(
     sessionId: string,
     rawResponse: Response,
-    meta?: { runId?: RunId; abortController?: AbortController }
+    meta?: { runId?: RunId; abortController?: AbortController; tenantId?: string }
   ): Response {
-    // 若原会话已有未完成旧任务，先中止
-    if (this.hasRunningTask(sessionId)) {
-      this.abortTask(sessionId, "new_task");
+    const tenantId = meta?.tenantId ?? DEFAULT_TENANT_ID;
+    const key = sessionStorageKey(sessionId, tenantId);
+    // 若原会话（同租户命名空间）已有未完成旧任务，先中止
+    if (this.hasRunningTask(sessionId, tenantId)) {
+      this.abortTask(sessionId, "new_task", tenantId);
     }
 
     const abortController = meta?.abortController ?? new AbortController();
@@ -169,11 +180,11 @@ export class SessionStreamHub {
       status: "running",
       abortController,
     };
-    this.tasks.set(sessionId, task);
+    this.tasks.set(key, task);
 
     // 任务级看门狗：wall-clock 超限即中止（防 provider 挂起永久占用 Reader）
     task.deadlineTimer = setTimeout(() => {
-      this.abortTask(sessionId, "timeout");
+      this.abortTask(sessionId, "timeout", tenantId);
     }, this.taskTimeoutMs);
     // 常驻服务无需 unref（终态即清除）；仅防 CLI/测试环境被定时器拖住退出
     const t = task.deadlineTimer as { unref?: () => void };
@@ -197,7 +208,7 @@ export class SessionStreamHub {
           detail: "rawResponse.body is not readable; terminating task",
         });
         this.closeSubscribers(task);
-        this.scheduleCleanup(sessionId, task);
+        this.scheduleCleanup(key, task);
         return;
       }
       task.cancelUpstream = async () => {
@@ -245,11 +256,11 @@ export class SessionStreamHub {
       } finally {
         this.clearDeadline(task);
         this.closeSubscribers(task);
-        this.scheduleCleanup(sessionId, task);
+        this.scheduleCleanup(key, task);
       }
     })();
 
-    return this.createResponse(sessionId)!;
+    return this.createResponse(sessionId, tenantId)!;
   }
 
   /** 任务到达终态（完成/错误/中止）时清除看门狗定时器 */
@@ -261,10 +272,10 @@ export class SessionStreamHub {
   }
 
   /** 任务终态后在内存保留 30 秒，供刚刷新完成的页面做最后重放，之后自动清理 */
-  private scheduleCleanup(sessionId: string, task: SessionStreamTask): void {
+  private scheduleCleanup(key: string, task: SessionStreamTask): void {
     setTimeout(() => {
-      if (this.tasks.get(sessionId) === task) {
-        this.tasks.delete(sessionId);
+      if (this.tasks.get(key) === task) {
+        this.tasks.delete(key);
       }
     }, 30000);
   }
