@@ -372,6 +372,7 @@ export interface AuthContext {
   /** 调用方标识（API key id / user id），必填 */
   principal: string;
   /** 租户隔离命名空间；缺省 = principal */
+  /** 租户隔离命名空间；缺省 = principal。契约：不得含冒号（':' 是存储键分隔符）。 */
   tenantId?: string;
   /** 供配额/审计透传的自定义声明（如 allowEnvCredentials） */
   claims?: Record<string, unknown>;

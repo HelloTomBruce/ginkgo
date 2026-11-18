@@ -221,6 +221,8 @@ export class FileTaskStore implements TaskStore {
             updatedAt: Date.now(),
           };
           await this.persist(record);
+          // 前提锚定：此 persist 不走 enqueueWrite，仅因 restore 只在 ensureLoaded 内
+          // 先于任何公开方法运行（加载期无并发写）。新增调用点必须破坏此前提前先改走队列。
         }
         this.tasks.set(snapshot.sessionKey, record);
         if (record.snapshot.status !== "running") {
