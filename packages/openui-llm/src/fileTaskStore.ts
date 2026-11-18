@@ -7,6 +7,14 @@ import type { TaskSnapshot, TaskStatus, TaskStore } from "./taskStore";
 
 const TERMINAL_RETENTION_MS = 30_000;
 
+/**
+ * 进程重启恢复标记：File 后端加载时把遗留 running 任务转为该 error 消息。
+ * createResponse 据此区分「先重放历史再抛错」的恢复语义与自然 error 的原有消费结果；
+ * 定义在此且不从 taskStore 导入值，是为了让裸 Node 子进程（--experimental-strip-types）
+ * 能直接加载本文件——无扩展名的本地值导入在裸 ESM 下无法解析。
+ */
+export const PROCESS_RESTART_ERROR_MESSAGE = "process_restart";
+
 interface FileTaskRecord {
   snapshot: TaskSnapshot;
   chunks: Uint8Array[];
@@ -25,6 +33,8 @@ export class FileTaskStore implements TaskStore {
   private readonly dir: string;
   private readonly tasks = new Map<string, FileTaskRecord>();
   private readonly cleanupTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  /** 同 key 的文件写入排队尾部：append 与元数据 rename 不得交错 */
+  private readonly writeQueues = new Map<string, Promise<void>>();
   private readonly events = new EventEmitter();
   private loading?: Promise<void>;
 
@@ -39,7 +49,7 @@ export class FileTaskStore implements TaskStore {
     const record: FileTaskRecord = { snapshot: { ...snapshot }, chunks: [] };
     this.tasks.set(snapshot.sessionKey, record);
     await fs.mkdir(this.dir, { recursive: true });
-    await this.persist(record);
+    await this.enqueueWrite(snapshot.sessionKey, () => this.persist(record));
   }
 
   async appendChunk(sessionKey: string, chunk: Uint8Array): Promise<void> {
@@ -47,9 +57,13 @@ export class FileTaskStore implements TaskStore {
     const record = this.tasks.get(sessionKey);
     if (!record) return;
     await fs.mkdir(this.dir, { recursive: true });
-    await fs.appendFile(this.filePath(sessionKey), `${Buffer.from(chunk).toString("base64")}\n`);
-    record.chunks.push(chunk);
-    this.events.emit(this.chunkEvent(sessionKey), chunk);
+    await this.enqueueWrite(sessionKey, async () => {
+      // 排队期间记录可能已被删除或替换为新任务：旧任务的迟到写入不得落盘。
+      if (this.tasks.get(sessionKey) !== record) return;
+      await fs.appendFile(this.filePath(sessionKey), `${Buffer.from(chunk).toString("base64")}\n`);
+      record.chunks.push(chunk);
+      this.events.emit(this.chunkEvent(sessionKey), chunk);
+    });
   }
 
   async setStatus(
@@ -66,7 +80,10 @@ export class FileTaskStore implements TaskStore {
       updatedAt: Date.now(),
       ...(errorMessage === undefined ? {} : { errorMessage }),
     };
-    await this.persist(record);
+    await this.enqueueWrite(sessionKey, async () => {
+      if (this.tasks.get(sessionKey) !== record) return;
+      await this.persist(record);
+    });
     if (status !== "running") this.scheduleCleanup(sessionKey);
   }
 
@@ -85,7 +102,7 @@ export class FileTaskStore implements TaskStore {
     await this.ensureLoaded();
     this.clearCleanup(sessionKey);
     this.tasks.delete(sessionKey);
-    await fs.rm(this.filePath(sessionKey), { force: true });
+    await this.enqueueWrite(sessionKey, () => fs.rm(this.filePath(sessionKey), { force: true }));
   }
 
   async runningCount(): Promise<number> {
@@ -127,6 +144,22 @@ export class FileTaskStore implements TaskStore {
     return this.loading;
   }
 
+  /** 同 key 的文件写入排队执行：旧任务的 append 不会与新任务的 rename/rm 交错。 */
+  private enqueueWrite(sessionKey: string, write: () => Promise<void>): Promise<void> {
+    const previous = this.writeQueues.get(sessionKey) ?? Promise.resolve();
+    const run = previous.then(write, write);
+    const tail = run.then(
+      () => undefined,
+      () => undefined
+    );
+    this.writeQueues.set(sessionKey, tail);
+    void tail.then(() => {
+      // 队列已排空且无后续写入续接时回收条目，避免 Map 无限增长。
+      if (this.writeQueues.get(sessionKey) === tail) this.writeQueues.delete(sessionKey);
+    });
+    return run;
+  }
+
   /** 懒恢复：completed/error 可重放；异常退出遗留的 running 不得伪装为仍在运行。 */
   private async restore(): Promise<void> {
     let files: string[];
@@ -142,21 +175,27 @@ export class FileTaskStore implements TaskStore {
       const filePath = path.join(this.dir, file);
       try {
         const content = await fs.readFile(filePath, "utf8");
-        const lines = content.split("\n");
+        // 崩溃可能截断正在写入的尾行：未以换行终止的最后一行不可信，整行丢弃。
+        const terminated = content.endsWith("\n")
+          ? content
+          : content.slice(0, content.lastIndexOf("\n") + 1);
+        const lines = terminated.split("\n");
         const snapshot = JSON.parse(lines[0]) as TaskSnapshot;
         if (!snapshot.sessionKey || snapshot.ownerInstanceId === undefined) continue;
         const record: FileTaskRecord = {
           snapshot,
-          chunks: lines
-            .slice(1)
-            .filter((line) => line.length > 0)
-            .map((line) => new Uint8Array(Buffer.from(line, "base64"))),
+          chunks: lines.slice(1).flatMap((line) => {
+            if (line.length === 0) return [];
+            const decoded = Buffer.from(line, "base64");
+            // canonical base64 校验：半写/损坏行解码后无法还原自身编码，丢弃。
+            return decoded.toString("base64") === line ? [new Uint8Array(decoded)] : [];
+          }),
         };
         if (snapshot.status === "running") {
           record.snapshot = {
             ...snapshot,
             status: "error",
-            errorMessage: "process_restart",
+            errorMessage: PROCESS_RESTART_ERROR_MESSAGE,
             updatedAt: Date.now(),
           };
           await this.persist(record);

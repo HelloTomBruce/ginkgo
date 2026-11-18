@@ -1,6 +1,15 @@
 import { describe, it, expect, vi } from "vitest";
 import { SessionStreamHub } from "./streamHub";
+import { InMemoryTaskStore } from "./taskStore";
 import type { HarnessEvent } from "./telemetry";
+
+function deferred(): { promise: Promise<void>; resolve: () => void } {
+  let resolve!: () => void;
+  const promise = new Promise<void>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
 
 function makeFakeStreamResponse(chunks: string[], delayMs = 10): Response {
   const encoder = new TextEncoder();
@@ -183,6 +192,119 @@ describe("SessionStreamHub", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+  it("同 sessionKey 并发注册按调用顺序串行，旧任务不得覆盖新任务", async () => {
+    const store = new InMemoryTaskStore();
+    const hub = new SessionStreamHub({ store });
+    const oldCreateEntered = deferred();
+    const releaseOldCreate = deferred();
+    const originalCreate = store.create.bind(store);
+    const createSpy = vi.spyOn(store, "create").mockImplementation(async (task) => {
+      if (task.runId === "run-old") {
+        oldCreateEntered.resolve();
+        await releaseOldCreate.promise;
+      }
+      await originalCreate(task);
+    });
+    const oldRaw = new Response(new ReadableStream<Uint8Array>({ start() {} }));
+    let oldResponse: Response | undefined;
+
+    try {
+      const oldRegistration = hub.registerAndConsume("sess_concurrent", oldRaw, {
+        runId: "run-old",
+      });
+      await oldCreateEntered.promise;
+      const newRegistration = hub.registerAndConsume(
+        "sess_concurrent",
+        makeFakeStreamResponse(["new"], 0),
+        { runId: "run-new" }
+      );
+      // 给未串行化的实现一次抢跑 create(run-new) 的机会。
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      releaseOldCreate.resolve();
+      const [oldResult, newResult] = await Promise.all([oldRegistration, newRegistration]);
+      oldResponse = oldResult;
+
+      expect(await newResult.text()).toBe("new");
+      expect(await hub.getTask("sess_concurrent")).toMatchObject({
+        runId: "run-new",
+        status: "completed",
+      });
+      await expect(oldResult.text()).rejects.toThrow("Stream error");
+    } finally {
+      createSpy.mockRestore();
+      await hub.abortTask("sess_concurrent");
+      await oldResponse?.body?.cancel().catch(() => {});
+    }
+  });
+
+  it("appendChunk 与 setStatus 连续失败时仍关闭订阅并清理看门狗，不留 unhandled rejection", async () => {
+    vi.useFakeTimers();
+    try {
+      class DiskFullStore extends InMemoryTaskStore {
+        override async appendChunk(): Promise<void> {
+          throw new Error("disk full: append");
+        }
+        override async setStatus(): Promise<void> {
+          throw new Error("disk full: status");
+        }
+      }
+      const events: HarnessEvent[] = [];
+      const hub = new SessionStreamHub({
+        store: new DiskFullStore(),
+        sink: { emit: (event) => events.push(event) },
+      });
+      const response = await hub.registerAndConsume(
+        "sess_disk_full",
+        makeFakeStreamResponse(["chunk"], 0)
+      );
+
+      await expect(response.text()).rejects.toThrow("disk full: append");
+      expect(events.some((event) => event.type === "error" && event.code === "READER_ERROR")).toBe(
+        true
+      );
+      // 仅余 30 秒清理定时器；看门狗和 lease 心跳均已清除。
+      expect(vi.getTimerCount()).toBe(1);
+      await vi.advanceTimersByTimeAsync(31_000);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("无 body 且 setStatus 失败时仍执行本地 error 收尾", async () => {
+    vi.useFakeTimers();
+    try {
+      class StatusFailureStore extends InMemoryTaskStore {
+        override async setStatus(): Promise<void> {
+          throw new Error("disk full: status");
+        }
+      }
+      const hub = new SessionStreamHub({ store: new StatusFailureStore() });
+      const response = await hub.registerAndConsume("sess_nobody_disk_full", new Response(null));
+
+      await expect(response.text()).rejects.toThrow("Upstream response has no body");
+      expect(vi.getTimerCount()).toBe(1);
+      await vi.advanceTimersByTimeAsync(31_000);
+    } finally {
+      vi.useRealTimers();
+    }
+  }, 1000);
+
+  it("默认内存自然 error 重连保持原行为：首读直接 error，不新增历史分块重放", async () => {
+    const hub = new SessionStreamHub();
+    const raw = new Response(
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode("partial"));
+          controller.error(new Error("natural failure"));
+        },
+      })
+    );
+    const initial = await hub.registerAndConsume("sess_natural_error", raw);
+    await expect(initial.text()).rejects.toThrow("natural failure");
+
+    const replay = (await hub.createResponse("sess_natural_error"))!;
+    await expect(replay.body!.getReader().read()).rejects.toThrow("natural failure");
   });
 });
 

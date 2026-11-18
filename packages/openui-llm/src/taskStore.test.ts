@@ -26,6 +26,14 @@ async function makeTempDir(): Promise<string> {
   return fs.mkdtemp(path.join(os.tmpdir(), "llm-task-store-"));
 }
 
+function deferred(): { promise: Promise<void>; resolve: () => void } {
+  let resolve!: () => void;
+  const promise = new Promise<void>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
 /** 独立 Node 进程落盘后 SIGKILL，验证恢复不依赖同进程内的新实例或优雅退出钩子。 */
 async function crashAfterWrites(
   dir: string,
@@ -234,6 +242,94 @@ describe("FileTaskStore 进程重启恢复与终态清理", () => {
     const reader = replay!.body!.getReader();
     expect(decoder.decode((await reader.read()).value)).toBe("before-restart");
     await expect(reader.read()).rejects.toThrow("process_restart");
+  });
+
+  it("首行和完整 chunk 后的半写尾行不进入恢复重放", async () => {
+    const task = snapshot("tenant-a:sess_partial_tail", "completed");
+    const committed = Buffer.from("committed").toString("base64");
+    const partialTail = Buffer.from("partial-tail").toString("base64").slice(0, -2);
+    await fs.writeFile(
+      path.join(dir, `${encodeURIComponent(task.sessionKey)}.ndjson`),
+      `${JSON.stringify(task)}\n${committed}\n${partialTail}`,
+      "utf8"
+    );
+
+    const restarted = new FileTaskStore({ dir });
+    expect((await restarted.getChunks(task.sessionKey)).map((chunk) => decoder.decode(chunk))).toEqual([
+      "committed",
+    ]);
+  });
+
+  it("File 写盘中 abort→新任务：等待旧 Reader 收尾，分块与终态不混合", async () => {
+    const store = new FileTaskStore({ dir });
+    const hub = new SessionStreamHub({ store });
+    const appendEntered = deferred();
+    const releaseAppend = deferred();
+    const originalAppendFile = fs.appendFile.bind(fs);
+    let delayed = false;
+    const appendSpy = vi.spyOn(fs, "appendFile").mockImplementation(async (file, data, options) => {
+      if (!delayed) {
+        delayed = true;
+        appendEntered.resolve();
+        await releaseAppend.promise;
+      }
+      return originalAppendFile(file, data, options);
+    });
+    let oldResponse: Response | undefined;
+
+    try {
+      const oldRaw = new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(encoder.encode("old-chunk"));
+          },
+        })
+      );
+      oldResponse = await hub.registerAndConsume("sess_file_replace", oldRaw, {
+        runId: "run-old-file",
+      });
+      await appendEntered.promise;
+      const createSpy = vi.spyOn(store, "create");
+      const newRaw = new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(encoder.encode("new-chunk"));
+            controller.close();
+          },
+        })
+      );
+      const newRegistration = hub.registerAndConsume("sess_file_replace", newRaw, {
+        runId: "run-new-file",
+      });
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      const newCreatedBeforeAppendFinished = createSpy.mock.calls.some(
+        ([task]) => task.runId === "run-new-file"
+      );
+      releaseAppend.resolve();
+
+      const newResponse = await newRegistration;
+      expect(newCreatedBeforeAppendFinished).toBe(false);
+      expect(await newResponse.text()).toBe("new-chunk");
+      expect(await hub.getTask("sess_file_replace")).toMatchObject({
+        runId: "run-new-file",
+        status: "completed",
+      });
+
+      const restarted = new FileTaskStore({ dir });
+      expect(await restarted.get("anon:sess_file_replace")).toMatchObject({
+        runId: "run-new-file",
+        status: "completed",
+      });
+      expect(
+        (await restarted.getChunks("anon:sess_file_replace")).map((chunk) => decoder.decode(chunk))
+      ).toEqual(["new-chunk"]);
+      createSpy.mockRestore();
+    } finally {
+      releaseAppend.resolve();
+      appendSpy.mockRestore();
+      await hub.abortTask("sess_file_replace");
+      await oldResponse?.body?.cancel().catch(() => {});
+    }
   });
 
   it("终态保留 30 秒后删除快照与 NDJSON 文件", async () => {
