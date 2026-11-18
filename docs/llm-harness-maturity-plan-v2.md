@@ -65,7 +65,7 @@
 
 ---
 
-## WS-9 Provider 韧性层（第 1 优先）
+## 任务 9：WS-9 Provider 韧性层（第 1 优先）
 
 ### 目标
 
@@ -145,7 +145,7 @@ fallback 中的裸 apiKey 沿用 CRED_GUARD 原则：不允许 fallback 把环�
 
 ---
 
-## WS-10 认证与多租户接缝（第 2 优先）
+## 任务 10：WS-10 认证与多租户接缝（第 2 优先）
 
 ### 目标
 
@@ -205,7 +205,7 @@ export interface AnalyzeHandlerOptions {
 
 ---
 
-## WS-8 StreamHub 状态外置 + Redis 多副本后端（第 3 优先，**核心交付**）
+## 任务 8：WS-8 StreamHub 状态外置 + Redis 多副本后端（第 3 优先，**核心交付**）
 
 ### 目标
 
@@ -318,7 +318,7 @@ export interface TaskStore {
 
 ---
 
-## WS-11 成本台账与配额（含分布式实现）（第 4 优先）
+## 任务 11：WS-11 成本台账与配额（含分布式实现）（第 4 优先）
 
 ### 目标
 
@@ -384,7 +384,7 @@ export interface QuotaPolicy {
 
 ---
 
-## WS-12 计量精化（第 5 优先）
+## 任务 12：WS-12 计量精化（第 5 优先）
 
 ### 目标
 
@@ -412,7 +412,7 @@ tokenizer?: { encode(text: string): number };
 
 ---
 
-## WS-13 可观测性出口 + eval 常态化（第 6 优先）
+## 任务 13：WS-13 可观测性出口 + eval 常态化（第 6 优先）
 
 ### 目标
 
