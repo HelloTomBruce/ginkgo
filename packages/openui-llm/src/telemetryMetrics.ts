@@ -7,11 +7,6 @@ import type { HarnessEvent, TelemetrySink } from "./telemetry";
  * 兼容（每实例一个 target，按 instance label 聚合）；多副本优先 OTel push 路径。
  */
 
-interface Counter {
-  help: string;
-  values: Map<string, number>;
-}
-
 interface Histogram {
   help: string;
   buckets: number[];
@@ -22,10 +17,6 @@ interface Histogram {
 
 const DURATION_BUCKETS_MS = [100, 250, 500, 1000, 2500, 5000, 10_000, 30_000, 60_000, 300_000];
 const TOKEN_BUCKETS = [1000, 5000, 10_000, 25_000, 50_000, 100_000, 250_000, 500_000, 1_000_000];
-
-function bucketLabels(buckets: number[]): number[] {
-  return [...buckets, Infinity];
-}
 
 export interface MetricsRegistry {
   sink: TelemetrySink;
