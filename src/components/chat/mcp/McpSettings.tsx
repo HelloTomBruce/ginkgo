@@ -46,7 +46,7 @@ interface FormState {
   mode: "create" | "edit";
   id: string;
   name: string;
-  transport: "sse" | "stdio";
+  transport: "sse" | "stdio" | "streamable_http";
   url: string;
   headersJson: string;
   command: string;
@@ -83,6 +83,7 @@ export function McpSettings() {
     serverId: string;
     ok: boolean;
     latencyMs: number;
+    actualTransport?: "stdio" | "sse" | "streamable_http";
     tools: Array<{ name: string; description?: string }>;
     error?: string;
   } | null>(null);
@@ -90,6 +91,7 @@ export function McpSettings() {
   const [formProbeResult, setFormProbeResult] = useState<{
     ok: boolean;
     latencyMs: number;
+    actualTransport?: "stdio" | "sse" | "streamable_http";
     tools: Array<{ name: string; description?: string }>;
     error?: string;
   } | null>(null);
@@ -209,7 +211,7 @@ export function McpSettings() {
       mode: "edit",
       id: server.id,
       name: server.name || server.id,
-      transport: server.transport === "stdio" ? "stdio" : "sse",
+      transport: server.transport,
       url: server.transport !== "stdio" ? server.url || "" : "",
       headersJson,
       command: server.transport === "stdio" ? server.command || "npx" : "npx",
@@ -292,7 +294,7 @@ export function McpSettings() {
       toast.error("请先填写服务 ID");
       return;
     }
-    if (config.transport === "sse" && !config.url) {
+    if (config.transport !== "stdio" && !config.url) {
       toast.error("请先填写 Endpoint URL");
       return;
     }
@@ -312,6 +314,9 @@ export function McpSettings() {
       const data = await res.json();
       setFormProbeResult(data);
       if (data.ok) {
+        if (data.actualTransport && data.actualTransport !== "stdio") {
+          setForm((prev) => ({ ...prev, transport: data.actualTransport }));
+        }
         toast.success(`连接测试成功（${data.latencyMs}ms），扫描到 ${data.tools?.length || 0} 个工具`);
       } else {
         toast.error(`连接测试失败: ${data.error || "未知异常"}`);
@@ -342,8 +347,8 @@ export function McpSettings() {
       toast.error("请输入 MCP 服务器 ID");
       return;
     }
-    if (config.transport === "sse" && !config.url) {
-      toast.error("请输入 SSE Endpoint URL");
+    if (config.transport !== "stdio" && !config.url) {
+      toast.error("请输入 Endpoint URL");
       return;
     }
     if (config.transport === "stdio" && !config.command) {
@@ -624,7 +629,7 @@ export function McpSettings() {
                         <div className="flex items-center justify-between text-[11px]">
                           <span className="flex items-center gap-1 text-success-fg font-medium">
                             <CheckCircle2 className="w-3.5 h-3.5" />
-                            连通正常（耗时 {probeResult.latencyMs}ms）
+                            连通正常（耗时 {probeResult.latencyMs}ms{probeResult.actualTransport ? ` · ${probeResult.actualTransport === "streamable_http" ? "Streamable HTTP" : probeResult.actualTransport.toUpperCase()}` : ""}）
                           </span>
                           <span className="text-foreground-faint">
                             扫描到 {probeResult.tools.length} 个工具
@@ -714,7 +719,7 @@ export function McpSettings() {
                 传输协议类型
               </legend>
               <RadioGroup
-                value={form.transport}
+                value={form.transport === "stdio" ? "stdio" : "sse"}
                 onValueChange={(v) => setForm({ ...form, transport: v as "sse" | "stdio" })}
                 className="grid grid-cols-2 gap-3"
               >
@@ -735,8 +740,8 @@ export function McpSettings() {
               </RadioGroup>
             </fieldset>
 
-            {/* SSE 字段 */}
-            {form.transport === "sse" ? (
+            {/* HTTP / SSE 字段 */}
+            {form.transport !== "stdio" ? (
               <div className="space-y-3">
                 <div>
                   <label className="block text-muted-foreground mb-1 font-medium">
@@ -942,7 +947,7 @@ export function McpSettings() {
                       <div className="flex items-center justify-between font-medium">
                         <span className="flex items-center gap-1">
                           <CheckCircle2 className="w-3.5 h-3.5" />
-                          连接成功（耗时 {formProbeResult.latencyMs}ms）
+                          连接成功（耗时 {formProbeResult.latencyMs}ms{formProbeResult.actualTransport ? ` · ${formProbeResult.actualTransport === "streamable_http" ? "Streamable HTTP" : formProbeResult.actualTransport.toUpperCase()}` : ""}）
                         </span>
                         <span>发现 {formProbeResult.tools.length} 个可用 Tools</span>
                       </div>

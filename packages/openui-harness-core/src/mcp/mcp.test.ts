@@ -1,4 +1,7 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi, afterEach } from "vitest";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { MCPClientManager } from "./clientManager";
 import { adaptMcpToolToCoreTool, getCoreToolsFromMcp } from "./toolAdapter";
 import type { MCPServerConfig } from "./types";
@@ -116,5 +119,114 @@ describe("MCPClientManager & ToolAdapter", () => {
 
     expect(tools["broken-server_ping"]).toBeUndefined();
     expect(tools["healthy-server_ping"]).toBeDefined();
+  });
+
+  describe("HTTP 传输智能自适应协商 (SSE <-> Streamable HTTP)", () => {
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it("当配置为 sse 但服务端报错 400 Mcp-Session-Id 时，自动协商并切换为 streamable_http", async () => {
+      const manager = new MCPClientManager();
+      manager.registerServer({
+        id: "gitlab-test",
+        transport: "sse",
+        url: "http://127.0.0.1:5002/mcp",
+      });
+
+      // 模拟 Client.prototype.connect：当传入 SSEClientTransport 时报 400，当传入 StreamableHTTPClientTransport 时成功
+      vi.spyOn(Client.prototype, "connect").mockImplementation(async function (
+        this: Client,
+        transport: unknown
+      ) {
+        if (transport instanceof SSEClientTransport) {
+          throw new Error("SSE error: Non-200 status code (400)");
+        }
+        if (transport instanceof StreamableHTTPClientTransport) {
+          return;
+        }
+      });
+
+      vi.spyOn(Client.prototype, "listTools").mockResolvedValue({
+        tools: [
+          { name: "get_merge_request", inputSchema: { type: "object" } },
+          { name: "search_repositories", inputSchema: { type: "object" } },
+        ] as never[],
+      });
+
+      const client = await manager.getClient("gitlab-test");
+      expect(client).toBeDefined();
+
+      const status = manager.getStatus("gitlab-test");
+      expect(status?.connected).toBe(true);
+      expect(status?.transport).toBe("streamable_http");
+      expect(status?.toolCount).toBe(2);
+
+      const tools = await manager.listTools("gitlab-test");
+      expect(tools.map((t) => t.name)).toEqual([
+        "get_merge_request",
+        "search_repositories",
+      ]);
+    });
+
+    it("当配置为 streamable_http 但服务端报错 405 时，自动协商并降级为 sse", async () => {
+      const manager = new MCPClientManager();
+      manager.registerServer({
+        id: "legacy-server",
+        transport: "streamable_http",
+        url: "http://127.0.0.1:8080/sse",
+      });
+
+      vi.spyOn(Client.prototype, "connect").mockImplementation(async function (
+        this: Client,
+        transport: unknown
+      ) {
+        if (transport instanceof StreamableHTTPClientTransport) {
+          throw new Error("HTTP error 405 Method Not Allowed");
+        }
+        if (transport instanceof SSEClientTransport) {
+          return;
+        }
+      });
+
+      vi.spyOn(Client.prototype, "listTools").mockResolvedValue({
+        tools: [{ name: "legacy_tool", inputSchema: { type: "object" } }] as never[],
+      });
+
+      await manager.getClient("legacy-server");
+      const status = manager.getStatus("legacy-server");
+      expect(status?.connected).toBe(true);
+      expect(status?.transport).toBe("sse");
+      expect(status?.toolCount).toBe(1);
+    });
+
+    it("当两种 HTTP 协议均连接失败时，抛出包含双向协商尝试详情的明确异常", async () => {
+      const manager = new MCPClientManager();
+      manager.registerServer({
+        id: "dead-server",
+        transport: "sse",
+        url: "http://127.0.0.1:9999/mcp",
+      });
+
+      vi.spyOn(Client.prototype, "connect").mockImplementation(async function (
+        this: Client,
+        transport: unknown
+      ) {
+        if (transport instanceof SSEClientTransport) {
+          throw new Error("ECONNREFUSED 127.0.0.1:9999");
+        }
+        if (transport instanceof StreamableHTTPClientTransport) {
+          throw new Error("ECONNREFUSED 127.0.0.1:9999");
+        }
+      });
+
+      await expect(manager.getClient("dead-server")).rejects.toThrow(
+        /\[MCP\] 连接服务 \[dead-server\] 失败 \(尝试 sse: .*；尝试 streamable_http: .*\)/
+      );
+
+      const status = manager.getStatus("dead-server");
+      expect(status?.connected).toBe(false);
+      expect(status?.lastError).toContain("ECONNREFUSED");
+    });
   });
 });

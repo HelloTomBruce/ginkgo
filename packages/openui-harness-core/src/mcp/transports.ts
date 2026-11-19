@@ -2,15 +2,18 @@ import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
-import type { MCPServerConfig } from "./types";
+import type { MCPServerConfig, MCPTransportType } from "./types";
 
 /**
  * 根据服务端配置创建对应的底层 MCP Client Transport
  */
 export async function createClientTransport(
-  config: MCPServerConfig
+  config: MCPServerConfig,
+  transportOverride?: MCPTransportType
 ): Promise<Transport> {
-  if (config.transport === "stdio") {
+  const transportType = transportOverride ?? config.transport;
+
+  if (transportType === "stdio") {
     if (!config.command) {
       throw new Error(`[MCP] stdio 传输必须指定 command，配置 ID: ${config.id}`);
     }
@@ -33,7 +36,7 @@ export async function createClientTransport(
   }
 
   if (!config.url) {
-    throw new Error(`[MCP] ${config.transport} 传输必须指定 url，配置 ID: ${config.id}`);
+    throw new Error(`[MCP] ${transportType} 传输必须指定 url，配置 ID: ${config.id}`);
   }
 
   const targetUrl = new URL(config.url);
@@ -45,17 +48,10 @@ export async function createClientTransport(
 
   const headers = config.headers ?? {};
 
-  if (config.transport === "streamable_http") {
-    try {
-      return new StreamableHTTPClientTransport(targetUrl, {
-        requestInit: { headers },
-      });
-    } catch {
-      // 若 Streamable HTTP 不可用，优雅回退至 SSE
-      return new SSEClientTransport(targetUrl, {
-        requestInit: { headers },
-      });
-    }
+  if (transportType === "streamable_http") {
+    return new StreamableHTTPClientTransport(targetUrl, {
+      requestInit: { headers },
+    });
   }
 
   // transport === "sse"

@@ -71,6 +71,7 @@ export async function saveMcpServers(servers: StoredMcpServer[]): Promise<void> 
 export async function probeMcpServer(config: MCPServerConfig): Promise<{
   ok: boolean;
   latencyMs: number;
+  actualTransport?: "stdio" | "sse" | "streamable_http";
   tools: Array<{ name: string; description?: string }>;
   error?: string;
 }> {
@@ -84,9 +85,11 @@ export async function probeMcpServer(config: MCPServerConfig): Promise<{
   try {
     const tools = await tempManager.listTools(config.id);
     const latencyMs = Date.now() - start;
+    const status = tempManager.getStatus(config.id);
     return {
       ok: true,
       latencyMs,
+      actualTransport: status?.transport || config.transport,
       tools: tools.map((t) => ({
         name: t.name,
         description: t.description,

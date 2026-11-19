@@ -5,6 +5,7 @@ import type {
   MCPClientStatus,
   MCPServerConfig,
   MCPToolCallResult,
+  MCPTransportType,
 } from "./types";
 
 const SESSION_EXPIRED_RE =
@@ -71,20 +72,13 @@ export class MCPClientManager {
 
     managed.connectPromise = (async () => {
       try {
-        const transport = await createClientTransport(managed.config);
-        const client = new Client(
-          {
-            name: `harness-mcp-client-${managed.config.id}`,
-            version: "1.0.0",
-          },
-          {
-            capabilities: {},
-          }
-        );
+        const { client, activeTransport } =
+          await this.connectWithAdaptiveTransport(managed.config);
 
-        await client.connect(transport);
         managed.client = client;
         managed.status.connected = true;
+        managed.status.transport = activeTransport;
+        managed.config.transport = activeTransport;
         managed.status.lastConnectedAt = Date.now();
         managed.status.lastError = undefined;
 
@@ -234,6 +228,76 @@ export class MCPClientManager {
       // 触发一次断开并重连重试
       await this.disconnect(serverId);
       return await fn();
+    }
+  }
+
+  /**
+   * 建立底层连接，针对 HTTP 类服务（SSE / Streamable HTTP）提供智能自适应协商与双向回退
+   */
+  private async connectWithAdaptiveTransport(
+    config: MCPServerConfig
+  ): Promise<{ client: Client; activeTransport: MCPTransportType }> {
+    if (config.transport === "stdio") {
+      const transport = await createClientTransport(config, "stdio");
+      const client = new Client(
+        {
+          name: `harness-mcp-client-${config.id}`,
+          version: "1.0.0",
+        },
+        { capabilities: {} }
+      );
+      await client.connect(transport);
+      return { client, activeTransport: "stdio" };
+    }
+
+    const primaryType: "sse" | "streamable_http" =
+      config.transport === "streamable_http" ? "streamable_http" : "sse";
+    const secondaryType: "sse" | "streamable_http" =
+      primaryType === "streamable_http" ? "sse" : "streamable_http";
+
+    let primaryError: unknown;
+    try {
+      const transport = await createClientTransport(config, primaryType);
+      const client = new Client(
+        {
+          name: `harness-mcp-client-${config.id}`,
+          version: "1.0.0",
+        },
+        { capabilities: {} }
+      );
+      await client.connect(transport);
+      return { client, activeTransport: primaryType };
+    } catch (err) {
+      primaryError = err;
+    }
+
+    // 协议协商回退：尝试 secondary 协议
+    try {
+      const fallbackTransport = await createClientTransport(
+        config,
+        secondaryType
+      );
+      const fallbackClient = new Client(
+        {
+          name: `harness-mcp-client-${config.id}`,
+          version: "1.0.0",
+        },
+        { capabilities: {} }
+      );
+      await fallbackClient.connect(fallbackTransport);
+      return { client: fallbackClient, activeTransport: secondaryType };
+    } catch (fallbackErr) {
+      const pMsg =
+        primaryError instanceof Error
+          ? primaryError.message
+          : String(primaryError);
+      const sMsg =
+        fallbackErr instanceof Error
+          ? fallbackErr.message
+          : String(fallbackErr);
+      throw new Error(
+        `[MCP] 连接服务 [${config.id}] 失败 (尝试 ${primaryType}: ${pMsg}；尝试 ${secondaryType}: ${sMsg})`
+      );
     }
   }
 }
