@@ -41,7 +41,7 @@ export function ContextUsageIndicator({
   const promptK = (promptTokens / 1000).toFixed(1);
   const windowK = Math.round(windowSize / 1000);
   const detailText = `${promptK}k / ${windowK}k（${percentage}%）`;
-  const tooltipLabel = `上下文用量：${detailText}（已用 ${promptTokens.toLocaleString()} / 上限 ${windowSize.toLocaleString()} tokens）`;
+  const tooltipLabel = `上下文窗口占用：${detailText}（当前会话单步活跃负载 ${promptTokens.toLocaleString()} / 上限 ${windowSize.toLocaleString()} tokens，非多步累计）`;
 
   return (
     <Hint label={tooltipLabel} side="top">

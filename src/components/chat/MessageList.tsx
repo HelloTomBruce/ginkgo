@@ -727,7 +727,7 @@ const MessageItem = React.memo(function MessageItem({
           <div
             data-testid="finops-cost-badge"
             className="flex items-center gap-1.5 font-mono text-[10px] text-foreground-faint select-none ml-auto"
-            title={`模型: ${finopsAnnotation.model || "未知"}\nPrompt: ${finopsAnnotation.promptTokens.toLocaleString()} tokens\nCompletion: ${finopsAnnotation.completionTokens.toLocaleString()} tokens`}
+            title={`本轮任务累计计费: ${finopsAnnotation.totalTokens.toLocaleString()} tokens（多步工具调用累加）\n输入: ${finopsAnnotation.promptTokens.toLocaleString()} · 输出: ${finopsAnnotation.completionTokens.toLocaleString()} tokens\n耗时: ${(finopsAnnotation.durationMs / 1000).toFixed(1)}s · 模型: ${finopsAnnotation.model || "默认"}`}
           >
             <span>⚡ {(finopsAnnotation.durationMs / 1000).toFixed(1)}s</span>
             <span>·</span>
