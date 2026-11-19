@@ -1,122 +1,124 @@
 # @openui-analytics/llm
 
-LLM 编排层：把 Vercel AI SDK 的流式文本生成、多数据源 MCP 工具循环、会话上下文治理与断线重连中继装配成
-一个可直接挂到 Next.js 路由的 `POST` 处理函数——app 侧只留 `src/app/api/analyze/route.ts` 薄壳注入依赖。
+LLM 编排层：把 Vercel AI SDK 的多步工具循环、多数据源 MCP 工具装配、投影式上下文治理与断线重连流中继装配为一个开箱即用的 Next.js 路由处理函数。
 
-## 包定位与依赖
+## 包定位
 
-- 依赖三个兄弟包：`@openui-analytics/datasources`（工具装配与 Certified 口径）、`@openui-analytics/methodology`（方法卡注入）、`@openui-analytics/chart-spec`（SpecChart schema）。
-- 外部依赖：`ai`（Vercel AI SDK：`streamText` / `createDataStreamResponse` / Data Stream Protocol v1）、`@ai-sdk/openai`、`@ai-sdk/anthropic`、`@openuidev/lang-core`（server 侧组件定义与 `createParser`）。
-- 依赖注入边界：数据源单例、方法论库、会话上下文存取、流中继中枢、认证口径库全部由 `createAnalyzeHandler(opts)` 注入，包内不自建单例（`streamHub`/`certifiedStore` 有缺省值）。
-- prompt 资产（`prompt.ts`/`serverLibrary.ts`）为包内部件，不从 `index.ts` 导出；`serverLibrary` 经子路径 `@openui-analytics/llm/serverLibrary` 暴露给需要校验一致性的测试与工具。
+- **应用核心编排层**：位于底层数据源、方法论、展示契约与宿主应用之间，负责驱动大模型的流式推理、工具调用循环、Prompt 组装与会话流控。
+- **依赖注入与无状态原则**：数据源实例、方法论知识库、会话上下文存储、流中继中枢等均通过构造选项注入，包内部不持有不可控的全局单例，保证高可测试性与多环境适配。
+- **与兄弟包的依赖关系**：
+  - 依赖 `@openui-analytics/datasources`：获取激活的数据源配置、工具绑定、Schema 结构卡及 Certified 认证口径；
+  - 依赖 `@openui-analytics/methodology`：获取方法卡索引与执行期方法论指导；
+  - 依赖 `@openui-analytics/chart-spec`：引用 Spec 图表契约作为服务端组件属性的强类型校验依据；
+  - 支撑 `@openui-analytics/components`：通过服务端组件定义与 Prompt Few-Shot 引导大模型正确产出符合前端组件库要求的 OpenUI DSL。
 
-## 目录结构
+---
 
-| 文件 | 职责 |
-|---|---|
-| `src/handler.ts` | 编排门面 `createAnalyzeHandler`：请求解析、模式分派、工具装配、上下文治理、双重终态、SSE 输出 |
-| `src/streamHub.ts` | `SessionStreamHub` 会话流中继：后台 Reader、分块缓冲、无缝重连重放、显式中止、终态 30s 保留 |
-| `src/context.ts` | 投影式上下文治理：窗口查表、token 估算、剪枝投影、摘要生成与缓存 |
-| `src/prompt.ts` | OpenUI Lang 提示词资产：few-shot 示例、组件清单、数据源指引、Schema Card / 方法索引 / Certified 段落拼接 |
-| `src/serverLibrary.ts` | server 侧 `defineComponent` 组件定义（LLM 选组件/模板的依据；`component: () => null` 不参与渲染） |
-| `src/crossSourceMap.ts` | 跨源联合映射（`config/cross-source-map.json`，完全用户维护，代码零硬编码源名） |
-| `src/reasoningStream.ts` | 推理思考流转换器：非标准字段（`reasoning_content`/`reasoning`/`thought`）映射为 `<think>` 标签 |
-| `src/index.ts` | 统一入口（含跨源配对解析的受控导出） |
+## 核心架构
 
-## 架构
-
-### 编排管线（handler.ts）
+编排层采用**请求门面分发 + 多源工具编排 + 投影式上下文治理 + 后台流式中继**的分层设计：
 
 ```
-POST(req)
- ├─ action=stop ──────────────► streamHub.abortTask(sessionId)（显式终止后台任务）
- ├─ reconnect=true 且有在途任务 ─► streamHub.createResponse()（重放缓冲 + 续接，不重复调用 streamText）
- ├─ 凭证守卫：自带 baseURL 必须同时自带 apiKey（防服务端 env Key 外泄到任意 URL）
- ├─ 无 Key ───────────────────► 返回合规 Data Stream 分块（InsightBox 引导去设置页）
- ├─ 协议分派：protocol=anthropic（/v1/messages）或缺省 openai 兼容（/chat/completions）
- │    └─ createReasoningFetch() 拦截上游 SSE + extractReasoningMiddleware(tagName:"think")
- │       统一兼容 DeepSeek/Qwen/GLM/Moonshot 等推理型模型
- ├─ 数据源：resolveActive(请求 sources ∩ 全局启用 ∩ 实际存在)；逐源装配工具
- │    └─ Promise.allSettled——单一源失败降级空工具集，不拖垮整个请求
- ├─ system prompt 组装：模式变体 + Schema Card 摘要（总量 8KB 预算，按提问相关度展开）
- │    + 方法索引 / execute 命中方法卡详情（≤2 张）+ Certified 口径段 + 跨源规则段
- ├─ 上下文治理（context.ts）：窗口查表 → 预算 → 剪枝投影 → 超限时摘要替换
- └─ createDataStreamResponse：streamText 多步工具循环
-      ├─ tools = 数据源工具 + cross_source_link（条件注册） + finish_task
-      ├─ onStepFinish：记录最后一步单步 promptTokens → 实时下发 context_usage
-      └─ onFinish：双重终态判定 + token 锚点回写（单步实测值）
++-------------------------------------------------------------------------------+
+|                    POST Handler (createAnalyzeHandler 编排门面)                |
+|  - 模式分派 (direct / plan / execute)  - 凭证与模型协议路由  - 断线续接探针路由   |
++---------------------------------------+---------------------------------------+
+                                        |
+    +-----------------------------------+-----------------------------------+
+    |                                                                       |
+    v                                                                       v
++-------------------------------+                       +-------------------------------+
+|   提示词系统与工具装配          |                       |    投影式上下文治理 (Context)   |
+| - 模式变体 Prompt             |                       | - 模型窗口查表 (8k-2M)        |
+| - Schema Card 预算控制注入     |                       | - 动态 Token 预算与水位计算    |
+| - 方法论索引 / 执行卡注入      |                       | - 工具历史剪枝 (保留调用骨架)  |
+| - Certified 口径与跨源映射注入|                       | - 历史消息滚动摘要与游标缓存   |
+| - 多源 MCP 工具 + 任务终止工具 |                       | - 服务端单步实测 Token 锚点    |
++---------------+---------------+                       +---------------+---------------+
+                |                                                       |
+                +---------------------------+---------------------------+
+                                            |
+                                            v
++-------------------------------------------------------------------------------+
+|                        AI SDK 多步工具循环 (streamText)                       |
+|           - onStepFinish: 记录单步消耗并实时推送 context_usage 状态           |
+|           - onFinish: 双重终态判定 (显式 finish_task vs 截断兜底)             |
++---------------------------------------+---------------------------------------+
+                                        |
+                                        v
++-------------------------------------------------------------------------------+
+|                        SessionStreamHub (流中继中枢)                          |
+|  - 独立后台 Reader 消费上游流  - 内存分块缓冲  - 多端断线瞬时重放与实时增量续接  |
+|  - 终态保留 30s 应对切页回看   - 任务显式中止与上游 Reader 立即取消           |
++-------------------------------------------------------------------------------+
 ```
 
-### 流中继（streamHub.ts）
+### 1. 编排门面（Handler）
+接收客户端 HTTP 请求，负责模式分派（直接分析 `direct`、方案规划 `plan`、执行规划 `execute`）、校验安全凭证、动态组装多源工具，并将底层 AI SDK 的流式响应转化为支持重连的数据流协议输出。
 
-服务端与客户端生命周期解耦的核心。每个会话任务由**服务端独立 Reader** 持续消费上游流：
+### 2. 独立流中继（SessionStreamHub）
+解耦客户端 HTTP 连接与服务端大模型推理过程。由服务端独立 Reader 持续消费上游 LLM 生成的分块并写入任务缓冲区。无论客户端是否切页、断网或刷新，任务均在服务端完整执行；重连时先瞬时重放历史分块，再无缝衔接增量推送。
 
-- **分块缓冲**：全部 SSE 分块存入 `task.chunks`，与订阅者数量无关；
-- **多订阅者广播**：`createResponse()` 先瞬时重放全部历史分块，再注册为实时订阅者续接增量；
-- **终态保留 30s**：任务完成后保留 30 秒供「刷新完成但错过直播」的页面做最后重放，之后自动清理（`scheduleCleanup`）；
-- **即刻中止**：`abortTask` 除 `abort()` 外还 `cancelUpstream()`——解除阻塞在 `read()` 上的 reader，避免上游继续烧 token；
-- **同会话新任务**：`registerAndConsume` 遇未完成旧任务先中止，保证一会话一任务。
+### 3. 投影式上下文治理（Context Engine）
+面对长会话与多步工具调用带来的 Token 膨胀，采用**无损历史存储 + 投影式按需压缩**机制：原始聊天记录在存储层完整保留，仅在发往大模型前动态生成投影切片（剪枝旧工具调用明细、为更早的历史对话生成滚动摘要）。
 
-### 上下文治理（context.ts）
+### 4. 服务端组件规范（Server Library）
+在服务端维护一组与前端展示组件库同名的强类型组件定义（Zod 强类型约束），作为生成 Prompt 组件清单与 JSON Schema 的唯一事实来源；客户端组件库侧则保持宽松容错，实现“提示词强约束、渲染侧宽容错”。
 
-投影式压缩：**存储层历史不动**，只对发往 LLM 的消息做投影。
+---
 
-1. 窗口解析：`resolveContextWindow` 按模型名前缀查表（钳制 8k–2M，缺省 128k），客户端 hint 优先；
-2. 预算：`computeBudget(窗口, maxOutputTokens)` 得出触发阈值 `triggerAt`；
-3. 估算：CJK ≈1.5 字符/token、其余 ≈4 字符/token（`estimateTextTokens`），锚点优先用服务端回写的 `lastPromptTokens` 实测值；
-4. 剪枝：超预算时从旧到新把 tool 结果替换为占位符（保留工具名与调用关联，`PRUNED_PLACEHOLDER`），最后一张 PlanReviewCard 受保护；
-5. 摘要：剪枝不够时对更早的消息生成 ≤2048 token 摘要注入 system，游标 `summaryUptoMessageId` 缓存复用；失败静默退化为纯剪枝，不阻塞分析。
+## 核心功能
 
-## 业务逻辑
+- **多模型协议与推理流兼容**：
+  - 支持标准 OpenAI 兼容协议与 Anthropic 原生协议；
+  - 内置推理流拦截器，将 DeepSeek、Qwen、Moonshot 等推理模型的非标准思考字段统一转换为标准 `<think>` 标签。
+- **数据源工具动态装配与容错**：
+  - 基于当前激活的数据源列表动态注入带有 `<源id>_` 前缀的查询工具；
+  - 采用并行容错加载（`Promise.allSettled`），单一数据源连接失败自动降级为空工具集，避免局部故障拖垮整个分析请求。
+- **跨源联合分析（Cross-Source Link）**：
+  - 动态检测用户配置的跨源实体映射表，当且仅当映射涉及的两端数据源均在会话中激活时，自动激活跨源联合查询工具与规则 Prompt。
+- **方法论与业务口径注入**：
+  - 在规划阶段自动注入方法论索引（受 1KB 严格字节预算约束）；
+  - 在执行阶段精准解析上一步计划中选定的方法卡，将对应的操作指南注入 Prompt；
+  - 结合认证查询知识库将高置信度的认证口径与 SQL 模板注入参考样例。
+- **任务状态与双重终态控制**：
+  - 提供显式 `finish_task` 工具与基于模型停止原因的自然终态双重兜底，确保分析流程始终具备明确的终态标记。
 
-### 双重终态机制
+---
 
-每轮分析必须有确定的结束信号，两条路径互补：
+## 业务逻辑与流转机制
 
-- **显式**：模型调用 `finish_task` 工具（`completed` / `insufficient_data` / `blocked`），下发 `task_finish(termination: "explicit")`，并约束「已输出报告/看板时只补一句闭环致辞，严禁重复输出」；
-- **自然兜底**：`onFinish` 时若无显式信号，按最后一步 `finishReason` 判定——`stop`/`undefined` → natural completed；`length` → `step_limit_reached`（截断警示）；其余 → 以该 reason 为 termination 记录。
+### 1. 分析请求流转时序
+1. **指令与连接预检**：检查是否为中止操作（`action=stop`）或断线续接操作（`reconnect=true`）；
+2. **凭证守卫**：客户端若指定了自定义 `baseURL`，必须同时提供对应的 `apiKey`，严格防止服务端预置的环境变量密钥被转发至不可信地址；
+3. **数据源激活与工具注入**：比对会话请求的数据源 ID 与全局已启用的有效数据源，装配前缀工具；按需追加 `cross_source_link` 工具与 `finish_task` 工具；
+4. **Prompt 拼装与预算控制**：
+   - 提取各数据源 Schema Card 摘要，设定 8KB 总预算并根据提问相关度动态展开；
+   - 注入当前分析模式变体、方法论指引、认证口径与跨源配对规则；
+5. **上下文投影与剪枝**：基于当前模型的上下文窗口计算安全水位，超限时从旧到新将工具返回结果精简为占位符；若仍超限则激活历史对话滚动摘要；
+6. **启动流式生成并挂载中继**：启动后台 Reader 写入缓冲区，同时向客户端返回流式响应通道。
 
-### 断线重连时序
+### 2. 断线重连与流重放协议
+- 客户端切走或刷新时，前端连接关闭，但服务端的流任务保持独立消费并持续落入缓冲区；
+- 用户返回会话后，前端先通过探针接口查询当前会话的任务状态；
+- 若存在活跃任务或处于 30 秒终态保留窗口内，前端发起重连请求（`reconnect=true`）；
+- 服务端中继中心首先瞬时向响应管道推送全部历史已生成分块，随后注册为活跃订阅者继续接收后续生成的增量 Token；
+- 避免了页面刷新导致推理中断、重复扣费或前端显示残缺。
 
-1. 客户端脱钩（切会话/刷新）后服务端任务继续后台生成并缓冲；
-2. 回切时客户端探针 `GET /api/analyze?sessionId=` → `{ running, hasTask }`（`running` 由 `POST.isSessionRunning` 提供，`hasTask` 覆盖终态 30s 保留窗）；
-3. 判定需续接则 `reload({ body: { reconnect: true } })` → handler 命中 `streamHub.hasTask` → `createResponse` 重放历史分块 + 续接增量；
-4. 不满足条件才发起新请求；同会话新请求自动中止旧任务。
+### 3. Token 锚点实测回写原则
+系统坚决杜绝使用多步工具调用累加的虚高 Token 计数作为判断依据。在多步工具循环中，系统在每一步结束时（`onStepFinish`）精确记录该单步的实际输入 Token 消耗，并在流终态时将此单步实测值作为唯一事实锚点回写至会话元数据，确保下一次上下文治理判定拥有最精确的依据。
 
-### token 锚点归属
+### 4. 双重终态判定机制
+- **显式终态**：LLM 完成分析并产出结论后调用 `finish_task` 工具（状态涵盖成功完成、数据不足、遇到阻碍等），系统下发带有显式终态标签的事件，并约束模型在总结中不再重复输出冗余的大型图表与表格；
+- **自然截断兜底**：若模型未调用工具即结束输出，系统根据最后的 `finishReason` 进行兜底推断（正常停止视为自然完成，达到步数或 Token 限制则标记为超限截断警示）。
 
-`context_usage` 与 `lastPromptTokens` 锚点**只由服务端按最后一步单步实测值**写入（`lastStepPromptTokens`，不能使用 AI SDK 多步工具调用的累加值——多步累计会让剪枝判定与展示虚高）。客户端只消费展示，不持久化。
+---
 
-### 跨源联合分析
+## 扩展指南
 
-能力成立无独立开关，由配置驱动：`config/cross-source-map.json` 存在映射、且映射双侧源 id 都在当前激活源集合内时，`resolveCrossSourcePairs` 才返回配对——此时才注册 `cross_source_link` 工具、注入提示词规则段；会话级取消勾选任一侧源即自动关闭。映射缺失时工具返回 `confidence=none` 并提示补配置，禁止模型编造关联。
-
-## 功能清单
-
-| 导出 | 用途 |
-|---|---|
-| `createAnalyzeHandler(opts)` | 编排门面，返回 Next.js POST 处理函数；opts：`datasources`（必选）、`methodology`、`sessions`、`streamHub`、`certifiedStore` |
-| `POST.isSessionRunning(sessionId)` | 函数属性：会话是否有 running 任务（探针 `running` 字段） |
-| `POST.abortSession(sessionId)` | 函数属性：显式中止会话后台任务 |
-| `POST.streamHub` | 函数属性：中继实例（探针 `hasTask` 等） |
-| `SessionStreamHub` / `defaultStreamHub` | 会话流中继类与全局单例 |
-| `SessionStreamTask` | 任务记录类型（sessionId/chunks/subscribers/status/abortController） |
-| `resolveCrossSourcePairs(activeIds)` | 依配置解析当前成立的跨源配对（`/api/datasources` 的 features 标志同源判定） |
-| `createReasoningFetch` / `createReasoningContentTransformStream` | 上游 SSE 推理字段标准化拦截 |
-| 类型：`AnalyzeHandlerOptions` / `AnalyzeRequestBody` / `SessionContextMeta` / `SessionContextStore` | 注入契约与请求体契约 |
-
-## 如何扩展
-
-- **新增展示组件/布局模板（三处联动，勿漏）**：app 侧组件实现 + `serverLibrary.ts` 加 server def（`description` 写清适用场景，是 LLM 选型的依据）+ `prompt.ts` 组件清单/few-shot——后者受 `promptExamples.test.ts` 守护：示例代码经 `createParser` 全量解析，并与 serverLibrary 组件名一致性校验。
-- **新增 prompt 段落**：在 `prompt.ts` 以纯函数段（如 `certifiedQueriesSection`）接入对应模式变体，参数化内容不写死数据源名。
-- **调整治理策略**：窗口表 / 预算系数 / 估算常数集中在 `context.ts` 顶部，改后跑 `context.test.ts` 锁定行为。
-
-## 测试
-
-`pnpm test`（vitest）。守护重点：
-
-- `handler.test.ts`（31 用例）：双重终态识别、流重连（重连不重复调用 streamText）、步数预算钳制、凭证守卫、模式分派、Schema Card 预算、跨源工具条件注册等；
-- `streamHub.test.ts`：注册/重连重放/中止即刻生效/终态保留；
-- `context.test.ts`：窗口查表、剪枝投影、摘要游标复用、截断保护；
-- `promptExamples.test.ts`：few-shot 示例全量解析 + 与 serverLibrary 组件名一致性；
-- 其余：`prompt.test.ts`（段落拼接）、`certifiedPrompt.test.ts`、`crossSourceMap.test.ts`、`reasoningStream.test.ts`（非标准字段映射）。
+- **添加新分析模式变体**：
+  在 Prompt 模块中定义新的模式指令函数，并在入口 Handler 中补充路由判断分支。
+- **扩展服务端组件定义（Server Library）**：
+  在 `serverLibrary` 中增加与前端展示库同名的新组件 Zod 描述（写明适用场景），并在 Prompt 资产中补充对应 Few-Shot 示例（两者有一致性测试严格守护）。
+- **调整上下文压缩策略**：
+  在上下文模块中更新模型窗口映射字典、调整触发剪枝的水位比例或修改单步工具保留阈值。

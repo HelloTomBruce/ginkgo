@@ -1,106 +1,115 @@
 # @openui-analytics/datasources
 
-OpenUI 的数据源配置/连接/工具装配层：把任意 MCP 远端、数据库、本地 CLI、CSV/Excel 文件统一装配为带 `<源id>_` 前缀的 MCP 工具集，并在 SQL 执行路径上叠加只读守卫管线、结果集缓存、EXPLAIN 成本熔断、Schema Card 结构卡与 Certified Queries 语义层。
+OpenUI Analytics 的数据源配置、连接、工具装配与安全执行底座：将任意 MCP 远程服务、标准关系型数据库、本地命令行工具以及本地文件统一封装为带有前缀隔离的 MCP 工具集，并在执行路径上集成词法与方言双重只读守卫、结果集缓存、EXPLAIN 成本熔断、Schema Card 结构摘要及 Certified Queries 业务语义层。
 
-## 包定位与依赖
+## 包定位
 
-| 维度 | 说明 |
-|---|---|
-| 定位 | 数据源配置读写、四类 kind 连接装配（键控缓存）、工具绑定、守卫网关；由 app 侧 `src/lib/datasources.ts` 以 `config/datasources.json` 为配置路径创建 globalThis 单例，`@openui-analytics/llm`（workspace 依赖）注入使用并装配 LLM 工具 |
-| 工作区依赖 | 无（不依赖其他 workspace 包，纯自包含） |
-| 外部依赖 | `@modelcontextprotocol/sdk`（MCP Client/Server、InMemory/StreamableHTTP/SSE/stdio 传输）、`pg`、`mysql2`（惰性加载，缺失时给出降级提示）、`@clickhouse/client`、`@duckdb/node-api`（file 源进程内引擎）、`exceljs`（xlsx 解析）；SQLite 走 Node 内置 `node:sqlite`（≥22.13），零第三方驱动 |
-| peerDependencies | `ai`（optional）：仅子路径 `adapters/ai` 使用，主入口 client-safe（前端仅 import type） |
-| 落盘 | `config/datasources.json`（源配置 v3）、`data/files/<sourceId>/`（原始文件 + `analytics.duckdb` + `manifest.json`）、`data/schema-cards/<sourceId>.json`（结构卡） |
+- **统一数据抽象与网关层**：向下连接多类型异构数据源（HTTP/SSE MCP、Stdio CLI、Postgres、MySQL、SQLite、ClickHouse、DuckDB 本地文件等），向上对外暴露标准化 MCP 工具与 Vercel AI SDK 工具集合。
+- **只读查询安全门禁**：承担所有数据查询的安全防护职责，杜绝任何数据越权修改、高危 DDL、多语句注入或超大查询引发的计算资源耗尽。
+- **与兄弟包的依赖关系**：
+  - 作为独立底层包，不依赖其他 workspace 包；
+  - 为 `@openui-analytics/llm` 提供数据源管理能力、可用工具绑定及上下文所需的 Schema Card 和认证口径；
+  - 核心只读校验逻辑与 MCP 结果解析纯函数被应用端服务端逻辑广泛复用。
 
-## 目录结构
+---
 
-| 目录/文件 | 职责 |
-|---|---|
-| `src/index.ts` | 统一入口（client-safe）：config/manager + gateway/certified 全量 re-export |
-| `src/manager.ts` | 门面 `createDatasourceManager`：配置读写（委托 config 纯函数）、四类 kind 连接装配与键控缓存、`tools()` 工具绑定、`mergeToolSets`；`describeDynamicSource` 产出脱敏描述符 |
-| `src/config.ts` | 配置模型 v3 纯函数层：`loadConfigFile`/`writeConfigFile`（tmp+rename 原子写）、`validateSourceConfig`、`upsertSource`/`deleteSource`、脱敏 `maskUrl`/`maskHeaders`/`maskParams`/`maskConnectionString` |
-| `src/connectors/http.ts` | `connectHttpMcp`：Streamable HTTP 优先，失败降级 SSE |
-| `src/connectors/stdio.ts` | `connectStdioMcp`（按 command+args 拉起子进程）、`probeStdioCli`（真实握手探活） |
-| `src/connectors/db/sqlGuard.ts` | SQL 词法守卫：`assertReadOnlySql`（仅 SELECT/WITH、禁多语句与 DDL/DML/高危函数）、`enforceRowLimit`（剥离字面量/注释后补 `LIMIT 200`）、`guardReadOnlySql`；`DbDialectClient` 客户端契约 |
-| `src/connectors/db/dialect.ts` | `DbDialect` 接口 + `DIALECTS` 用户配置注册表（postgres/mysql/sqlite/clickhouse；duckdb 仅供 file 连接器内部） |
-| `src/connectors/db/*Dialect.ts` | 5 个方言：pg（专用连接 + `BEGIN READ ONLY` + `statement_timeout 5s`）、mysql（`START TRANSACTION READ ONLY` + `max_execution_time`）、sqlite（`readOnly:true` 打开）、clickhouse（请求级 `readonly=1`）、duckdb（`access_mode=READ_ONLY` + `SET disabled_filesystems` 禁读本地文件系统） |
-| `src/connectors/db/dbMcpServer.ts` | `createDbMcpServer`：进程内 MCP Server，暴露 `execute_sql`/`list_tables`/`describe_table`；错误一律以 `isError` 内容返回，绝不抛出 |
-| `src/connectors/file/fileStore.ts` | CSV/XLSX/Parquet/JSON/NDJSON → DuckDB 完全覆盖式灌库（staging 构建 + 整体替换）+ manifest 读写；`isSupportedUpload`/`sanitizeTableName` |
-| `src/gateway/mcpGateway.ts` | `McpGateway`：统一查询代理（流经共享守卫管线）+ 两阶段 Schema 发现（`listCatalogs`/`describeTableResource`） |
-| `src/gateway/queryPipeline.ts` | `executeSqlWithGuards`：守卫管线唯一事实源（manager 工具绑定与 gateway 共用） |
-| `src/gateway/queryCache.ts` | `QueryCacheManager`（TTL + LRU）：`normalizeSqlForCache`（字面量/引用标识符原文保留）+ `computeQueryHashKey`（sha256 全量哈希，不截断） |
-| `src/gateway/explainGuard.ts` | `dryRunExplain`：按方言拼 EXPLAIN、递归解析执行计划识别全表扫描与扫描行数；`SQL_FAULT_RE` 拦截非法 SQL，基础设施异常降级放行 |
-| `src/gateway/types.ts` | `ExplainOptions`/`ExplainCostReport`/`QueryResultWithMeta`/`ExecuteQueryArgs` 等网关契约 |
-| `src/schema/card.ts` | 结构卡纯函数（`buildSchemaCard`/`buildMcpToolCard`/`renderCardForPrompt`/`scoreTableRelevance`）与采集器（`collectSchemaCard`/`collectTableProfile`，经 `SchemaProbe` 抽象，测试可注入假探针） |
-| `src/schema/store.ts` | 结构卡落盘：`readSchemaCard`（坏卡返回 null 触发重建）/`writeSchemaCard`（64KB 上限防线）/`deleteSchemaCard` |
-| `src/schema/cardLifecycle.ts` | `createSchemaCardLifecycle` 状态机：`ensure`（惰性建）/`invalidate`（标脏重建）/`markDirty`+`pumpIfDirty`/`refresh`/`drop`，含失败熔断与按源串行链 |
-| `src/certified/certifiedStore.ts` | `CertifiedQueryStore`：认证查询知识库（文件持久化 + mtime 热加载 `reloadIfChanged` + 内存索引） |
-| `src/certified/semanticRouter.ts` | `tokenizeText`（中英词元）+ `matchCertifiedQueries`（加权召回与置信度分档） |
-| `src/certified/types.ts` | `CertifiedQuery`/`CertifiedQueryParam`/`CertifiedQueryMatch` 类型 |
-| `src/parseToolResult.ts` | `parseMcpToolResult`：MCP 结果统一解析（isError 透传、text 拼接、JSON 尝试解析），manager 与 ai 适配器共用 |
-| `src/adapters/ai.ts` | `toAiTools`：把 `McpToolBinding` 包装为 Vercel AI SDK `CoreTool`（execute 出错返回 `{error, isError:true}` 而非抛出） |
+## 核心架构
 
-## 架构
+数据源层采用**门面统一收口、连接器分发、守卫管线串联、语义增强辅助**的分层设计：
 
 ```
-manager 门面 createDatasourceManager（配置缓存 + 连接缓存，全实例私有状态）
-  ├─ connector 传输层：http-mcp（connectHttpMcp）｜stdio-cli（connectStdioMcp）
-  │                    db（DIALECTS 方言 + createDbMcpServer 进程内 MCP，经 InMemoryTransport 自连）
-  │                    file（fileStore 灌库 + duckdbDialect 直连 analytics.duckdb）
-  ├─ MCP 工具装配：tools() 把 listTools 结果包成 McpToolBinding（注册名 <id>_原名，call 走 originalName）
-  ├─ gateway 守卫管线 executeSqlWithGuards：词法 sqlGuard + 方言引擎级只读双保险
-  │                            → queryCache 结果集缓存 → dryRunExplain 成本门禁 → 执行 → 回写缓存
-  ├─ schema 结构卡：cardLifecycle 状态机（惰性生成/标脏重建/失败熔断），llm 包经 renderCardForPrompt 注入 prompt
-  └─ certified 语义层：CertifiedQueryStore 知识库 + matchCertifiedQueries 语义路由，llm 包按置信度注入
++--------------------------------------------------------------------------+
+|                     createDatasourceManager (门面)                        |
+|  - 配置读写与动态脱敏  - 连接键控缓存与会话自愈  - MCP 工具装配 (带前缀绑定)     |
++------------------------------------+-------------------------------------+
+                                     |
+    +--------------------------------+--------------------------------+
+    |                                                                 |
+    v                                                                 v
++-------------------------------+                   +-------------------------------+
+|       连接器层 (Connectors)     |                   |       安全网关与执行管线        |
+| - HTTP / SSE MCP Client       |                   | - 词法 SQL 只读断言            |
+| - Stdio CLI 子进程连接器       |                   | - 方言引擎级只读保障            |
+| - 数据库进程内 MCP Server      |                   | - 结果集全量 Hash 缓存         |
+|   (PG, MySQL, SQLite, CH)     |                   | - EXPLAIN 成本分析与熔断门禁   |
+| - 文件灌库 (DuckDB 进程内引擎)  |                   | - 行数上限强制注入 (LIMIT 200) |
++-------------------------------+                   +---------------+---------------+
+                                                                    |
+    +---------------------------------------------------------------+
+    |
+    v
++-------------------------------------------------------------------+
+|                           语义与上下文增强                         |
+| - Schema Card: 两阶段元数据探查、惰性生成、错误标脏重建状态机        |
+| - Certified Queries: 业务认证口径知识库、加权分档语义路由召回       |
++-------------------------------------------------------------------+
 ```
 
-- **工具如何暴露给 LLM**：`adapters/ai.ts` 的 `toAiTools(bindings)` 把绑定转成 ai-sdk tool（工具定义以 MCP Server 为唯一事实来源），llm 包 `handler.ts` 再用 `mergeToolSets` 合并多源工具集（同名冲突跳过并告警）。
-- **配置来源**：用户在「设置 → 数据源」页或 `config/datasources.json` 配置，代码零硬编码数据源（项目铁律）——`config.ts` 只定义 schema 与校验/脱敏，不含任何源 id/名称。
-- **双保险只读**：词法黑名单只是体验层（给出明确「安全限制」报错）；硬约束在各方言引擎级（pg 只读事务、sqlite readOnly 打开模式、clickhouse readonly=1、duckdb READ_ONLY）。
+### 1. 统一管理门面与连接缓存
+通过管理器单例提供配置读写、连接生命周期托管及工具绑定的统一出口。连接实例基于配置内容的确定性序列化结果（Config Key）进行键控缓存；当配置更新时，旧连接自动销毁回收，防止资源泄露。
 
-## 业务逻辑
+### 2. 异构连接器传输抽象
+- **远程 MCP**：优先使用 Streamable HTTP 传输协议，在网络异常或服务端不支持时自动降级至 SSE 传输；
+- **命令行工具（Stdio）**：按指定命令与参数拉起子进程并通过标准输入输出流通信，支持握手探活；
+- **关系型数据库**：将各类数据库方言客户端统一包装为进程内 MCP Server，对外暴露标准 `execute_sql`、`list_tables`、`describe_table` 契约，屏蔽不同底层驱动差异；
+- **本地文件存储**：利用 DuckDB 进程内分析引擎，将用户上传的文件（CSV、Excel、Parquet、JSON）全量导入独立的 DuckDB 实例中供 SQL 查询。
 
-- **数据源激活与工具装配**：`resolveActive(ids)` 过滤 enabled 源 → llm 包对每个激活源调 `manager.tools(source)` → `getOrConnectEntry`（`configKey`=完整配置 JSON，配置变更即关闭旧连接并 `markDirty` 结构卡）→ `withSessionRetry` 对 http 源的「Session not found」类错误自愈（驱逐→重连→重试一次）→ `cardLifecycle.ensure` 惰性建卡。
-- **一次查询的守卫管线**（`executeSqlWithGuards`，工具绑定对 `execute_sql`/`read_query` 透明接入）：① `assertReadOnlySql` 词法只读断言 → ② `computeQueryHashKey` 缓存探查（`skipCache` 跳过）→ ③ `dryRunExplain` 成本门禁（有 `dialectClient` 且非 `bypassExplain`；`SQL_FAULT_RE` 命中即拦截回传自愈提示，`exceedsBudget` 触发熔断，EXPLAIN 不支持/基础设施异常降级放行）→ ④ `execute()` 真实执行（db 源再过方言 `readOnlyQuery`）→ ⑤ `cache.set` 回写。执行报错命中 `SCHEMA_MISS_RE`（列/表缺失类文案）→ `cardLifecycle.invalidate` 标脏后台重建。
-- **缓存命中逻辑**：`normalizeSqlForCache` 折叠结构部分的空白与大小写，但字符串字面量与双引号标识符原文保留参与哈希（防 `'ABC'`/`'abc'` 错配）→ 键 `sourceId:sqlHash:paramsHash` 全量 sha256；默认 TTL 15 分钟、LRU 500 条；`delete`/`close`/`ingestFiles`/`removeFiles` 联动 `queryCache.invalidate(sourceId)`；manager 与 `McpGateway` 共享同一实例保证失效一致。
-- **Certified Queries 语义路由**：`store.reloadIfChanged()` 按配置文件 mtime 热加载（改 `config/certified-queries.json` 免重启）→ `matchCertifiedQueries(userQuery, activeSourceIds, store, limit=3)`：标签命中 +3.0 / 标题 +2.5 / 描述与公式 +1.0 加权，归一化得分分档 ≥0.85 `exact`（强约束绑定）、0.6–0.85 `high`（Few-Shot 参考）、≥0.35 `medium`、其余 `low` 仅记录不注入。
-- **文件数据源灌库**：`ingestFiles` → `queryCache.invalidate` → 按源串行链（`ingestChains` 防并发上传竞态）→ 关闭持有旧库句柄的缓存连接 → `ingestSourceFiles` 在 staging 目录构建（文件名清洗落盘 `raw/`；xlsx 经 `excelToCsvSpecs` 每 sheet 转临时 CSV，首行为表头；parquet/json 走 DuckDB 原生 `read_parquet`/`read_json_auto`；CSV 走 `read_csv_auto`；表名 `sanitizeTableName` 清洗去重、路径经绑定参数防注入）→ 写 `manifest.json` → 整体 rename 替换（失败旧数据原样保留）→ `cardLifecycle.invalidate`。
+### 3. 多层拦截的安全查询管线
+所有经过数据源系统的 SQL 查询均流经同一套只读安全管线：词法静态语法分析、结果集缓存查表、执行计划预检（EXPLAIN）、数据库引擎级只读事务执行及行数强制截断。
 
-## 功能清单
+---
 
-| 门面 API（`createDatasourceManager` 返回） | 用途 |
-|---|---|
-| `readConfig`/`writeConfig`/`validate`/`upsert`/`delete`/`get`/`list` | 配置 CRUD（`list` 经 `describeDynamicSource` 脱敏：凭证只暴露存在性/掩码形态） |
-| `connect`/`tools`/`close`/`health` | 连接装配（键控缓存）、工具绑定（`<id>_` 前缀）、关闭（联动清缓存）、探活（3s 超时） |
-| `resolveActive(ids)` | 激活源摘要（`undefined` = 全部 enabled 源） |
-| `ingestFiles`/`filesManifest`/`removeFiles` | 文件源灌库（完全覆盖语义）/manifest 读取/落盘清理 |
-| `getSchemaCard`/`refreshSchemaCard` | 结构卡读取（`stale` 标脏标记）/手动重建（按源串行） |
-| `getDialectClient`/`getQueryCache`/`gateway` | 供 `McpGateway` 与 EXPLAIN 预检的内部能力出口 |
-| `mergeToolSets(target, incoming, sourceId)` | 多源工具集合并（同名冲突跳过并告警） |
+## 核心功能
 
-| 子路径 exports | 用途 |
-|---|---|
-| `.` | 主入口（client-safe）：config/manager + gateway/certified 全部导出 |
-| `./adapters/ai` | `toAiTools`（ai-sdk CoreTool 适配，optional peer `ai`） |
-| `./schema/card` | `SchemaCard` 类型 + 渲染/评分纯函数（client-safe） |
-| `./schema/store` | 结构卡落盘读写（含 `node:fs`，仅服务端引入） |
-| `./sqlGuard` | `assertReadOnlySql`/`enforceRowLimit`/`guardReadOnlySql`（app 侧 `dashboardRefresh` 复用） |
-| `./parseToolResult` | `parseMcpToolResult`（specMaterialize/distinctValues 等复用） |
-| `./gateway` | `McpGateway` 类 |
-| `./certified` | `CertifiedQueryStore` 类 |
+- **动态多源配置管理**：
+  - 支持增删改查四类数据源配置（动态存储于本地配置文件）；
+  - 提供安全凭证脱敏能力，对外展示时自动遮蔽密码、Token、私密连接串与自定义 Headers，避免敏感凭证泄漏。
+- **全方位只读安全防护**：
+  - 词法守卫静态检查：仅放行 `SELECT` 及 `WITH` 子句，禁止任何形式的 `INSERT`、`UPDATE`、`DELETE`、`DROP`、`ALTER` 等写操作及多语句拼接；
+  - 引擎级物理约束：为连接施加底层物理限制（如 Postgres 只读事务与超时、SQLite 只读连接、DuckDB 禁用本地文件系统读写）。
+- **智能查询缓存与成本熔断**：
+  - 基于 SQL 归一化与 SHA-256 全量哈希的高性能 LRU 结果集缓存；
+  - EXPLAIN 预检机制：对执行计划进行语法树递归分析，识别全表扫描风险与巨量数据读取，在耗尽数据库资源前主动熔断并回传优化建议。
+- **本地文件全量导入与表名清洗**：
+  - 支持多 Sheet 的 Excel 自动拆分转制、CSV 自动类型推断、Parquet/JSON 原生解析；
+  - 采用 Staging 目录构建与原子替换机制，确保文件更新过程中的事务完整性。
+- **结构摘要卡片（Schema Card）**：
+  - 自动探查数据源表结构、字段类型、取值枚举及统计特征，生成供 LLM Prompt 消费的精简结构卡；
+  - 包含按源串行、失败熔断、遇到查询缺失异常时自动标脏重建的完整生命周期管理。
+- **认证查询与语义路由（Certified Queries）**：
+  - 管理经业务认证的标准指标口径与 SQL 模板；
+  - 提供基于中英文词元加权匹配的语义路由器，将用户自然语言提问精准路由至经过核准的查询模板上。
 
-## 如何扩展
+---
 
-- **新增一种数据源 kind**：`config.ts` 加 `XxxSourceConfig` 接口并在 `normalizeSourceEntry`/`validateSourceConfig` 加分支 → `manager.ts` 的 `configKey`/连接装配/`describeDynamicSource` 加分支 → `config.test.ts` 补校验用例。
-- **新增一种数据库方言**：`connectors/db/` 建文件实现 `DbDialect`（`connect`/`listTables`/`describeTable`/`readOnlyQuery`/`ping`），`readOnlyQuery` 必须先 `guardReadOnlySql` 再叠加引擎级只读保障，然后 `dialect.ts` 的 `DIALECTS` 注册一行（内部专用型如 duckdb 则不注册，仅供特定连接器使用）。
-- **新增 Certified Query**：`config/certified-queries.json` 追加 `{ id, sourceId, title, description, sqlTemplate, allowedParams, tags }`（`sourceId` 可为 `"*"` 全源可用；运行时也可 `CertifiedQueryStore.upsert`），语义路由按 `tags`/`title` 词元命中，写清业务口径描述即可被召回。
+## 业务逻辑与流转机制
 
-## 测试
+### 1. 零硬编码数据源原则
+系统内部严禁在代码中写死任何具体数据源名称、ID 或业务前缀。所有数据源必须由外部配置动态注入，代码仅通过数据源的抽象类型（Kind）与特性（Features）进行调度，保证业务通用性与环境无关性。
 
-`vitest`（`vitest.config.ts`，node 环境，`src/**/*.test.ts`），`pnpm test` 运行。覆盖：
+### 2. 查询守卫执行时序
+当调用数据执行工具时，请求严格遵循以下步骤：
+1. **词法只读断言**：剥离 SQL 中字符串字面量与注释内容，检测是否包含修改操作、多语句分号分隔或危险系统函数，若不合规立即阻断并抛出友好安全提示；
+2. **强制分页封顶**：自动为末尾缺少限制的查询追加 `LIMIT 200`，字面量内含有 limit 单词时不误伤；
+3. **缓存探查**：将 SQL 语法关键字标准化并保留字面量大小写生成唯一 Hash Key，命中缓存直接返回；
+4. **执行计划成本预检**：通过目标方言的 `EXPLAIN` 指令获取开销，若分析器判断扫描行数超出安全阈值或语法非法，阻断执行并向 LLM 返回自愈改进建议；
+5. **引擎安全执行**：在只读事务或物理只读会话中执行真实查询；
+6. **缓存回写与自愈触发**：成功结果回写至 LRU 缓存；若执行报错且命中表名/列名缺失特征，自动触发对应数据源的 Schema Card 标脏重建。
 
-- **守卫绕过攻击样例**（`dialect.test.ts`）：多语句分号注入、前导空白/注释伪装 DELETE、`SELECT ... INTO` 隐式建表、CTE 内嵌写操作、`pg_sleep`/`pg_terminate_backend` 资源攻击、`FOR UPDATE/SHARE` 行级锁、`set_config` 会话篡改，以及「字面量含 limit」不误伤封顶与标识符片段不误判。
-- **方言层**（`dialects.test.ts` 覆盖 pg/mysql/`DIALECTS` 注册表 + `sqlite`/`clickhouse`/`duckdb` 各 test）：pg 只读四步落在同一专用连接、mysql 保留字反引号转义与 `?` 占位符透传、duckdb BigInt 值归一化与「绕过词法层也无法写」引擎级回归、clickhouse URL 解析与连接 fail-fast 等。
-- **缓存**（`queryCache.test.ts` + `manager.gateway.test.ts`）：归一化哈希一致性、字面量/标识符大小写不共享键、全量哈希防碰撞、TTL 过期、LRU 淘汰、按源失效、文件源透明接入（空格换行差异仍命中）。
-- **成本门禁**（`explainGuard.test.ts`）：pg/mysql 执行计划解析与全表扫描识别、语法错误拦截、params 绑定透传防误判、EXPLAIN 不受支持时优雅降级放行。
-- **其余**（`mcpGateway`/`manager*`/`card`/`store`/`certifiedStore`/`semanticRouter`/`ai`/`config`/`fileStore`/`http` 各 test）：网关两阶段发现、Schema Card 生命周期与删除联动、语义路由分档、`toAiTools` 错误兜底、配置 v3 校验与脱敏、灌库与 manifest、HTTP 传输降级。
+### 3. 文件数据源 Staging 替换逻辑
+当用户重新上传或删除文件时，系统启动按源串行队列以避免并发竞态。先在独立暂存目录构建临时 DuckDB 数据库并写入清单描述文件；构建成功后关闭旧连接句柄，将暂存目录原子重命名替换至生产目录，并同步清空该数据源所有的查询结果集缓存与旧的 Schema Card。构建失败时旧数据保持原样，确保高可用。
+
+### 4. 认证口径的分级召回逻辑
+语义路由器对用户自然语言提问与认证查询标题、标签、描述进行分词并计算加权匹配度。匹配结果根据置信度严格分档：
+- **精确命中（Exact）**：作为强约束直接绑定；
+- **高置信度（High）**：作为 Few-Shot 参考样例注入提示词；
+- **中置信度（Medium）**：作为辅助上下文提及；
+- **低置信度（Low）**：静默舍弃，不侵占 LLM 的上下文 Token 预算。
+
+---
+
+## 扩展指南
+
+- **新增数据源连接类型**：在配置层定义对应的配置结构与校验规则，在管理门面的连接分支中接入新协议客户端，并补充脱敏逻辑。
+- **新增数据库方言支持**：实现标准数据库方言接口（涵盖连接建联、表列表探查、字段描述提取、只读事务执行及 Ping 探活），在连接前置入通用只读安全检查，并将新方言登记至方言注册表中。
+- **新增认证查询口径**：在认证查询配置文件中追加条目，注明适用的数据源 ID、指标描述、SQL 模板与业务标签，系统热加载机制将在文件变更后免重启自动生效。

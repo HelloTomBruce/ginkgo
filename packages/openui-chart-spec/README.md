@@ -1,84 +1,96 @@
 # @openui-analytics/chart-spec
 
-DashboardSpec 2.0 声明式状态树 + ChartSpec 图表语义契约 + RFC 6902 JSON Patch 增量编辑引擎——monorepo 最底层的 zod-only spec 契约包。
+DashboardSpec 2.0 声明式状态树 + ChartSpec 图表语义契约 + RFC 6902 JSON Patch 增量编辑引擎——monorepo 底层的纯 Schema 契约包。
 
-## 包定位与依赖
+## 包定位
 
-- **monorepo 中的角色**:最底层 spec 契约层,只定义「看板长什么样、数据怎么取」的封闭词汇表,不含渲染与取数实现。被 `@openui-analytics/components`(`SpecChart`、`charts/registry.tsx`、`DashboardSpecRenderer.tsx`)与 `@openui-analytics/llm`(`src/serverLibrary.ts`)以 `workspace:*` 依赖;自身不依赖任何其他 workspace 包。
-- **唯一运行时依赖 zod(4.6.5)**:LLM 输出不可信,一切 spec 必须经 zod 封闭词汇表 + 上限约束校验后才进入渲染/物化链路,schema 即文档、校验即解析;底层包不再引入第二个运行时依赖,保证契约层零膨胀。
-- ESM(`"type": "module"`),`exports` 直接指向 `./src/index.ts` 源码,无独立构建产物。
+- **Monorepo 基础契约层**：只定义「看板长什么样、数据怎么取」的封闭词汇表与结构规范，不包含渲染与取数实现。作为纯契约被 `@openui-analytics/components`（展示渲染）与 `@openui-analytics/llm`（模型生成与提示词约束）直接依赖；自身不依赖任何其他 workspace 包。
+- **Zod 封闭词汇表驱动**：面向 LLM 输出不可信的场景，所有 Spec 必须经 Zod 封闭词汇表与字段上限约束严格校验后方可进入下游物化与渲染，避免任意表达式注入与不可预期的结构变形。
+- **零膨胀原则**：仅保留 Zod 为唯一运行时依赖，保证类型安全与轻量化。
 
-## 目录结构
+---
 
-| 文件 | 职责 |
-|---|---|
-| `src/index.ts` | 包入口 + ChartSpec(单图表)契约:封闭词汇表枚举、`CHART_SPEC_LIMITS` 上限常量、`ChartSpecSchema` 主契约、`parseChartSpec`/`specToGroupByAndMetrics`;尾部 `export *` 聚合另两个模块 |
-| `src/dashboardSpec.ts` | DashboardSpec 2.0 状态树:queries/layout/widgets 三段 zod schema + `parseDashboardSpec`/`safeParseDashboardSpec` |
-| `src/jsonPatch.ts` | RFC 6902 JSON Patch 引擎:指针解析(含原型链保护)、事务性原子应用 |
-| `src/index.test.ts` / `src/dashboardSpec.test.ts` / `src/jsonPatch.test.ts` | vitest 契约测试,共 23 例 |
+## 核心架构
 
-## 架构
+契约采用自底向上三层组合，并配套独立的原子变更引擎：
 
-契约自底向上三层组合:
-
-```ts
-ChartSpec         // 单图表:dims × meas × filters × chartType,chartType 是可换渲染器(换图不换数据)
-WidgetSpec        // 看板部件:type(9 值枚举)+ queryBinding;chartSpec 字段经 z.lazy 复用 ChartSpec
-DashboardSpec 2.0 // 状态树根:version "2.0" + metadata + queries + layout + widgets
+```
++------------------------------------------------------------------+
+|                      DashboardSpec 2.0                           |
+|  - 状态树根: version ("2.0") + metadata + queries + layout + widgets |
++---------------------------------+--------------------------------+
+                                  |
+         +------------------------+------------------------+
+         |                                                 |
+         v                                                 v
++------------------+                             +-----------------+
+|  QueryPipeline   |                             |   WidgetSpec    |
+|  - 取数与管道声明 |                             |   - 部件类型 (9种)|
+|  - 独立于渲染解耦|                             |   - 布局与数据绑定 |
++------------------+                             +--------+--------+
+                                                          | (z.lazy)
+                                                          v
+                                                 +-----------------+
+                                                 |    ChartSpec    |
+                                                 | - 语义图表独立契约|
+                                                 | - 维度/指标/过滤/类型|
+                                                 +-----------------+
 ```
 
-- **声明式状态树而非命令式 DSL**:整个看板是一棵纯 JSON 树——LLM 一次生成完整 spec,后续交互(改标题、换图表类型、增删部件)不重发全量,而是用 JSON Patch 描述「当前树 → 下一棵树」的最小差异。树可序列化、可 diff、可回滚;渲染侧 `DashboardSpecRenderer` 只认这棵树,按 `switch (widget.type)` 分派到对应组件。
-- **`queries` 与渲染解耦**:`QueryPipelineSpec`(`sourceId`/`sql`/`params`/`certifiedQueryId`/`cacheTtl`)声明取数,`QueryBinding` 按 `queryId` 绑定;部件拿不到数据时可用 `staticData` 兜底,或绑定 `chartSpec` 直接复用单图表契约。
-- **jsonPatch 引擎职责**:`applyJsonPatch(document, patches)` 先 `deepClone` 再逐项应用,事务性原子——任一项失败即整体回滚返回原文档(`success: false`,`error` 标注失败在第几项)。patch 来自模型输出、按不可信输入处理:`parseJsonPointer` 拒绝 `__proto__`/`constructor`/`prototype` 路径段,防原型链污染。
-- **两者配合**:spec 树是唯一文档,patch 是唯一增量变更通道——引擎保证「要么整组生效、要么原地不动」,消费方拿 `result.doc` 重渲染即可(见 components 包 `DashboardSpecRenderer.test.tsx` 中「大模型 JSON Patch 增量微调」用例)。
+### 1. 声明式状态树与视图解耦
+看板由纯 JSON 状态树描述。LLM 一次性生成完整 Spec，后续所有交互（改标题、换图表、增删部件）不再全量重发，而是通过 RFC 6902 JSON Patch 描述状态变更。渲染侧按部件类型（`widget.type`）分发到对应展示组件，状态树可序列化、可差异比对（Diff）、可回滚。
 
-## 业务逻辑
+### 2. 取数逻辑与图形渲染解耦
+- `QueryPipelineSpec` 负责声明数据获取参数（数据源、SQL、查询模板、认证查询 ID 与缓存策略）；
+- `WidgetSpec` 仅通过 `queryBinding.queryId` 引用数据，或者使用 `staticData` 兜底，或直接挂载 `chartSpec` 进行纯图表配置。
+- 图表类型（`chartType`）作为可插拔渲染器，切换图表类型时不改变底层指标与维度语义。
 
-**spec 创建与校验**:
-- 入口二选一:`parseDashboardSpec(input)`(`Schema.parse`,非法抛 zod 错误)或 `safeParseDashboardSpec(input)`(返回 safeParse 结果,不抛错);单图表走 `parseChartSpec(input)`,非法返回 `null`。
-- 解析即补默认值:`layout.columns=12`、`gap=4`、栅格项 `colSpan=12`、`queries` 缺省 `{}`;`version` 必须字面量 `"2.0"`。
-- `ChartSpecSchema` 的 `superRefine` 跨字段拦截:pie/donut 仅单指标;scatter 恰好 2 指标;filters 的 `op` 与 `value` 形态配套(`between` → `[number, number]`,`in` → 非空字符串数组,其余标量 string|number)。
-- 词汇表全部封闭、无任意表达式注入面:chartType 11 种、聚合 5 种、过滤算子 9 种、语义色 4 种(禁止裸色值,映射应用层 token);字段名须过 `FIELD_RE`,`sourceId` 须过 `SOURCE_ID_RE`。
-- `CHART_SPEC_LIMITS` 是上限唯一事实来源(dims≤3、meas≤12、filters≤8、thresholds≤4、referenceLines≤3、limit≤10 000、label≤60),与 app 侧 `src/lib/transforms.ts` 的 `TRANSFORM_GROUP_BY_MAX`/`TRANSFORM_METRICS_MAX`/`TRANSFORM_LIMIT_MAX` 数值对齐。
+### 3. RFC 6902 JSON Patch 原子事务引擎
+为 LLM 输出的增量编辑提供安全防线。所有 Patch 指令先深拷贝原文档，在克隆体上按序逐项执行。一旦中间步骤遇到越界、路径不存在或断言失败，立即放弃所有变更并完整回滚，保证状态变更具备原子性与防御性。
 
-**patch 应用与边界处理**(全部在 `applyJsonPatch` → 私有函数 `applySinglePatch` 内):
-- 已实现 `replace`/`add`/`remove`/`test` 四种 op:数组按索引(`add` 支持 `"-"` 尾追加、索引限 0..length;`replace`/`remove` 限已有索引,越界报「数组索引越界」),对象按 key。
-- 中间路径不存在:`add` 自动补空对象继续下钻;其余 op 报「路径不存在」;在标量上继续索引报「路径不可达」。
-- 空路径(`""` 或 `"/"`)即根操作:仅允许 `replace` 且 `value` 必须是对象(整文档置换),其他 op 与非对象 value 均失败。
-- `test` op 以 `JSON.stringify` 深比较,可作破坏性变更的前置断言,失败即中止整组。
-- `move`/`copy` 在 `JsonPatchOp` 类型中但引擎未实现,运行时报「暂不支持的 Patch 指令」(`JsonPatchOperation.from` 为其预留)。
-- 所有失败路径返回原入参文档——操作只发生在克隆体上,原文档永不就地修改。
+---
 
-## 功能清单
+## 核心功能
 
-| 导出 | 签名要点 | 用途 |
-|---|---|---|
-| `parseDashboardSpec` | `(input: unknown) => DashboardSpec`,抛错 | 严格解析 DashboardSpec 2.0 |
-| `safeParseDashboardSpec` | `(input: unknown) => SafeParseReturnType` | 容错解析,不抛错 |
-| `parseChartSpec` | `(input: unknown) => ChartSpec \| null` | 非法返回 null,LLM 链路容错惯例 |
-| `specToGroupByAndMetrics` | `(spec: ChartSpec) => { groupBy: string[]; metrics: Record<string, AggregateFn> }` | dims→groupBy、meas→metrics,供 TransformSpec 投影 |
-| `applyJsonPatch` | `<T extends object>(document: T, patches: JsonPatchOperation[]) => JsonPatchResult<T>` | 事务性原子应用 patch 组 |
-| `parseJsonPointer` | `(path: string) => string[]` | JSON Pointer 解析(`~1`→`/`、`~0`→`~`)+ 原型链保护 |
-| `deepClone` | `<T>(obj: T) => T` | 结构深拷贝 |
-| `ChartSpecSchema` / `DashboardSpecSchema` / `WidgetSpecSchema` 等 | zod schema | 直接消费或组合扩展 |
-| `CHART_TYPES` / `AGGREGATE_FNS` / `FILTER_OPS` / `SEMANTIC_COLORS` / `TIME_GRANULARITIES` / `MEASURE_FORMATS` | `as const` 数组 | 封闭词汇表 |
-| `CHART_SPEC_LIMITS` / `FIELD_RE` / `SOURCE_ID_RE` | 常量 | 上限与命名规则唯一事实来源 |
+- **图表语义契约（ChartSpec）**：
+  - 规范统计图表的维度（`dims`）、指标（`meas`）、过滤条件（`filters`）、排序（`sort`）、分页限制（`limit`）及图表类型（`chartType`）。
+  - 提供图表参数到数据变换的投影工具（如从 `ChartSpec` 提取 `groupBy` 和 `metrics` 聚合参数）。
+- **看板状态树契约（DashboardSpec 2.0）**：
+  - 规范多部件布局网格、元数据（主题、刷新频率）、全局数据查询流水线（`queries`）及部件集合（`widgets`）。
+  - 提供安全解析与严格解析接口（`parseDashboardSpec` 与 `safeParseDashboardSpec`）。
+- **JSON Patch 增量编辑引擎**：
+  - 支持 `add`、`remove`、`replace`、`test` 等原子操作。
+  - 支持数组下标精准索引与 `"-"` 尾部追加操作。
+  - 支持嵌套层级的深拷贝与结构隔离。
+- **安全边界防护**：
+  - 内置 JSON Pointer 原型链拦截，封堵 `__proto__`、`constructor`、`prototype` 等高危属性访问，阻断原型链污染。
 
-类型导出:`ChartSpec`、`ChartType`、`AggregateFn`、`FilterOp`、`SemanticColor`、`DashboardSpec`、`WidgetSpec`、`QueryPipelineSpec`、`QueryBinding`、`DashboardLayout`、`JsonPatchOp`、`JsonPatchOperation`、`JsonPatchResult<T>`。
+---
 
-## 如何扩展
+## 业务逻辑与流转机制
 
-**新增部件类型**:在 `src/dashboardSpec.ts` 的 `WidgetSpecSchema.type` 枚举追加值 → 在 components 包 `DashboardSpecRenderer.tsx` 的 `switch` 加渲染分支 → 需要暴露给 LLM 时同步 `@openui-analytics/llm` 的 schema。
-**新增 chartType**:`src/index.ts` 的 `CHART_TYPES` 追加值 → 在 components 包 `charts/registry.tsx` 注册渲染器(注册表按 `CHART_TYPES` 全枚举闭合);数据语义与图形解耦,物化侧无需改动。
-**新增 patch op**:在 `src/jsonPatch.ts` 的 `applySinglePatch` 的 `switch` 加 case;任何非法输入直接 `throw`,保持「克隆体上操作、失败即整体回滚」的原子语义。
-**调整上限/校验**:只改 `CHART_SPEC_LIMITS` 或 `ChartSpecSchema.superRefine`;注意与 app 侧 `src/lib/transforms.ts` 的 `TRANSFORM_*_MAX` 常量保持数值同步。
+### 1. Spec 校验与语义跨字段约束
+- **输入容错与严格模式**：针对 LLM 容错设计，单图表非法输入返回 `null`，全看板解析可选择抛错中断或返回带错误信息的 SafeParse 结果。
+- **缺省值自动补全**：解析阶段自动补齐标准看板栅格参数（默认 12 列、网格间隙 4、默认部件跨度 12 列，空查询管道默认空字典）。
+- **跨字段逻辑拦截（SuperRefine）**：
+  - 饼图/环形图强制单指标约束；
+  - 散点图强制恰好两个指标（X 与 Y 轴数值）；
+  - 过滤算子（`op`）与取值（`value`）形态强绑定：如 `between` 必须为双元素数值元组，`in` 必须为非空字符串数组，标量比较必须为字符串或数值。
+- **硬编码上限限制（Limits）**：
+  - 严格限制维度数量（≤3）、指标数量（≤12）、过滤器数量（≤8）、阈值线数量（≤4）及数据限制（≤10,000），与运行时数据处理门禁数值完全对齐，防止模型生成过大查询耗尽客户端内存。
 
-## 测试
+### 2. JSON Patch 变更事务与边界处理
+- **事务一致性**：Patch 操作对原入参对象不可变；任何单一指令失败，整体立即中止，返回原文档与错误步骤编号，避免状态树处于脏状态。
+- **路径寻址规则**：
+  - 执行 `add` 操作时若中间路径对象不存在，自动初始化为空对象并继续寻址；
+  - 执行 `replace`/`remove` 操作时若路径不存在，直接判定失败并回滚；
+  - 根路径（`""` 或 `"/"`）仅允许全文档 `replace` 且必须为对象。
+- **前置断言测试（test 指令）**：利用深度对比检查目标路径当前值，常用于 LLM 在执行破坏性更新前确认基线状态，不匹配则中止。
 
-`pnpm test`(vitest run;node 环境,纯 schema 契约包无 DOM 依赖),3 文件 23 例:
+---
 
-| 文件 | 覆盖行为 |
-|---|---|
-| `src/jsonPatch.test.ts`(8 例) | 指针解析(转义/空路径)、replace/add/remove/test、中间失败整体回滚、原型链保护(文档与全局原型均未污染)、根路径仅 replace、数组索引越界与非整数拒绝 |
-| `src/dashboardSpec.test.ts`(2 例) | 合规 spec 解析、`version` 非 `"2.0"` 拒绝 |
-| `src/index.test.ts`(13 例) | 全部 chartType 枚举、完整字段、上限值边界、封闭词汇表拒绝(非法聚合/算子/裸色值)、pie/donut 与 scatter 指标数约束、op/value 配套、`parseChartSpec` 容错、`specToGroupByAndMetrics` 投影 |
+## 扩展指南
+
+- **扩展部件类型**：在看板部件的 `WidgetSpec` 枚举中追加类型，随后在组件库渲染器中补充对应的渲染分支；若需 LLM 生成则同步更新 Prompt 提示词中的组件清单。
+- **扩展图表类型**：在 `CHART_TYPES` 封闭词汇表中追加类型，并在展示组件库的图表注册表中实现对应的 Recharts 映射，无需修改底层数据物化流水线。
+- **调整防线阈值**：所有维度、指标和数据上限均由单一常量维护，更新上限常量即可同步生效至 Schema 验证逻辑。
