@@ -8,8 +8,6 @@ export interface HarnessEngineSettings {
   backoffFactor: number;
   autoHealing: boolean;
   autoHealingAttempts: number;
-  storageType: "memory" | "file" | "redis";
-  redisUrl: string;
 }
 
 export interface HarnessGovernanceSettings {
@@ -39,8 +37,6 @@ export const DEFAULT_HARNESS_SETTINGS: HarnessSettingsState = {
     backoffFactor: 2.0,
     autoHealing: true,
     autoHealingAttempts: 2,
-    storageType: "memory",
-    redisUrl: "",
   },
   governance: {
     dailyBudgetUsd: 50.0,

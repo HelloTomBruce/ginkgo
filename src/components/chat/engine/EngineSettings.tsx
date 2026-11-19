@@ -6,10 +6,8 @@ import {
   ShieldCheck,
   Clock,
   Sparkles,
-  Server,
 } from "lucide-react";
 import { useHarnessSettings } from "@/hooks/useHarnessSettings";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 
 export interface EngineSettingsProps {
   maxSteps?: string;
@@ -283,72 +281,6 @@ export function EngineSettings({
             </div>
           )}
         </div>
-      </div>
-
-      {/* 模块 3：运行时后端存储 */}
-      <div className="rounded-xl border border-border bg-card p-4 space-y-3">
-        <div className="flex items-center justify-between border-b border-border-subtle pb-2">
-          <div className="flex items-center gap-2">
-            <Server className="w-4 h-4 text-brand-fg" />
-            <h4 className="font-semibold text-foreground">状态与任务流存储后端（Storage Backend）</h4>
-          </div>
-          <span className="font-mono text-[10px] text-foreground-faint uppercase">
-            {engine.storageType}
-          </span>
-        </div>
-
-        <RadioGroup
-          value={engine.storageType}
-          onValueChange={(v) =>
-            updateEngine({ storageType: v as "memory" | "file" | "redis" })
-          }
-          className="grid grid-cols-1 sm:grid-cols-3 gap-3"
-        >
-          <label className="flex items-start gap-2.5 p-3 rounded-xl border border-border cursor-pointer hover:bg-muted">
-            <RadioGroupItem value="memory" className="mt-0.5" />
-            <div>
-              <div className="font-medium text-foreground">内存存储 (Memory)</div>
-              <div className="text-[10px] text-foreground-faint leading-normal mt-0.5">
-                极速响应，适合单机轻量部署与开发联调，进程重启后状态清空。
-              </div>
-            </div>
-          </label>
-
-          <label className="flex items-start gap-2.5 p-3 rounded-xl border border-border cursor-pointer hover:bg-muted">
-            <RadioGroupItem value="file" className="mt-0.5" />
-            <div>
-              <div className="font-medium text-foreground">本地文件 (File Store)</div>
-              <div className="text-[10px] text-foreground-faint leading-normal mt-0.5">
-                持久化到本地磁盘 data 目录，进程重启状态不丢失。
-              </div>
-            </div>
-          </label>
-
-          <label className="flex items-start gap-2.5 p-3 rounded-xl border border-border cursor-pointer hover:bg-muted">
-            <RadioGroupItem value="redis" className="mt-0.5" />
-            <div>
-              <div className="font-medium text-foreground">企业分布式 (Redis)</div>
-              <div className="text-[10px] text-foreground-faint leading-normal mt-0.5">
-                高可用生产集群，支持跨节点分布式任务中继与分布式锁。
-              </div>
-            </div>
-          </label>
-        </RadioGroup>
-
-        {engine.storageType === "redis" && (
-          <div className="pt-2 border-t border-border-subtle">
-            <label className="block text-muted-foreground mb-1 font-medium">
-              Redis 连接 URL *
-            </label>
-            <input
-              type="text"
-              value={engine.redisUrl}
-              onChange={(e) => updateEngine({ redisUrl: e.target.value })}
-              placeholder="redis://:password@127.0.0.1:6379/0"
-              className="w-full p-2.5 rounded-lg border border-border bg-surface-sunken font-mono text-xs"
-            />
-          </div>
-        )}
       </div>
     </div>
   );

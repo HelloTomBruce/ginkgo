@@ -25,15 +25,13 @@ describe("useHarnessSettings", () => {
       result.current.updateEngine({
         timeoutSeconds: 60,
         maxRetries: 5,
-        storageType: "redis",
-        redisUrl: "redis://127.0.0.1:6379",
+        autoHealing: false,
       });
     });
 
     expect(result.current.settings.engine.timeoutSeconds).toBe(60);
     expect(result.current.settings.engine.maxRetries).toBe(5);
-    expect(result.current.settings.engine.storageType).toBe("redis");
-    expect(result.current.settings.engine.redisUrl).toBe("redis://127.0.0.1:6379");
+    expect(result.current.settings.engine.autoHealing).toBe(false);
 
     const saved = JSON.parse(localStorage.getItem("openui_harness_config") || "{}");
     expect(saved.engine.timeoutSeconds).toBe(60);
