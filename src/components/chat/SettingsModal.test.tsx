@@ -261,36 +261,39 @@ describe("SettingsModal 协议类型", () => {
     );
   });
 
-  it("上下文窗口大小：留空时展示「自动推断」，填入值时触发变更回调并展示对应 k 数", () => {
-    const onContextWindowChange = vi.fn();
-    renderModal({ contextWindow: "", onContextWindowChange });
-
-    expect(screen.getByText("自动推断")).toBeInTheDocument();
-    const input = screen.getByLabelText(/上下文窗口大小/);
-    expect(input).toHaveValue(null);
-
-    fireEvent.change(input, { target: { value: "1024000" } });
-    expect(onContextWindowChange).toHaveBeenCalledWith("1024000");
-
-    cleanup();
-    renderModal({ contextWindow: "1024000" });
-    expect(screen.getByText("1024k")).toBeInTheDocument();
+  it("模型配置 Tab 直接展示推理随机度 Temperature 滑块，无需多余折叠", () => {
+    renderModal({ temperature: "0.2" });
+    expect(screen.getByText("推理随机度（Temperature）")).toBeInTheDocument();
+    expect(screen.getByText("0.2")).toBeInTheDocument();
   });
 
-  it("最大步数上限：留空时展示「默认 25 步」，填入值时触发变更回调并展示自定义步数", () => {
+  it("最大步数上限与备选降级模型在「引擎调度」Tab 中配置并触发回调", async () => {
     const onMaxStepsChange = vi.fn();
-    renderModal({ maxSteps: "", onMaxStepsChange });
+    const onFallbackModelsChange = vi.fn();
+    renderModal({
+      maxSteps: "35",
+      fallbackModels: "qwen-plus, deepseek-chat",
+      onMaxStepsChange,
+      onFallbackModelsChange,
+    });
 
-    expect(screen.getByText("默认 25 步")).toBeInTheDocument();
-    const input = screen.getByLabelText(/最大步数上限/);
-    expect(input).toHaveValue(null);
+    const engineTab = screen.getByRole("tab", { name: "引擎调度" });
+    fireEvent.mouseDown(engineTab, { button: 0 });
+    fireEvent.click(engineTab);
 
-    fireEvent.change(input, { target: { value: "35" } });
-    expect(onMaxStepsChange).toHaveBeenCalledWith("35");
+    await waitFor(() => {
+      expect(screen.getByLabelText(/最大思考步数上限/)).toBeInTheDocument();
+    });
 
-    cleanup();
-    renderModal({ maxSteps: "35" });
     expect(screen.getByText("35 步")).toBeInTheDocument();
+    const stepsInput = screen.getByLabelText(/最大思考步数上限/);
+    fireEvent.change(stepsInput, { target: { value: "45" } });
+    expect(onMaxStepsChange).toHaveBeenCalledWith("45");
+
+    const fallbackInput = screen.getByLabelText(/备选降级模型/);
+    expect(fallbackInput).toHaveValue("qwen-plus, deepseek-chat");
+    fireEvent.change(fallbackInput, { target: { value: "gpt-4o-mini" } });
+    expect(onFallbackModelsChange).toHaveBeenCalledWith("gpt-4o-mini");
   });
 });
 
@@ -419,8 +422,10 @@ describe("SettingsModal 多 Provider 管理能力（参考 dsh）", () => {
       onSaveProvider,
     });
 
-    // 1. 在通用设置区域，展示已下沉提示，不展示全局重复输入
-    expect(screen.getByText("模型参数已与各模型绑定")).toBeInTheDocument();
+    // 1. 在设置区域，展示已下沉提示，不展示全局重复输入
+    expect(
+      screen.getByText(/上下文容量与最大输出可在上方「模型目录」/)
+    ).toBeInTheDocument();
 
     // 2. 点击编辑 DeepSeek
     const editBtn = screen.getByRole("button", { name: "编辑" });
@@ -465,25 +470,6 @@ describe("SettingsModal 多 Provider 管理能力（参考 dsh）", () => {
         ]),
       })
     );
-  });
-
-  it("支持配置备选降级模型（Fallback Models）并触发回调", () => {
-    const onFallbackModelsChange = vi.fn();
-    renderModal({
-      fallbackModels: "qwen-plus, deepseek-chat",
-      onFallbackModelsChange,
-    });
-
-    const trigger = screen.getByText(/通用推理参数设置/);
-    fireEvent.click(trigger);
-
-    const input = screen.getByLabelText(/备选降级模型/);
-    expect(input).toBeInTheDocument();
-    expect(input).toHaveValue("qwen-plus, deepseek-chat");
-    expect(screen.getByText("2 个备选")).toBeInTheDocument();
-
-    fireEvent.change(input, { target: { value: "gpt-4o-mini" } });
-    expect(onFallbackModelsChange).toHaveBeenCalledWith("gpt-4o-mini");
   });
 });
 

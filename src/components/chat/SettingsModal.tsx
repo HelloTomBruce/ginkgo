@@ -490,9 +490,7 @@ export function SettingsModal({
   model,
   accessToken,
   temperature,
-  maxTokens,
   maxSteps = "",
-  contextWindow = "",
   fallbackModels = "",
   protocol,
   onProviderChange,
@@ -501,9 +499,7 @@ export function SettingsModal({
   onModelChange,
   onAccessTokenChange,
   onTemperatureChange,
-  onMaxTokensChange,
   onMaxStepsChange,
-  onContextWindowChange,
   onFallbackModelsChange,
   onProtocolChange,
   onSave,
@@ -1141,164 +1137,33 @@ export function SettingsModal({
               </div>
             )}
 
-            {/* 通用高级参数折叠区（Temperature、Max Tokens、Context Window、Max Steps、Access Token） */}
-            <Collapsible className="rounded-xl border border-border-subtle bg-surface-sunken/50">
-              <CollapsibleTrigger className="group w-full cursor-pointer select-none px-3 py-2 text-muted-foreground font-medium flex items-center justify-between hover:text-foreground">
-                <span className="flex items-center gap-1.5">
-                  <Sliders className="w-3.5 h-3.5" />
-                  <span>通用推理参数设置（Temperature、Tokens、步数等）</span>
+            {/* 推理随机度（Temperature） */}
+            <div className="p-3.5 rounded-xl border border-border bg-card space-y-2">
+              <div className="flex items-center justify-between">
+                <label
+                  htmlFor="settings-temperature"
+                  className="text-muted-foreground font-medium flex items-center gap-1.5"
+                >
+                  <Sliders className="w-3.5 h-3.5 text-info-fg" />
+                  <span>推理随机度（Temperature）</span>
+                </label>
+                <span className="font-mono text-foreground font-medium text-xs">
+                  {temperature}
                 </span>
-                <ChevronDown className="w-3.5 h-3.5 transition-transform group-data-open:rotate-180" />
-              </CollapsibleTrigger>
-              <CollapsibleContent forceMount className="px-3 pb-3 space-y-3 data-closed:hidden">
-                <div>
-                  <label
-                    htmlFor="settings-temperature"
-                    className="block text-muted-foreground mb-1 font-medium flex items-center justify-between"
-                  >
-                    <span>Temperature（0–2，数据分析建议 0.2）</span>
-                    <span className="font-mono text-foreground-faint">{temperature}</span>
-                  </label>
-                  <Slider
-                    id="settings-temperature"
-                    value={[Number(temperature) || 0]}
-                    min={0}
-                    max={2}
-                    step={0.1}
-                    onValueChange={([v]) => onTemperatureChange(String(v))}
-                    className="w-full"
-                  />
-                </div>
-
-                {providers && providers.length > 0 ? (
-                  <div className="p-3 rounded-xl bg-surface-sunken border border-border-subtle space-y-1">
-                    <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
-                      <Sliders className="w-3.5 h-3.5 text-info-fg" />
-                      <span>模型参数已与各模型绑定</span>
-                    </div>
-                    <p className="text-[11px] text-foreground-subtle leading-relaxed">
-                      最大输出 Tokens 与上下文窗口已下沉绑定至各个具体模型。在上方提供商的「模型目录」中为具体模型配置后，在会话中切换模型时将自动动态生效。
-                    </p>
-                  </div>
-                ) : (
-                  <>
-                    <div>
-                      <label
-                        htmlFor="settings-max-tokens"
-                        className="block text-muted-foreground mb-1 font-medium flex items-center justify-between"
-                      >
-                        <span>最大输出 Tokens（Anthropic 协议必填，推理模型建议 32768+）</span>
-                        <span className="font-mono text-foreground-faint">
-                          {maxTokens || "16384（默认）"}
-                        </span>
-                      </label>
-                      <input
-                        id="settings-max-tokens"
-                        type="number"
-                        min="1024"
-                        max="65536"
-                        step="1024"
-                        value={maxTokens}
-                        onChange={(e) => onMaxTokensChange(e.target.value)}
-                        placeholder="留空使用服务端默认 16384"
-                        className="w-full p-2.5 rounded-lg border border-border bg-card font-mono"
-                      />
-                    </div>
-
-                    <div>
-                      <label
-                        htmlFor="settings-context-window"
-                        className="block text-muted-foreground mb-1 font-medium flex items-center justify-between"
-                      >
-                        <span>上下文窗口大小（Context Window，支持如 1024000）</span>
-                        <span className="font-mono text-foreground-faint">
-                          {contextWindow && Number(contextWindow) > 0
-                            ? `${Math.round(Number(contextWindow) / 1000)}k`
-                            : "自动推断"}
-                        </span>
-                      </label>
-                      <input
-                        id="settings-context-window"
-                        type="number"
-                        min="8192"
-                        max="2000000"
-                        step="1024"
-                        value={contextWindow}
-                        onChange={(e) => onContextWindowChange?.(e.target.value)}
-                        placeholder="留空根据模型自动推断（如 128k/1000k）"
-                        className="w-full p-2.5 rounded-lg border border-border bg-card font-mono"
-                      />
-                    </div>
-                  </>
-                )}
-
-                <div>
-                  <label
-                    htmlFor="settings-max-steps"
-                    className="block text-muted-foreground mb-1 font-medium flex items-center justify-between"
-                  >
-                    <span>最大步数上限（Max Steps，工具调用与思考轮次上限）</span>
-                    <span className="font-mono text-foreground-faint">
-                      {maxSteps && Number(maxSteps) > 0 ? `${maxSteps} 步` : "默认 25 步"}
-                    </span>
-                  </label>
-                  <input
-                    id="settings-max-steps"
-                    type="number"
-                    min="1"
-                    max="100"
-                    step="1"
-                    value={maxSteps}
-                    onChange={(e) => onMaxStepsChange?.(e.target.value)}
-                    placeholder="留空使用默认 25 步（双重终态保证适时退出，最高100）"
-                    className="w-full p-2.5 rounded-lg border border-border bg-card font-mono"
-                  />
-                </div>
-
-                <div>
-                  <label
-                    htmlFor="settings-fallback-models"
-                    className="block text-muted-foreground mb-1 font-medium flex items-center justify-between"
-                  >
-                    <span>备选降级模型（Fallback Models，按序回退）</span>
-                    <span className="font-mono text-foreground-faint text-xs">
-                      {fallbackModels.trim()
-                        ? `${fallbackModels.split(/[,，\s]+/).filter(Boolean).length} 个备选`
-                        : "未配置"}
-                    </span>
-                  </label>
-                  <input
-                    id="settings-fallback-models"
-                    type="text"
-                    value={fallbackModels}
-                    onChange={(e) => onFallbackModelsChange?.(e.target.value)}
-                    placeholder="如: gpt-4o-mini, qwen-plus（主模型异常时自动按序切换）"
-                    className="w-full p-2.5 rounded-lg border border-border bg-card font-mono text-xs"
-                  />
-                  <p className="mt-1 text-[11px] text-foreground-faint leading-normal">
-                    当主模型发生不可用、限流或网络故障且重试耗尽时，系统将自动无缝降级到备选模型继续完成分析。
-                  </p>
-                </div>
-
-                <div className="pt-2 border-t border-border-subtle">
-                  <label
-                    htmlFor="settings-access-token"
-                    className="block text-muted-foreground mb-1 font-medium flex items-center gap-1"
-                  >
-                    <Key className="w-3.5 h-3.5" />
-                    <span>访问令牌（部署鉴权，可选）</span>
-                  </label>
-                  <input
-                    id="settings-access-token"
-                    type="password"
-                    value={accessToken}
-                    onChange={(e) => onAccessTokenChange(e.target.value)}
-                    placeholder="服务端配置 OPENUI_API_AUTH_TOKEN 时必填"
-                    className="w-full p-2.5 rounded-lg border border-border bg-card font-mono"
-                  />
-                </div>
-              </CollapsibleContent>
-            </Collapsible>
+              </div>
+              <Slider
+                id="settings-temperature"
+                value={[Number(temperature) || 0]}
+                min={0}
+                max={2}
+                step={0.1}
+                onValueChange={([v]) => onTemperatureChange(String(v))}
+                className="w-full"
+              />
+              <p className="text-[11px] text-foreground-faint leading-normal">
+                数值越低回答越严谨确定（数据分析推荐 0.2），数值越高越富想象力。思考步数与降级策略已统一收拢至「⚡ 引擎调度」，上下文容量与最大输出可在上方「模型目录」针对各个模型独立配置。
+              </p>
+            </div>
           </TabsContent>
 
           <TabsContent
@@ -1331,7 +1196,10 @@ export function SettingsModal({
             value="governance"
             className="max-h-[60vh] overflow-y-auto pr-0.5 mt-0"
           >
-            <GovernanceSettings />
+            <GovernanceSettings
+              accessToken={accessToken}
+              onAccessTokenChange={onAccessTokenChange}
+            />
           </TabsContent>
         </Tabs>
 

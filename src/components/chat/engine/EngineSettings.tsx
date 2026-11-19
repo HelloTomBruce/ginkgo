@@ -177,13 +177,17 @@ export function EngineSettings({
         {/* 最大步数与降级模型配置同步 */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-border-subtle">
           <div>
-            <label className="block text-muted-foreground mb-1 font-medium flex items-center justify-between">
+            <label
+              htmlFor="engine-max-steps"
+              className="block text-muted-foreground mb-1 font-medium flex items-center justify-between"
+            >
               <span>最大思考步数上限（Max Steps）</span>
               <span className="font-mono text-foreground-faint">
                 {maxSteps && Number(maxSteps) > 0 ? `${maxSteps} 步` : "默认 25 步"}
               </span>
             </label>
             <input
+              id="engine-max-steps"
               type="number"
               min="1"
               max="100"
@@ -195,7 +199,10 @@ export function EngineSettings({
           </div>
 
           <div>
-            <label className="block text-muted-foreground mb-1 font-medium flex items-center justify-between">
+            <label
+              htmlFor="engine-fallback-models"
+              className="block text-muted-foreground mb-1 font-medium flex items-center justify-between"
+            >
               <span>备选降级模型（Fallback Models）</span>
               <span className="font-mono text-foreground-faint text-[10px]">
                 {fallbackModels.trim()
@@ -204,6 +211,7 @@ export function EngineSettings({
               </span>
             </label>
             <input
+              id="engine-fallback-models"
               type="text"
               value={fallbackModels}
               onChange={(e) => onFallbackModelsChange?.(e.target.value)}

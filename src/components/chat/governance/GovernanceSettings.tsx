@@ -11,12 +11,21 @@ import {
   RotateCcw,
   CheckCircle2,
   Copy,
+  Key,
 } from "lucide-react";
 import { useHarnessSettings } from "@/hooks/useHarnessSettings";
 import { Slider } from "@/components/ui/slider";
 import { toast } from "@/lib/toast";
 
-export function GovernanceSettings() {
+export interface GovernanceSettingsProps {
+  accessToken?: string;
+  onAccessTokenChange?: (v: string) => void;
+}
+
+export function GovernanceSettings({
+  accessToken = "",
+  onAccessTokenChange,
+}: GovernanceSettingsProps = {}) {
   const {
     settings,
     updateGovernance,
@@ -229,7 +238,40 @@ export function GovernanceSettings() {
         </div>
       </div>
 
-      {/* 模块 3：配置管理与基线重置 */}
+      {/* 模块 3：服务端访问鉴权 */}
+      <div className="rounded-xl border border-border bg-card p-4 space-y-3">
+        <div className="flex items-center justify-between border-b border-border-subtle pb-2">
+          <div className="flex items-center gap-2">
+            <Key className="w-4 h-4 text-warning-fg" />
+            <h4 className="font-semibold text-foreground">部署与网关鉴权（Gateway Auth）</h4>
+          </div>
+          <span className="font-mono text-[10px] text-foreground-faint">
+            {accessToken ? "已配置令牌" : "未开启"}
+          </span>
+        </div>
+
+        <div>
+          <label
+            htmlFor="settings-access-token"
+            className="block text-muted-foreground mb-1 font-medium"
+          >
+            访问令牌（Access Token，可选）
+          </label>
+          <input
+            id="settings-access-token"
+            type="password"
+            value={accessToken}
+            onChange={(e) => onAccessTokenChange?.(e.target.value)}
+            placeholder="服务端配置 OPENUI_API_AUTH_TOKEN 时必填"
+            className="w-full p-2.5 rounded-lg border border-border bg-surface-sunken font-mono text-xs"
+          />
+          <p className="text-[10px] text-foreground-faint mt-1">
+            用于向私有化部署网关验证客户端合法性，留空走系统匿名访问
+          </p>
+        </div>
+      </div>
+
+      {/* 模块 4：配置管理与基线重置 */}
       <div className="rounded-xl border border-border bg-card p-4 space-y-3">
         <div className="flex items-center justify-between border-b border-border-subtle pb-2">
           <div className="flex items-center gap-2">
