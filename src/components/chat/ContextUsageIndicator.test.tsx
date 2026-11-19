@@ -37,4 +37,20 @@ describe("ContextUsageIndicator 环形上下文指示器", () => {
     render(<ContextUsageIndicator promptTokens={150_000} window={100_000} />);
     expect(screen.getByText("100%")).toBeInTheDocument();
   });
+
+  it("当传入 cumulativeTokens 时渲染累计消耗微标与对应数值", () => {
+    render(
+      <ContextUsageIndicator
+        promptTokens={26_000}
+        window={128_000}
+        cumulativeTokens={95_200}
+        cumulativeCostUsd={0.0145}
+      />
+    );
+
+    const badge = screen.getByTestId("cumulative-tokens-badge");
+    expect(badge).toBeInTheDocument();
+    expect(badge).toHaveTextContent("消耗");
+    expect(badge).toHaveTextContent("95.2k");
+  });
 });

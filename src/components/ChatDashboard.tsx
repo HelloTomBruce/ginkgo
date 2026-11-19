@@ -328,6 +328,39 @@ export default function ChatDashboard() {
     messages
   );
 
+  // 会话多轮累计实际计费 Token 消耗与美元成本汇总（从 assistant 消息的 finops_cost 注解派生）
+  const cumulativeStats = useMemo(() => {
+    let totalTokens = 0;
+    let totalCostUsd = 0;
+    let hasCost = false;
+
+    for (const m of messages) {
+      if (m.role === "assistant" && Array.isArray(m.annotations)) {
+        for (const a of m.annotations) {
+          if (
+            typeof a === "object" &&
+            a !== null &&
+            (a as { type?: unknown }).type === "finops_cost"
+          ) {
+            const costAnn = a as { totalTokens?: number; costUsd?: number };
+            if (typeof costAnn.totalTokens === "number" && Number.isFinite(costAnn.totalTokens)) {
+              totalTokens += costAnn.totalTokens;
+            }
+            if (typeof costAnn.costUsd === "number" && Number.isFinite(costAnn.costUsd)) {
+              totalCostUsd += costAnn.costUsd;
+              hasCost = true;
+            }
+          }
+        }
+      }
+    }
+
+    return {
+      totalTokens: totalTokens > 0 ? totalTokens : undefined,
+      costUsd: hasCost ? totalCostUsd : undefined,
+    };
+  }, [messages]);
+
   // useChat 就绪后注入 setMessages 与最新消息快照（均由 useSessionManager 内部持有）
   useEffect(() => {
     registerSetMessages(setMessages);
@@ -1058,6 +1091,8 @@ export default function ChatDashboard() {
                   <ContextUsageIndicator
                     promptTokens={contextUsage.promptTokens}
                     window={contextUsage.window}
+                    cumulativeTokens={cumulativeStats.totalTokens}
+                    cumulativeCostUsd={cumulativeStats.costUsd}
                   />
                 }
               />
