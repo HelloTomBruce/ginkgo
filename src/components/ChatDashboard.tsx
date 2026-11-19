@@ -26,6 +26,7 @@ import { useDatasourceList } from "@/components/chat/datasources/useDatasources"
 import { useMethodologyPresets } from "@/components/chat/useMethodologyPresets";
 import { SettingsModal } from "@/components/chat/SettingsModal";
 import { ModelSwitcher } from "@/components/chat/ModelSwitcher";
+import { ReasoningEffortSwitcher } from "@/components/chat/ReasoningEffortSwitcher";
 import { ContextUsageIndicator } from "@/components/chat/ContextUsageIndicator";
 import { DevToolsPanel } from "@/components/chat/DevToolsPanel";
 import { MethodologyModal } from "@/components/chat/MethodologyModal";
@@ -1079,6 +1080,13 @@ export default function ChatDashboard() {
                     onSwitchModel={switchActiveModel}
                     onOpenSettings={handleOpenSettings}
                     variant="compact"
+                  />
+                }
+                reasoningEffortNode={
+                  <ReasoningEffortSwitcher
+                    model={activeModel}
+                    reasoningEffort={reasoningEffort}
+                    onReasoningEffortChange={setReasoningEffort}
                   />
                 }
                 sourcePickerNode={

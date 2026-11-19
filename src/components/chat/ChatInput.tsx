@@ -16,6 +16,8 @@ interface ChatInputProps {
   onStop?: () => void;
   /** 可选注入模型选择器控件 */
   modelSwitcherNode?: React.ReactNode;
+  /** 可选注入推理等级选择器控件（当选中深度思考模型时展示） */
+  reasoningEffortNode?: React.ReactNode;
   /** 可选注入数据源选择器控件 */
   sourcePickerNode?: React.ReactNode;
   /** 可选注入上下文用量指示器 */
@@ -34,6 +36,7 @@ export function ChatInput({
   onPlanModeChange,
   onStop,
   modelSwitcherNode,
+  reasoningEffortNode,
   sourcePickerNode,
   contextUsageNode,
 }: ChatInputProps) {
@@ -106,6 +109,7 @@ export function ChatInput({
                 </button>
               </Hint>
               {modelSwitcherNode}
+              {reasoningEffortNode}
               {sourcePickerNode}
               {contextUsageNode}
             </div>
