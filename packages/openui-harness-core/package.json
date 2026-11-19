@@ -12,7 +12,8 @@
     "./finops": "./src/finops/index.ts",
     "./stream": "./src/stream/index.ts",
     "./telemetry": "./src/telemetry/index.ts",
-    "./mcp": "./src/mcp/index.ts"
+    "./mcp": "./src/mcp/index.ts",
+    "./config": "./src/config/index.ts"
   },
   "scripts": {
     "test": "vitest run"

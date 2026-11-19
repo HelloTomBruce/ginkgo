@@ -4,6 +4,28 @@
  * 领域无关、零业务硬编码、中间件驱动、具备自愈与状态图编排能力。
  */
 
+// Core Entry
+export { HarnessCore } from "./core";
+
+// Configuration
+export {
+  HarnessConfigSchema,
+  DEFAULT_HARNESS_CONFIG,
+  DEFAULT_PIPELINE_CONFIG,
+  DEFAULT_GRAPH_CONFIG,
+  DEFAULT_RESILIENCE_CONFIG,
+  DEFAULT_GUARDRAILS_CONFIG,
+  DEFAULT_FINOPS_CONFIG,
+  DEFAULT_STREAM_CONFIG,
+  DEFAULT_MCP_CONFIG,
+  DEFAULT_TELEMETRY_CONFIG,
+  loadHarnessConfigFromEnv,
+  resolveHarnessConfig,
+  type HarnessConfig,
+  type ResolvedHarnessConfig,
+  type DeepPartial,
+} from "./config";
+
 // Pipeline
 export {
   HarnessPipeline,
