@@ -14,7 +14,7 @@ import {
   type SessionContextStore,
 } from "../handler";
 import type { DatasourceManager, McpToolBinding } from "@openui-analytics/datasources";
-import type { HarnessEvent, TelemetrySink } from "../telemetry";
+import type { HarnessEvent, TelemetrySink } from "@openui-analytics/harness-core";
 import { streamText, generateText } from "ai";
 
 vi.mock("@ai-sdk/openai", () => ({

@@ -1,4 +1,4 @@
-import type { AbortReason } from "./telemetry";
+import type { AbortReason } from "../telemetry/telemetry";
 import type { TaskSnapshot, TaskStatus, TaskStore } from "./taskStore";
 
 /**

@@ -1,12 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { connectHttpMcp } from "./connectors/http";
-import { connectStdioMcp, probeStdioCli } from "./connectors/stdio";
-import { DIALECTS, type DbDialect, type DbDialectClient } from "./connectors/db/dialect";
+import { DIALECTS, type DbDialectClient } from "./connectors/db/dialect";
 import { duckdbDialect } from "./connectors/db/duckdbDialect";
-import { createDbMcpServer } from "./connectors/db/dbMcpServer";
+import { createDbToolsConnection, type DbToolsConnection } from "./connectors/db/dbTools";
 import { QueryCacheManager } from "./gateway/queryCache";
 import { executeSqlWithGuards } from "./gateway/queryPipeline";
 import { McpGateway } from "./gateway/mcpGateway";
@@ -22,7 +18,6 @@ import {
 import { parseMcpToolResult } from "./parseToolResult";
 import {
   collectSchemaCard,
-  buildMcpToolCard,
   type SchemaCard,
   type SchemaProbe,
 } from "./schema/card";
@@ -33,9 +28,6 @@ import {
   validateSourceConfig,
   upsertSource,
   deleteSource,
-  maskUrl,
-  maskHeaders,
-  maskParams,
   maskConnectionString,
   type DbSourceType,
   type DynamicSourceConfig,
@@ -43,28 +35,14 @@ import {
   type ValidateResult,
 } from "./config";
 
-/**
- * 数据源门面：配置读写（委托 config 纯函数）+ 连接装配与键控缓存。
- * 全部状态为实例私有（配置缓存 + 连接缓存），无模块级可变状态。
- */
-
 export interface DataSourceDescriptor {
   id: string;
   name: string;
-  kind: "http-mcp" | "db" | "stdio-cli" | "file";
+  kind: "db" | "file";
   tools: string[];
   enabled: boolean;
   dbType?: DbSourceType;
-  /** 永不回传明文凭证：token/headers 只暴露存在性或脱敏形态，url/连接串只暴露脱敏形态 */
-  hasToken?: boolean;
-  hasHeaders?: boolean;
-  maskedHeaders?: Record<string, string>;
-  params?: Record<string, string>;
-  maskedUrl?: string;
   maskedConnectionString?: string;
-  /** stdio 源的命令与参数非机密，可回传用于编辑展示 */
-  command?: string;
-  args?: string[];
 }
 
 export interface HealthResult {
@@ -81,16 +59,8 @@ export interface ActiveSourceSummary {
   tools: string[];
 }
 
-/** SDK 无关的 MCP 连接：三种 kind（远程/子进程/内存 DB Server）统一形态 */
-export interface McpConnection {
-  listTools(): Promise<
-    { name: string; description?: string; inputSchema?: unknown }[]
-  >;
-  callTool(name: string, args: Record<string, unknown>): Promise<unknown>;
-  close(): Promise<void>;
-}
+export type McpConnection = DbToolsConnection;
 
-/** 工具绑定：注册名带 `<id>_` 前缀，MCP 侧调用用 originalName */
 export interface McpToolBinding {
   name: string;
   originalName: string;
@@ -112,396 +82,93 @@ export interface DatasourceManager {
   close(id: string): Promise<void>;
   health(s: DynamicSourceConfig): Promise<HealthResult>;
   resolveActive(ids: string[] | undefined): ActiveSourceSummary[];
-  /**
-   * 文件源灌库：完全覆盖语义。先关闭并失效缓存连接（旧库文件句柄），
-   * staging 构建成功后整体替换；失败时旧数据保留、连接缓存已失效。
-   */
   ingestFiles(
     id: string,
     uploads: FileSourceUpload[]
   ): Promise<FileSourceManifest>;
-  /** 文件源 manifest（未上传返回 null） */
   filesManifest(id: string): Promise<FileSourceManifest | null>;
-  /** 删除文件源全部落盘内容（调用方负责先 close） */
   removeFiles(id: string): Promise<void>;
-  /**
-   * Schema Card：读取已生成结构卡（无卡/坏卡返回 null——由 tools() 装配惰性触发重建）。
-   * 返回标记 stale：配置变更或执行期列缺失错误会标脏（后台重建中）。
-   */
   getSchemaCard(id: string): Promise<{ card: SchemaCard; stale: boolean } | null>;
-  /** 手动重建结构卡：按源串行排队，返回完成 promise（路由可 202 后不等待） */
   refreshSchemaCard(id: string): Promise<void>;
-  /** 获取底层方言客户端（供网关 EXPLAIN 成本探测使用） */
   getDialectClient?(id: string): { client: DbDialectClient; dbType: string } | undefined;
-  /** 获取底层查询结果集缓存管理器 */
   getQueryCache?(): QueryCacheManager<unknown>;
-  /** MCP 网关服务实例 */
   gateway?: McpGateway;
 }
 
 const DB_SOURCE_TOOLS = ["execute_sql", "list_tables", "describe_table"];
-const HEALTH_TIMEOUT_MS = 3000;
-/**
- * 执行期结构漂移信号：列/表缺失类错误（pg/mysql/duckdb/clickhouse 常见文案）。
- * 命中即标脏触发结构卡后台重建；属启发式 UX 层，误判代价仅为多建一次卡。
- */
+
 const SCHEMA_MISS_RE =
   /column .{0,64}(does not exist|not found)|unknown column|no such column|unknown identifier|binder error|there is no column|doesn't exist/i;
-
-/**
- * Streamable HTTP 会话失效特征：服务端重启/会话过期后，
- * 旧 Mcp-Session-Id 的 POST 会收到 {"error":"Session not found"}（或 terminated/expired 变体）。
- */
-const SESSION_EXPIRED_RE =
-  /session (not found|terminated|expired)|invalid session id/i;
 
 interface ConnCacheEntry {
   key: string;
   connection: McpConnection;
-  /** 已构建的工具绑定缓存：配置不变时零额外 listTools 往返（与旧 CacheEntry 同语义） */
   bindings?: McpToolBinding[];
-  /** 底层直连方言客户端（用于 Dry-run EXPLAIN 等能力） */
   dialectClient?: {
     client: DbDialectClient;
     dbType: string;
   };
 }
 
-/** 缓存键 = 完整配置的 JSON 形态；配置变更即视为不同连接 */
 function configKey(source: DynamicSourceConfig): string {
-  if (source.kind === "http-mcp")
-    return JSON.stringify([
-      "http-mcp",
-      source.url,
-      source.headers ?? {},
-      source.params ?? {},
-      source.token ?? "",
-    ]);
   if (source.kind === "db")
     return JSON.stringify(["db", source.dbType, source.connectionString]);
-  if (source.kind === "file") return JSON.stringify(["file", source.id]);
-  return JSON.stringify(["stdio-cli", source.command, source.args ?? []]);
+  return JSON.stringify(["file", source.id]);
 }
 
-/** 将 params 查询参数拼装入目标 URL */
-function buildTargetUrl(rawUrl: string, params?: Record<string, string>): string {
-  if (!params || Object.keys(params).length === 0) return rawUrl;
-  try {
-    const u = new URL(rawUrl);
-    for (const [key, value] of Object.entries(params)) {
-      u.searchParams.set(key, value);
-    }
-    return u.toString();
-  } catch {
-    return rawUrl;
-  }
-}
-
-function wrapClient(client: Pick<Client, "listTools" | "callTool" | "close">): McpConnection {
-  return {
-    listTools: async () => {
-      const { tools } = await client.listTools();
-      return tools.map((t) => ({
-        name: t.name,
-        description: t.description,
-        inputSchema: t.inputSchema,
-      }));
-    },
-    callTool: (name, args) => client.callTool({ name, arguments: args }),
-    close: async () => {
-      try {
-        await client.close();
-      } catch {
-        // 关闭失败不阻断
-      }
-    },
-  };
-}
-
-async function connectHttpSource(
-  source: Extract<DynamicSourceConfig, { kind: "http-mcp" }>
-): Promise<McpConnection> {
-  const headers: Record<string, string> = {
-    ...(source.token ? { Authorization: `Bearer ${source.token}` } : {}),
-    ...(source.headers ?? {}),
-  };
-  const targetUrl = buildTargetUrl(source.url, source.params);
-  const client = await connectHttpMcp(
-    `openui-dynamic-${source.id}`,
-    targetUrl,
-    headers
-  );
-  return wrapClient(client);
-}
-
-async function connectStdioSource(
-  source: Extract<DynamicSourceConfig, { kind: "stdio-cli" }>
-): Promise<McpConnection> {
-  const client = await connectStdioMcp(
-    `openui-dynamic-${source.id}`,
-    source.command,
-    source.args ?? []
-  );
-  return wrapClient(client);
-}
-
-/** 方言 → 进程内 MCP 连接装配（db 与 file 源共用） */
-async function connectDialectMcp(
-  dialect: DbDialect,
-  dbClient: DbDialectClient,
-  clientName: string,
-  sourceName: string
-): Promise<McpConnection> {
-  const server = createDbMcpServer(dialect, dbClient, sourceName);
-  const mcpClient = new Client(
-    { name: clientName, version: "1.0.0" },
-    { capabilities: {} }
-  );
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  await Promise.all([
-    server.connect(serverTransport),
-    mcpClient.connect(clientTransport),
-  ]);
-  return {
-    listTools: async () => {
-      const { tools } = await mcpClient.listTools();
-      return tools.map((t) => ({
-        name: t.name,
-        description: t.description,
-        inputSchema: t.inputSchema,
-      }));
-    },
-    callTool: (name, args) => mcpClient.callTool({ name, arguments: args }),
-    close: async () => {
-      // 逐层关闭，任一失败不阻断其余
-      for (const closeFn of [
-        () => mcpClient.close(),
-        () => server.close(),
-        () => dbClient.close(),
-      ]) {
-        try {
-          await closeFn();
-        } catch {
-          // ignore
-        }
-      }
-    },
-  };
-}
-
-async function connectDbSource(
-  source: Extract<DynamicSourceConfig, { kind: "db" }>
-): Promise<{
-  connection: McpConnection;
-  dialectClient: { client: DbDialectClient; dbType: string };
-}> {
-  const dialect = DIALECTS[source.dbType];
-  const dbClient = await dialect.connect(source.connectionString);
-  const connection = await connectDialectMcp(
-    dialect,
-    dbClient,
-    `openui-dynamic-${source.id}`,
-    source.name
-  );
-  return {
-    connection,
-    dialectClient: { client: dbClient, dbType: source.dbType },
-  };
-}
-
-async function connectFileSource(
-  source: Extract<DynamicSourceConfig, { kind: "file" }>,
-  filesDir: string
-): Promise<{
-  connection: McpConnection;
-  dialectClient: { client: DbDialectClient; dbType: string };
-}> {
-  const manifest = await readManifest(filesDir, source.id);
-  if (!manifest) {
-    throw new Error(`文件数据源尚未上传文件: ${source.id}`);
-  }
-  const dbClient = await duckdbDialect.connect(duckDbPath(filesDir, source.id));
-  const connection = await connectDialectMcp(
-    duckdbDialect,
-    dbClient,
-    `openui-dynamic-${source.id}`,
-    source.name
-  );
-  return {
-    connection,
-    dialectClient: { client: dbClient, dbType: "duckdb" },
-  };
-}
-
-/** 配置 → 脱敏描述符（API 响应与列表共用） */
-export function describeDynamicSource(
-  config: DynamicSourceConfig
-): DataSourceDescriptor {
-  if (config.kind === "http-mcp") {
-    const hasHeaders = Boolean(
-      config.headers && Object.keys(config.headers).length > 0
-    );
-    return {
-      id: config.id,
-      name: config.name,
-      kind: "http-mcp",
-      tools: [],
-      enabled: config.enabled,
-      hasToken: Boolean(config.token),
-      hasHeaders,
-      maskedHeaders: config.headers ? maskHeaders(config.headers) : undefined,
-      // params 同样可能携带凭证（api_key/token），按敏感键脱敏后下发
-      params: config.params ? maskParams(config.params) : undefined,
-      maskedUrl: maskUrl(config.url),
-    };
-  }
-  if (config.kind === "db") {
-    return {
-      id: config.id,
-      name: config.name,
-      kind: "db",
-      tools: [...DB_SOURCE_TOOLS],
-      enabled: config.enabled,
-      dbType: config.dbType,
-      maskedConnectionString: maskConnectionString(config.connectionString),
-    };
-  }
-  if (config.kind === "file") {
-    return {
-      id: config.id,
-      name: config.name,
-      kind: "file",
-      tools: [...DB_SOURCE_TOOLS],
-      enabled: config.enabled,
-    };
-  }
-  return {
-    id: config.id,
-    name: config.name,
-    kind: "stdio-cli",
-    tools: [],
-    enabled: config.enabled,
-    command: config.command,
-    args: config.args,
-  };
-}
-
-function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(
-      () => reject(new Error(`健康检查超时（>${ms}ms）`)),
-      ms
-    );
-    promise.then(
-      (value) => {
-        clearTimeout(timer);
-        resolve(value);
-      },
-      (err) => {
-        clearTimeout(timer);
-        reject(err);
-      }
-    );
-  });
-}
-
-async function probeHttpMcp(
-  url: string,
-  headers?: Record<string, string>
-): Promise<void> {
-  const res = await fetch(url, { method: "GET", headers });
-  if (res.status >= 500) {
-    throw new Error(`HTTP ${res.status}`);
-  }
-}
-
-export function createDatasourceManager(opts: {
+export interface CreateDatasourceManagerOptions {
   configPath: string;
-  /** 文件数据源落盘根目录；默认 <configPath 同级>/../data/files */
   filesDir?: string;
-  /** Schema Card 落盘根目录；默认 <configPath 同级>/../data/schema-cards */
   schemaCardsDir?: string;
-  /** 查询结果集最大缓存条数（默认 500） */
   maxCacheEntries?: number;
-  /** 查询结果集默认缓存 TTL（毫秒，默认 15 分钟） */
   defaultCacheTtlMs?: number;
-  /** EXPLAIN 成本与全表扫描守卫配置 */
   explainOptions?: ExplainOptions;
-}): DatasourceManager {
+}
+
+export function describeDynamicSource(
+  s: DynamicSourceConfig
+): DataSourceDescriptor {
+  if (s.kind === "db") {
+    return {
+      id: s.id,
+      name: s.name,
+      kind: "db",
+      tools: DB_SOURCE_TOOLS,
+      enabled: s.enabled,
+      dbType: s.dbType,
+      maskedConnectionString: maskConnectionString(s.connectionString),
+    };
+  }
+  return {
+    id: s.id,
+    name: s.name,
+    kind: "file",
+    tools: DB_SOURCE_TOOLS,
+    enabled: s.enabled,
+  };
+}
+
+export function createDatasourceManager(
+  opts: CreateDatasourceManagerOptions
+): DatasourceManager {
   const { configPath } = opts;
   const filesDir =
     opts.filesDir ?? path.join(path.dirname(configPath), "..", "data", "files");
   const schemaCardsDir =
     opts.schemaCardsDir ??
     path.join(path.dirname(configPath), "..", "data", "schema-cards");
+
   let configCache: DatasourcesConfig | null = null;
   let lastMtimeMs = 0;
   const connCache = new Map<string, ConnCacheEntry>();
+
   const queryCache = new QueryCacheManager<unknown>({
     maxEntries: opts.maxCacheEntries ?? 500,
     defaultTtlMs: opts.defaultCacheTtlMs ?? 15 * 60 * 1000,
   });
-  /**
-   * 按源 id 的灌库串行链：staging 目录名同源同进程相同，
-   * 并发上传会互相抹除进行中构建并竞态交换，必须排队。
-   */
+
   const ingestChains = new Map<string, Promise<unknown>>();
 
-  /**
-   * 构建单源结构卡：db/file 走表画像采集；http/stdio 仅记工具摘要。
-   * 用**专用短生命周期连接**（不进 connCache，用完即关）——
-   * 避免建卡与查询流量竞争缓存连接（双连竞态/旧文件句柄）。
-   */
-  const buildCardForSource = async (
-    source: DynamicSourceConfig
-  ): Promise<SchemaCard> => {
-    const connection =
-      source.kind === "http-mcp"
-        ? await connectHttpSource(source)
-        : source.kind === "db"
-          ? (await connectDbSource(source)).connection
-          : source.kind === "file"
-            ? (await connectFileSource(source, filesDir)).connection
-            : await connectStdioSource(source);
-    try {
-      if (source.kind === "http-mcp" || source.kind === "stdio-cli") {
-        const tools = await connection.listTools();
-        return buildMcpToolCard({ sourceId: source.id, tools });
-      }
-      const probe: SchemaProbe = {
-        listTables: async () =>
-          (await callJson(connection, "list_tables", {})) as {
-            table: string;
-          }[],
-        describeTable: async (table) =>
-          (await callJson(connection, "describe_table", {
-            table_name: table,
-          })) as { column: string; type: string }[],
-        query: async (sql) => {
-          const res = (await callJson(connection, "execute_sql", { sql })) as {
-            rows?: Record<string, unknown>[];
-          };
-          return res.rows ?? [];
-        },
-      };
-      const quoteIdent =
-        source.kind === "db" && source.dbType === "mysql"
-          ? (name: string) => `\`${name.replace(/`/g, "``")}\``
-          : (name: string) => `"${name.replace(/"/g, '""')}"`;
-      return await collectSchemaCard({ sourceId: source.id, probe, quoteIdent });
-    } finally {
-      await connection.close().catch(() => {});
-    }
-  };
-
-  // Schema Card 生命周期（标脏/熔断/串行链/drop 清理）内聚在 cardLifecycle 模块，
-  // manager 只注入「怎么构建」（连接装配知识属 manager）
-  const cardLifecycle = createSchemaCardLifecycle({
-    cardsDir: schemaCardsDir,
-    buildCard: buildCardForSource,
-  });
-
-  /** MCP 工具 JSON 结果通道：list/describe/execute_sql 的 text JSON 统一解析 */
   const callJson = async (
     connection: McpConnection,
     tool: string,
@@ -510,6 +177,64 @@ export function createDatasourceManager(opts: {
     const res = await connection.callTool(tool, args);
     return parseMcpToolResult(res, `schema-card ${tool}`);
   };
+
+  const buildCardForSource = async (
+    source: DynamicSourceConfig
+  ): Promise<SchemaCard> => {
+    const connection =
+      source.kind === "db"
+        ? (await connectDbSource(source)).connection
+        : (await connectFileSource(source, filesDir)).connection;
+
+    try {
+      const probe: SchemaProbe = {
+        listTables: async () => {
+          const raw = (await callJson(connection, "list_tables", {})) as unknown;
+          if (Array.isArray(raw)) {
+            return raw.map((item) =>
+              typeof item === "string" ? { table: item } : (item as { table: string })
+            );
+          }
+          return [];
+        },
+        describeTable: async (table) => {
+          const raw = (await callJson(connection, "describe_table", {
+            table_name: table,
+          })) as unknown;
+          if (Array.isArray(raw)) {
+            return raw.map((item) => {
+              const rec = item as Record<string, unknown>;
+              return {
+                column: String(rec.column ?? rec.name ?? ""),
+                type: String(rec.type ?? ""),
+              };
+            });
+          }
+          return [];
+        },
+        query: async (sql) => {
+          const res = (await callJson(connection, "execute_sql", { sql })) as {
+            rows?: Record<string, unknown>[];
+          };
+          return res.rows ?? [];
+        },
+      };
+
+      const quoteIdent =
+        source.kind === "db" && source.dbType === "mysql"
+          ? (name: string) => `\`${name.replace(/`/g, "``")}\``
+          : (name: string) => `"${name.replace(/"/g, '""')}"`;
+
+      return await collectSchemaCard({ sourceId: source.id, probe, quoteIdent });
+    } finally {
+      await connection.close().catch(() => {});
+    }
+  };
+
+  const cardLifecycle = createSchemaCardLifecycle({
+    cardsDir: schemaCardsDir,
+    buildCard: buildCardForSource,
+  });
 
   const readConfig = (): DatasourcesConfig => {
     try {
@@ -523,361 +248,309 @@ export function createDatasourceManager(opts: {
         configCache = loadConfigFile(configPath);
       }
     }
-    return configCache;
+    return configCache ?? { sources: [] };
   };
 
-  const syncConfig = (c: DatasourcesConfig): void => {
+  const writeConfig = (c: DatasourcesConfig): void => {
+    writeConfigFile(c, configPath);
     configCache = c;
     try {
       lastMtimeMs = fs.statSync(configPath).mtimeMs;
     } catch {
-      lastMtimeMs = 0;
+      lastMtimeMs = Date.now();
     }
   };
 
-  const getOrConnectEntry = async (
-    source: DynamicSourceConfig
-  ): Promise<ConnCacheEntry> => {
-    const key = configKey(source);
-    const cached = connCache.get(source.id);
-    if (cached && cached.key === key) return cached;
+  function get(id: string): DynamicSourceConfig | undefined {
+    return readConfig().sources.find((s) => s.id === id);
+  }
 
-    if (cached) {
-      connCache.delete(source.id);
-      // 配置变更 → 标脏（重建在新连接建立后触发，不抢查询连接时序）
-      cardLifecycle.markDirty(source);
-      try {
-        await cached.connection.close();
-      } catch {
-        // ignore
+  function list(): DataSourceDescriptor[] {
+    return readConfig().sources.map((s) => {
+      if (s.kind === "db") {
+        return {
+          id: s.id,
+          name: s.name,
+          kind: "db",
+          tools: DB_SOURCE_TOOLS,
+          enabled: s.enabled,
+          dbType: s.dbType,
+          maskedConnectionString: maskConnectionString(s.connectionString),
+        };
       }
-    }
-
-    let connection: McpConnection;
-    let dialectClient: { client: DbDialectClient; dbType: string } | undefined;
-
-    if (source.kind === "http-mcp") {
-      connection = await connectHttpSource(source);
-    } else if (source.kind === "db") {
-      const res = await connectDbSource(source);
-      connection = res.connection;
-      dialectClient = res.dialectClient;
-    } else if (source.kind === "file") {
-      const res = await connectFileSource(source, filesDir);
-      connection = res.connection;
-      dialectClient = res.dialectClient;
-    } else {
-      connection = await connectStdioSource(source);
-    }
-    const entry: ConnCacheEntry = { key, connection, dialectClient };
-    connCache.set(source.id, entry);
-    // 配置变更后的重建：异步进行，不阻塞连接返回
-    cardLifecycle.pumpIfDirty(source);
-    return entry;
-  };
-
-  /**
-   * 会话失效自愈：http-mcp 源的 listTools/callTool 报「Session not found」类错误时，
-   * 驱逐缓存连接 → 重新握手 → 用新连接重试一次（对调用方透明）。
-   * 非 http-mcp 源或非会话类错误原样抛出；重试仍失败则抛出第二次的错误。
-   */
-  const withSessionRetry = async <T>(
-    source: DynamicSourceConfig,
-    fn: (connection: McpConnection) => Promise<T>
-  ): Promise<{ result: T; connection: McpConnection }> => {
-    let entry = await getOrConnectEntry(source);
-    try {
-      return { result: await fn(entry.connection), connection: entry.connection };
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      if (source.kind !== "http-mcp" || !SESSION_EXPIRED_RE.test(message)) {
-        throw err;
-      }
-      console.warn(
-        `[Dynamic ${source.id}] MCP session expired, reconnecting once`
-      );
-      // 旧 entry（含 bindings）随缓存驱逐一并失效；下次 tools() 在新 entry 上重建绑定
-      connCache.delete(source.id);
-      await entry.connection.close().catch(() => {});
-      entry = await getOrConnectEntry(source);
       return {
-        result: await fn(entry.connection),
-        connection: entry.connection,
+        id: s.id,
+        name: s.name,
+        kind: "file",
+        tools: DB_SOURCE_TOOLS,
+        enabled: s.enabled,
+      };
+    });
+  }
+
+  async function connectDbSource(
+    source: Extract<DynamicSourceConfig, { kind: "db" }>
+  ): Promise<{ connection: McpConnection; dialectClient: { client: DbDialectClient; dbType: string } }> {
+    const dialect = DIALECTS[source.dbType];
+    if (!dialect) {
+      throw new Error(`[Datasources] 不支持的数据库方言: ${source.dbType}`);
+    }
+    const client = await dialect.connect(source.connectionString);
+    const connection = createDbToolsConnection(dialect, client, source.name);
+    return { connection, dialectClient: { client, dbType: dialect.dbType } };
+  }
+
+  async function connectFileSource(
+    source: Extract<DynamicSourceConfig, { kind: "file" }>,
+    baseDir: string
+  ): Promise<{ connection: McpConnection; dialectClient: { client: DbDialectClient; dbType: string } }> {
+    const manifest = await readManifest(baseDir, source.id);
+    if (!manifest || manifest.files.length === 0) {
+      throw new Error("尚未上传文件");
+    }
+    const dbFile = duckDbPath(baseDir, source.id);
+    const client = await duckdbDialect.connect(dbFile);
+    const connection = createDbToolsConnection(duckdbDialect, client, source.name);
+    return { connection, dialectClient: { client, dbType: duckdbDialect.dbType } };
+  }
+
+  async function connect(s: DynamicSourceConfig): Promise<McpConnection> {
+    const key = configKey(s);
+    const existing = connCache.get(s.id);
+    if (existing && existing.key === key) {
+      return existing.connection;
+    }
+    if (existing) {
+      await close(s.id);
+    }
+
+    if (s.kind === "db") {
+      const { connection, dialectClient } = await connectDbSource(s);
+      connCache.set(s.id, { key, connection, dialectClient });
+      return connection;
+    }
+
+    const { connection, dialectClient } = await connectFileSource(s, filesDir);
+    connCache.set(s.id, { key, connection, dialectClient });
+    return connection;
+  }
+
+  async function tools(s: DynamicSourceConfig): Promise<McpToolBinding[]> {
+    const key = configKey(s);
+    const cached = connCache.get(s.id);
+    if (cached && cached.key === key && cached.bindings) {
+      return cached.bindings;
+    }
+
+    const conn = await connect(s);
+    const rawTools = await conn.listTools();
+
+    const bindings: McpToolBinding[] = rawTools.map((t) => ({
+      name: `${s.id}_${t.name}`,
+      originalName: t.name,
+      description: t.description,
+      inputSchema: t.inputSchema,
+      call: async (args: Record<string, unknown>) => {
+        const isSqlExecution =
+          (t.name === "execute_sql" || t.name === "read_query") &&
+          typeof args.sql === "string";
+
+        if (isSqlExecution) {
+          const { data } = await executeSqlWithGuards({
+            sourceId: s.id,
+            sql: (args.sql as string).trim(),
+            params: Array.isArray(args.params)
+              ? (args.params as unknown[])
+              : undefined,
+            skipCache: Boolean(args.skipCache),
+            bypassExplain: Boolean(args.bypassExplain),
+            cacheTtlMs:
+              typeof args.cacheTtlMs === "number"
+                ? (args.cacheTtlMs as number)
+                : undefined,
+            dialectClient: connCache.get(s.id)?.dialectClient,
+            cache: queryCache,
+            explainOptions: opts.explainOptions,
+            execute: async () => {
+              const res = await conn.callTool(t.name, args);
+              try {
+                return parseMcpToolResult(res, `tool ${t.name}`);
+              } catch (err) {
+                const message =
+                  err instanceof Error ? err.message : String(err);
+                if (SCHEMA_MISS_RE.test(message)) {
+                  cardLifecycle.invalidate(s);
+                }
+                throw err;
+              }
+            },
+          });
+          return data;
+        }
+
+        const res = await conn.callTool(t.name, args);
+        try {
+          return parseMcpToolResult(res, `tool ${t.name}`);
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          if (SCHEMA_MISS_RE.test(message)) {
+            cardLifecycle.invalidate(s);
+          }
+          throw err;
+        }
+      },
+    }));
+
+    const entry = connCache.get(s.id);
+    if (entry) {
+      entry.bindings = bindings;
+    }
+
+    return bindings;
+  }
+
+  async function close(id: string): Promise<void> {
+    const entry = connCache.get(id);
+    if (!entry) return;
+    connCache.delete(id);
+    try {
+      await entry.connection.close();
+    } catch {
+      // 忽略关闭失败
+    }
+  }
+
+  async function health(s: DynamicSourceConfig): Promise<HealthResult> {
+    const start = Date.now();
+    try {
+      if (s.kind === "file") {
+        const manifest = await filesManifest(s.id);
+        const ok = Boolean(manifest && manifest.files.length > 0);
+        return {
+          ok,
+          latencyMs: Date.now() - start,
+          error: ok ? undefined : "尚未上传文件",
+        };
+      }
+
+      const conn = await connect(s);
+      await conn.callTool("list_tables", {});
+      return {
+        ok: true,
+        latencyMs: Date.now() - start,
+      };
+    } catch (err) {
+      return {
+        ok: false,
+        latencyMs: Date.now() - start,
+        error: err instanceof Error ? err.message : String(err),
       };
     }
-  };
+  }
+
+  function resolveActive(ids: string[] | undefined): ActiveSourceSummary[] {
+    const all = readConfig().sources.filter((s) => s.enabled);
+    const enabled = new Map<string, ActiveSourceSummary>();
+    for (const s of all) {
+      enabled.set(s.id, {
+        id: s.id,
+        name: s.name,
+        kind: s.kind,
+        dbType: s.kind === "db" ? s.dbType : undefined,
+        tools: DB_SOURCE_TOOLS,
+      });
+    }
+    if (ids === undefined) return [...enabled.values()];
+    return ids.flatMap((id) => {
+      const hit = enabled.get(id);
+      if (hit) return [hit];
+      console.warn(`[datasources] 忽略未知或未启用的数据源 id: ${id}`);
+      return [];
+    });
+  }
+
+  async function ingestFiles(
+    id: string,
+    uploads: FileSourceUpload[]
+  ): Promise<FileSourceManifest> {
+    queryCache.invalidate(id);
+    const source = readConfig().sources.find((s) => s.id === id);
+    if (!source) throw new Error(`数据源不存在: ${id}`);
+    if (source.kind !== "file") {
+      throw new Error(`数据源 ${id} 不是文件类型（kind=${source.kind}）`);
+    }
+
+    const prev = ingestChains.get(id) ?? Promise.resolve();
+    const task = prev.catch(() => {}).then(async () => {
+      await close(id);
+      const manifest = await ingestSourceFiles(filesDir, id, uploads);
+      cardLifecycle.invalidate(source);
+      return manifest;
+    });
+
+    ingestChains.set(id, task);
+    try {
+      return (await task) as FileSourceManifest;
+    } finally {
+      if (ingestChains.get(id) === task) ingestChains.delete(id);
+    }
+  }
+
+  async function filesManifest(id: string): Promise<FileSourceManifest | null> {
+    return readManifest(filesDir, id);
+  }
+
+  async function removeFiles(id: string): Promise<void> {
+    await close(id);
+    await removeSourceFiles(filesDir, id);
+  }
 
   const managerInstance: DatasourceManager = {
     readConfig,
-    writeConfig(c) {
-      writeConfigFile(c, configPath);
-      syncConfig(c);
-    },
-    validate: (s) => validateSourceConfig(s),
-    upsert(s) {
+    writeConfig,
+    validate: validateSourceConfig,
+    upsert: (s) => {
       const next = upsertSource(readConfig(), s);
-      writeConfigFile(next, configPath);
-      syncConfig(next);
+      writeConfig(next);
       return next;
     },
-    delete(id) {
+    delete: (id) => {
       queryCache.invalidate(id);
+      close(id).catch(() => {});
       const next = deleteSource(readConfig(), id);
-      writeConfigFile(next, configPath);
-      syncConfig(next);
-      // 源删除联动：清结构卡内存状态与落盘文件（防 id 复用读到旧卡/磁盘残留）
+      writeConfig(next);
       cardLifecycle.drop(id);
       return next;
     },
-    get(id) {
-      return readConfig().sources.find((s) => s.id === id);
-    },
-    list() {
-      return readConfig().sources.map(describeDynamicSource);
-    },
-    connect: (s) => getOrConnectEntry(s).then((e) => e.connection),
-    async tools(source) {
-      const entry = await getOrConnectEntry(source);
-      // 结构卡惰性生成：无卡且未失败过时后台建一次；已标脏时重建（熔断在生命周期模块）
-      cardLifecycle.ensure(source);
-      if (entry.bindings) return entry.bindings;
-      // listTools 走会话自愈：成功连接用于构建 bindings（连接可能是重试后的新连接）
-      const { result: mcpTools } = await withSessionRetry(
-        source,
-        (conn) => conn.listTools()
-      );
-      const logPrefix = `Dynamic ${source.id}`;
-      const bindings = mcpTools.map((t) => ({
-        name: `${source.id}_${t.name}`,
-        originalName: t.name,
-        description: t.description,
-        inputSchema: t.inputSchema,
-        call: async (args: Record<string, unknown>) => {
-          console.log(`[${logPrefix}] execute ${t.name}:`, args);
-
-          // 核心拦截：对 SQL 执行类工具透明接入 MCP 网关流水线
-          const isSqlExecution =
-            (t.name === "execute_sql" || t.name === "read_query") &&
-            typeof args.sql === "string";
-
-          if (isSqlExecution) {
-            // SQL 执行透明接入共享守卫管线（与 McpGateway 同一实现，缓存同一实例）
-            const { data } = await executeSqlWithGuards({
-              sourceId: source.id,
-              sql: (args.sql as string).trim(),
-              params: Array.isArray(args.params)
-                ? (args.params as unknown[])
-                : undefined,
-              skipCache: Boolean(args.skipCache),
-              bypassExplain: Boolean(args.bypassExplain),
-              cacheTtlMs:
-                typeof args.cacheTtlMs === "number"
-                  ? (args.cacheTtlMs as number)
-                  : undefined,
-              dialectClient: connCache.get(source.id)?.dialectClient,
-              cache: queryCache,
-              explainOptions: opts.explainOptions,
-              logPrefix,
-              execute: async () => {
-                const { result: res } = await withSessionRetry(source, (conn) =>
-                  conn.callTool(t.name, args)
-                );
-                try {
-                  return parseMcpToolResult(res, `MCP tool ${t.name}`);
-                } catch (err) {
-                  const message =
-                    err instanceof Error ? err.message : String(err);
-                  if (SCHEMA_MISS_RE.test(message)) {
-                    cardLifecycle.invalidate(source);
-                  }
-                  throw err;
-                }
-              },
-            });
-            return data;
-          }
-
-          // 非 SQL 工具（如 list_tables, describe_table 等）标准执行
-          const { result: res } = await withSessionRetry(source, (conn) =>
-            conn.callTool(t.name, args)
-          );
-          try {
-            return parseMcpToolResult(res, `MCP tool ${t.name}`);
-          } catch (err) {
-            // 执行期结构漂移信号（列不存在等）→ 标脏 + 后台重建；
-            // 不做请求内重试，LLM 下一次调用自然读到新卡
-            const message = err instanceof Error ? err.message : String(err);
-            if (SCHEMA_MISS_RE.test(message)) {
-              cardLifecycle.invalidate(source);
-            }
-            throw err;
-          }
-        },
-      }));
-      // 会话自愈可能已换新 entry：绑定挂到「当前缓存中的 entry」（若已被替换则丢弃）
-      entry.bindings = bindings;
-      const currentEntry = connCache.get(source.id);
-      if (currentEntry && currentEntry !== entry) {
-        currentEntry.bindings ??= bindings;
-      }
-      return bindings;
-    },
-    async close(id) {
-      queryCache.invalidate(id);
-      const entry = connCache.get(id);
-      if (!entry) return;
-      connCache.delete(id);
-      try {
-        await entry.connection.close();
-      } catch {
-        // ignore
-      }
-    },
-    async health(s) {
-      const startedAt = Date.now();
-      try {
-        if (s.kind === "http-mcp") {
-          const headers: Record<string, string> = {
-            ...(s.token ? { Authorization: `Bearer ${s.token}` } : {}),
-            ...(s.headers ?? {}),
-          };
-          const targetUrl = buildTargetUrl(s.url, s.params);
-          await withTimeout(probeHttpMcp(targetUrl, headers), HEALTH_TIMEOUT_MS);
-        } else if (s.kind === "db") {
-          const dialect = DIALECTS[s.dbType];
-          const client = await withTimeout(
-            dialect.connect(s.connectionString),
-            HEALTH_TIMEOUT_MS
-          );
-          try {
-            await withTimeout(dialect.ping(client), HEALTH_TIMEOUT_MS);
-          } finally {
-            await client.close().catch(() => {});
-          }
-        } else if (s.kind === "file") {
-          const manifest = await readManifest(filesDir, s.id);
-          if (!manifest) throw new Error("尚未上传文件");
-          const client = await withTimeout(
-            duckdbDialect.connect(duckDbPath(filesDir, s.id)),
-            HEALTH_TIMEOUT_MS
-          );
-          try {
-            await withTimeout(duckdbDialect.ping(client), HEALTH_TIMEOUT_MS);
-          } finally {
-            await client.close().catch(() => {});
-          }
-        } else {
-          await withTimeout(
-            probeStdioCli(s.command, s.args ?? []),
-            HEALTH_TIMEOUT_MS
-          );
-        }
-        return { ok: true, latencyMs: Date.now() - startedAt };
-      } catch (err) {
-        return {
-          ok: false,
-          latencyMs: Date.now() - startedAt,
-          error: err instanceof Error ? err.message : String(err),
-        };
-      }
-    },
-    resolveActive(ids) {
-      const cfg = readConfig();
-      const enabled = new Map<string, ActiveSourceSummary>();
-      for (const s of cfg.sources) {
-        if (!s.enabled) continue;
-        const summary: ActiveSourceSummary = {
-          id: s.id,
-          name: s.name,
-          kind: s.kind,
-          tools:
-            s.kind === "db" || s.kind === "file" ? [...DB_SOURCE_TOOLS] : [],
-          ...(s.kind === "db" ? { dbType: s.dbType } : {}),
-        };
-        enabled.set(s.id, summary);
-      }
-      if (ids === undefined) return [...enabled.values()];
-      return ids.flatMap((id) => {
-        const hit = enabled.get(id);
-        if (hit) return [hit];
-        console.warn(`[datasources] 忽略未知或未启用的数据源 id: ${id}`);
-        return [];
-      });
-    },
-    async ingestFiles(id, uploads) {
-      // 灌库使表数据更新，联动清空该源的所有查询缓存
-      queryCache.invalidate(id);
-      // 校验在链外快速失败（只读配置，无共享状态）
-      const source = readConfig().sources.find((s) => s.id === id);
-      if (!source) throw new Error(`数据源不存在: ${id}`);
-      if (source.kind !== "file") {
-        throw new Error(`数据源 ${id} 不是文件类型（kind=${source.kind}）`);
-      }
-      const prev = ingestChains.get(id) ?? Promise.resolve();
-      const task = prev.catch(() => {}).then(async () => {
-        // 先失效缓存连接（持有旧库文件句柄），再 staging 灌库整体替换
-        const entry = connCache.get(id);
-        if (entry) {
-          connCache.delete(id);
-          try {
-            await entry.connection.close();
-          } catch {
-            // 关闭失败不阻断灌库
-          }
-        }
-        const manifest = await ingestSourceFiles(filesDir, id, uploads);
-        // 重灌 = 表结构可能变化：标脏并后台重建结构卡
-        cardLifecycle.invalidate(source);
-        return manifest;
-      });
-      ingestChains.set(id, task);
-      try {
-        return await task;
-      } finally {
-        if (ingestChains.get(id) === task) ingestChains.delete(id);
-      }
-    },
-    filesManifest(id) {
-      return readManifest(filesDir, id);
-    },
-    removeFiles(id) {
-      queryCache.invalidate(id);
-      return removeSourceFiles(filesDir, id);
-    },
-    async getSchemaCard(id) {
-      return cardLifecycle.get(id);
-    },
-    refreshSchemaCard(id) {
+    get,
+    list,
+    connect,
+    tools,
+    close,
+    health,
+    resolveActive,
+    ingestFiles,
+    filesManifest,
+    removeFiles,
+    getSchemaCard: (id) => cardLifecycle.get(id),
+    refreshSchemaCard: (id) => {
       const source = readConfig().sources.find((s) => s.id === id);
       if (!source) return Promise.reject(new Error(`数据源不存在: ${id}`));
       return cardLifecycle.refresh(source);
     },
-    getDialectClient(id) {
-      return connCache.get(id)?.dialectClient;
-    },
-    getQueryCache() {
-      return queryCache;
-    },
+    getDialectClient: (id) => connCache.get(id)?.dialectClient,
+    getQueryCache: () => queryCache,
   };
 
-  // 共享同一查询缓存实例：delete/close/ingest/removeFiles 的失效对两条访问路径同时生效
-  const gateway = new McpGateway(
+  managerInstance.gateway = new McpGateway(
     managerInstance,
-    {
-      maxCacheEntries: opts.maxCacheEntries,
-      defaultCacheTtlMs: opts.defaultCacheTtlMs,
-      explainOptions: opts.explainOptions,
-    },
+    { explainOptions: opts.explainOptions },
     queryCache
   );
-  managerInstance.gateway = gateway;
 
   return managerInstance;
 }
 
-/**
- * 合并工具集：同名工具后注册者跳过并告警（动态源按配置顺序注册）。
- */
 export function mergeToolSets(
   target: Record<string, unknown>,
   incoming: Record<string, unknown>,
@@ -885,11 +558,10 @@ export function mergeToolSets(
 ): void {
   for (const [name, t] of Object.entries(incoming)) {
     if (name in target) {
-      console.warn(
-        `[dynamicSources] 工具名冲突，跳过 ${name}（来自 ${sourceId}）`
-      );
+      console.warn(`[datasources] 工具名冲突，跳过 ${name}（来自 ${sourceId}）`);
       continue;
     }
     target[name] = t;
   }
 }
+

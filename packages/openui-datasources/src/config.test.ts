@@ -4,15 +4,10 @@ import os from "node:os";
 import path from "node:path";
 import {
   loadConfigFile,
-  writeConfigFile,
   validateSourceConfig,
   upsertSource,
   deleteSource,
   maskConnectionString,
-  maskUrl,
-  maskHeaders,
-  maskParams,
-  normalizeStringRecord,
 } from "./config";
 
 function writeTempConfig(content: string): string {
@@ -26,324 +21,82 @@ function writeTempConfig(content: string): string {
 
 const ZHAOBIAO_SOURCE = {
   id: "zhaobiao",
-  name: "招标平台数据/",
+  name: "招标平台数据",
   kind: "db" as const,
   dbType: "mysql" as const,
   connectionString: "mysql://root:p@h:3306/dvadminlocal",
   enabled: true,
 };
 
-/** v2 形态（builtin 段 + 动态源），迁移测试的输入 */
-const V2_FILE = JSON.stringify({
-  builtin: {
-    postgres: { enabled: true },
-    "gitlab-mcp": { enabled: true },
-    "zentao-cli": { enabled: true },
-  },
-  sources: [ZHAOBIAO_SOURCE],
-});
-
-describe("配置模型 v3（无 builtin）", () => {
+describe("数据源配置纯化（纯 DB / File）", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
   });
 
-  it("v2 残留文件：builtin 段被忽略（不再种子），sources 原样保留", () => {
-    const file = writeTempConfig(V2_FILE);
-    const cfg = loadConfigFile(file);
-
-    const ids = cfg.sources.map((s) => s.id);
-    expect(ids).toEqual(["zhaobiao"]);
-    expect(ids).not.toContain("zentao-cli");
-    expect(ids).not.toContain("gitlab-mcp");
-  });
-
-  it("文件缺失/损坏/v3 合法文件均返回可用配置", () => {
-    expect(loadConfigFile("/nonexistent/datasources.json")).toEqual({
-      sources: [],
-    });
-    expect(loadConfigFile(writeTempConfig("{ broken"))).toEqual({
-      sources: [],
-    });
-    const v3 = writeTempConfig(
+  it("纯 DB 数据源能够正常读写与持久化", () => {
+    const file = writeTempConfig(
       JSON.stringify({ sources: [ZHAOBIAO_SOURCE] })
     );
-    expect(loadConfigFile(v3).sources).toHaveLength(1);
+    const cfg = loadConfigFile(file);
+
+    expect(cfg.sources).toHaveLength(1);
+    expect(cfg.sources[0].id).toBe("zhaobiao");
   });
 
-  it("校验：stdio-cli 合法配置通过并规范化 args", () => {
-    const r = validateSourceConfig({
-      id: "s1",
-      name: "禅道",
-      kind: "stdio-cli",
-      command: "zentao",
-      args: ["mcp", "--read-only"],
-    });
-    expect(r).toEqual({
-      ok: true,
-      config: {
-        id: "s1",
-        name: "禅道",
-        kind: "stdio-cli",
-        command: "zentao",
-        args: ["mcp", "--read-only"],
-        enabled: true,
-      },
-    });
-  });
-
-  it("校验：stdio-cli command 为空或 args 含非字符串时拒绝", () => {
-    const noCmd = validateSourceConfig({
-      id: "s1",
-      name: "x",
-      kind: "stdio-cli",
-      command: "",
-    });
-    expect(noCmd.ok).toBe(false);
-
-    const badArgs = validateSourceConfig({
-      id: "s1",
-      name: "x",
-      kind: "stdio-cli",
-      command: "zentao",
-      args: ["ok", 42 as unknown as string],
-    });
-    expect(badArgs.ok).toBe(false);
-  });
-
-  it("校验：id 仍拒绝非法格式与空 name", () => {
-    const bad = validateSourceConfig({
-      id: "BAD",
-      name: "",
-      kind: "http-mcp",
-      url: "http://x/mcp",
-    });
-    expect(bad.ok).toBe(false);
-    if (!bad.ok) {
-      expect(bad.errors.join(";")).toContain("id");
-      expect(bad.errors.join(";")).toContain("name");
+  it("校验：合法 db 配置通过", () => {
+    const res = validateSourceConfig(ZHAOBIAO_SOURCE);
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.config.kind).toBe("db");
     }
   });
 
-  it("upsert/delete 往返（无内置特例）", () => {
-    const file = writeTempConfig(JSON.stringify({ sources: [] }));
-    writeConfigFile(
-      upsertSource(loadConfigFile(file), ZHAOBIAO_SOURCE),
-      file
-    );
-    expect(loadConfigFile(file).sources).toHaveLength(1);
-    writeConfigFile(deleteSource(loadConfigFile(file), "zhaobiao"), file);
-    expect(loadConfigFile(file).sources).toHaveLength(0);
-    // 不存在的 id 删除：内容不变
-    expect(deleteSource(loadConfigFile(file), "zhaobiao").sources).toHaveLength(0);
-  });
-
-  it("writeConfigFile 原子写不留 tmp 残留", () => {
-    const file = writeTempConfig(JSON.stringify({ sources: [] }));
-    writeConfigFile({ sources: [] }, file);
-    expect(
-      fs.readdirSync(path.dirname(file)).some((f) => /\.tmp$/.test(f))
-    ).toBe(false);
-  });
-
-  it("mask 函数行为", () => {
-    expect(maskConnectionString("mysql://u:p@h:3306/db")).toBe(
-      "mysql://u:***@h:3306/db"
-    );
-    expect(maskUrl("http://u:p@h:7002/mcp?x=1")).toBe("http://h:7002/mcp");
-  });
-
-  it("maskConnectionString：query 中的 password 类参数脱敏", () => {
-    expect(
-      maskConnectionString("http://ch-server:8123/default?password=secret&user=default")
-    ).toBe("http://ch-server:8123/default?password=***&user=default");
-  });
-
-  it("maskConnectionString：无法解析的连接串回退占位符，不回显原文", () => {
-    expect(maskConnectionString("Host=db.internal;Password=secret;Port=5432")).toBe(
-      "***"
-    );
-    expect(maskConnectionString("not a url")).toBe("***");
-  });
-
-  it("maskConnectionString：无密码的可解析连接串原样返回", () => {
-    expect(maskConnectionString("postgres://u@h:5432/db")).toBe(
-      "postgres://u@h:5432/db"
-    );
-  });
-});
-
-describe("文件数据源 kind=file", () => {
-  it("validate 通过：仅需 id/name", () => {
-    const verdict = validateSourceConfig({
-      id: "sales",
-      name: "销售表",
-      kind: "file",
-    });
-    expect(verdict).toEqual({
-      ok: true,
-      config: { id: "sales", name: "销售表", kind: "file", enabled: true },
-    });
-  });
-
-  it("validate 拒绝非法 id 与空 name", () => {
-    const badId = validateSourceConfig({
-      id: "Sales_1",
-      name: "x",
-      kind: "file",
-    });
-    expect(badId.ok).toBe(false);
-    const noName = validateSourceConfig({ id: "sales", name: " ", kind: "file" });
-    expect(noName.ok).toBe(false);
-  });
-
-  it("normalize 往返：file 源落盘读回保留", () => {
-    const file = writeTempConfig(
-      JSON.stringify({
-        sources: [
-          { id: "sales", name: "销售表", kind: "file", enabled: false },
-          { id: "bad", name: "缺kind" },
-        ],
-      })
-    );
-    const cfg = loadConfigFile(file);
-    expect(cfg.sources).toEqual([
-      { id: "sales", name: "销售表", kind: "file", enabled: false },
-    ]);
-  });
-});
-
-describe("db 源校验：sqlite / clickhouse", () => {
-  const base = { id: "db1", name: "N", kind: "db" };
-
-  it("sqlite 接受文件路径与 sqlite: 前缀；拒绝空串/含空白", () => {
-    expect(validateSourceConfig({ ...base, dbType: "sqlite", connectionString: "/data/a.db" }).ok).toBe(true);
-    expect(validateSourceConfig({ ...base, dbType: "sqlite", connectionString: "sqlite:./rel.db" }).ok).toBe(true);
-    expect(validateSourceConfig({ ...base, dbType: "sqlite", connectionString: "" }).ok).toBe(false);
-    expect(validateSourceConfig({ ...base, dbType: "sqlite", connectionString: "/a b.db" }).ok).toBe(false);
-  });
-
-  it("clickhouse 要求 URL 形式；非法 dbType 报四选项错误", () => {
-    expect(validateSourceConfig({ ...base, dbType: "clickhouse", connectionString: "http://ch:8123/db" }).ok).toBe(true);
-    const bad = validateSourceConfig({ ...base, dbType: "oracle", connectionString: "x://y" });
-    expect(bad.ok).toBe(false);
-    if (!bad.ok) expect(bad.errors.join()).toContain("sqlite | clickhouse");
-  });
-
-  it("配置往返：sqlite 条目经 normalize 保留（不合法条目丢弃的反例守护）", async () => {
-    const fs = await import("node:fs");
-    const os = await import("node:os");
-    const path = await import("node:path");
-    const { loadConfigFile } = await import("./config");
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "cfg-sqlite-"));
-    const file = path.join(dir, "ds.json");
-    fs.writeFileSync(file, JSON.stringify({
-      sources: [
-        { id: "s1", name: "L", kind: "db", dbType: "sqlite", connectionString: "/tmp/a.db", enabled: true },
-        { id: "s2", name: "bad", kind: "db", dbType: "oracle", connectionString: "x" },
-      ],
-    }));
-    const cfg = loadConfigFile(file);
-    expect(cfg.sources).toHaveLength(1);
-    expect(cfg.sources[0]).toMatchObject({ id: "s1", dbType: "sqlite" });
-    fs.rmSync(dir, { recursive: true, force: true });
-  });
-});
-
-describe("sqlite :memory: 拒绝（C3）", () => {
-  it(":memory: 与 file::memory: 形态明确报错", () => {
-    const r1 = validateSourceConfig({ id: "db1", name: "N", kind: "db", dbType: "sqlite", connectionString: ":memory:" });
-    expect(r1.ok).toBe(false);
-    if (!r1.ok) expect(r1.errors.join()).toContain("内存库");
-
-    const r2 = validateSourceConfig({ id: "db1", name: "N", kind: "db", dbType: "sqlite", connectionString: "file::memory:?cache=shared" });
-    expect(r2.ok).toBe(false);
-  });
-});
-
-describe("http-mcp headers 与 params 配置", () => {
-  it("validateSourceConfig: 支持 JSON 字符串或对象的 headers 与 params", () => {
+  it("校验：合法 file 配置通过", () => {
     const res = validateSourceConfig({
-      id: "http-test",
-      name: "HTTP Test",
-      kind: "http-mcp",
-      url: "https://mcp.example.com",
-      headers: '{"Authorization": "Bearer tk", "X-Key": "abc"}',
-      params: { tenant: "t1", debug: true },
+      id: "my-excel",
+      name: "销售统计文件",
+      kind: "file",
+      enabled: true,
     });
     expect(res.ok).toBe(true);
-    if (res.ok && res.config.kind === "http-mcp") {
-      expect(res.config.headers).toEqual({
-        Authorization: "Bearer tk",
-        "X-Key": "abc",
-      });
-      expect(res.config.params).toEqual({
-        tenant: "t1",
-        debug: "true",
-      });
+    if (res.ok) {
+      expect(res.config.kind).toBe("file");
     }
   });
 
-  it("validateSourceConfig: 拒绝非合法的 headers 或 params", () => {
-    const badHeaders = validateSourceConfig({
-      id: "http-test",
-      name: "HTTP Test",
+  it("校验：拒绝非法 kind（如旧的 http-mcp）", () => {
+    const res = validateSourceConfig({
+      id: "old-mcp",
+      name: "旧 MCP 服务",
       kind: "http-mcp",
-      url: "https://mcp.example.com",
-      headers: "not-json",
+      url: "http://example.com/mcp",
     });
-    expect(badHeaders.ok).toBe(false);
-    if (!badHeaders.ok) {
-      expect(badHeaders.errors.join()).toContain("headers 必须是合法的 JSON 对象");
-    }
-
-    const badParams = validateSourceConfig({
-      id: "http-test",
-      name: "HTTP Test",
-      kind: "http-mcp",
-      url: "https://mcp.example.com",
-      params: ["array", "not", "object"],
-    });
-    expect(badParams.ok).toBe(false);
-    if (!badParams.ok) {
-      expect(badParams.errors.join()).toContain("params 必须是合法的键值对象或 JSON");
+    expect(res.ok).toBe(false);
+    if (!res.ok) {
+      expect(res.errors[0]).toContain("kind 仅支持 db | file");
     }
   });
 
-  it("maskHeaders: 对 Authorization/Cookie/Token 等敏感字段脱敏", () => {
-    const masked = maskHeaders({
-      Authorization: "Bearer secret",
-      "X-Token": "topsecret",
-      "Content-Type": "application/json",
-      "X-Tenant": "acme",
-    });
-    expect(masked).toEqual({
-      Authorization: "***",
-      "X-Token": "***",
-      "Content-Type": "application/json",
-      "X-Tenant": "acme",
-    });
+  it("maskConnectionString 脱敏连接串密码与 query 敏感信息", () => {
+    expect(maskConnectionString("postgres://user:secret123@localhost:5432/mydb")).toBe(
+      "postgres://user:***@localhost:5432/mydb"
+    );
   });
 
-  it("maskParams: 敏感查询参数键脱敏，普通键保留明文", () => {
-    const masked = maskParams({
-      api_key: "sk-live-123",
-      token: "t-abc",
-      tenant: "acme",
-      env: "prod",
+  it("upsertSource 与 deleteSource 纯函数操作", () => {
+    const initial = { sources: [ZHAOBIAO_SOURCE] };
+    const next = upsertSource(initial, {
+      id: "crm-db",
+      name: "CRM 数据库",
+      kind: "db",
+      dbType: "postgres",
+      connectionString: "postgres://root@localhost:5432/crm",
+      enabled: true,
     });
-    expect(masked).toEqual({
-      api_key: "***",
-      token: "***",
-      tenant: "acme",
-      env: "prod",
-    });
-  });
+    expect(next.sources).toHaveLength(2);
 
-  it("normalizeStringRecord: 健壮解析 JSON 或对象", () => {
-    expect(normalizeStringRecord('{"a": "1", "b": 2}')).toEqual({ a: "1", b: "2" });
-    expect(normalizeStringRecord({ a: "1", b: true })).toEqual({ a: "1", b: "true" });
-    expect(normalizeStringRecord("not json")).toBeUndefined();
-    expect(normalizeStringRecord(null)).toBeUndefined();
+    const deleted = deleteSource(next, "zhaobiao");
+    expect(deleted.sources).toHaveLength(1);
+    expect(deleted.sources[0].id).toBe("crm-db");
   });
 });

@@ -27,85 +27,19 @@ import { useDatasources } from "./useDatasources";
 import { FileSourcePanel } from "./FileSourcePanel";
 import { SchemaCardStatus } from "./SchemaCardStatus";
 
-type SourceKind = "http-mcp" | "db" | "stdio-cli" | "file";
+type SourceKind = "db" | "file";
 
 interface FormState {
   mode: "create" | "edit";
   id: string;
   name: string;
   kind: SourceKind;
-  url: string;
-  token?: string;
-  headersJson: string;
-  paramsJson: string;
   dbType: "postgres" | "mysql" | "sqlite" | "clickhouse";
   connectionString: string;
-  hasExistingToken: boolean;
-  hasExistingHeaders: boolean;
-  /** 编辑模式下展示脱敏预览（真实凭证永不回填表单） */
-  urlPreview: string;
   connPreview: string;
-  headersPreview: string;
-  paramsPreview: string;
-  command: string;
-  /** 空格分隔的参数原文，提交时解析为数组 */
-  argsRaw: string;
 }
 
 const CLOSED_FORM: null = null;
-
-/** 解析 JSON 键值对字段：返回解析值或用户可读错误 */
-function parseJsonObjectField(
-  raw: string,
-  label: string
-): { value: Record<string, unknown> } | { error: string } {
-  try {
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-      return { error: `${label} 必须是合法的 JSON 对象` };
-    }
-    return { value: parsed as Record<string, unknown> };
-  } catch {
-    return { error: `${label} 格式不合法，请输入标准的 JSON 格式` };
-  }
-}
-
-/**
- * 创建模式下解析可选 JSON 字段（headers/params）：空 → 不提交；非法 → error。
- */
-function resolveJsonFieldCreate(
-  raw: string,
-  label: string
-): { value?: Record<string, unknown>; error?: string } {
-  const cur = raw.trim();
-  if (!cur) return {};
-  const parsed = parseJsonObjectField(cur, label);
-  if ("error" in parsed) return { error: parsed.error };
-  return { value: parsed.value };
-}
-
-/**
- * 编辑模式下计算 JSON 字段补丁：未修改 → 不提交；清空 → {} 显式清除；
- * 含脱敏星号或非法 JSON → error（脱敏值不得写回覆盖真实凭证）。
- */
-function resolveJsonFieldPatch(
-  current: string,
-  maskedPreview: string,
-  label: string
-): { value?: Record<string, unknown>; error?: string } {
-  const cur = current.trim();
-  const orig = maskedPreview.trim();
-  if (!cur) return orig ? { value: {} } : {};
-  if (cur === orig) return {};
-  if (cur.includes("***")) {
-    return {
-      error: `${label} 包含脱敏星号(***)，若修改 ${label} 请填入完整的值`,
-    };
-  }
-  const parsed = parseJsonObjectField(cur, label);
-  if ("error" in parsed) return { error: parsed.error };
-  return { value: parsed.value };
-}
 
 const DB_CONNECTION_PLACEHOLDERS: Record<FormState["dbType"], string> = {
   postgres: "postgresql://user:pass@host:5432/db",
@@ -115,7 +49,6 @@ const DB_CONNECTION_PLACEHOLDERS: Record<FormState["dbType"], string> = {
 };
 
 function kindBadge(source: DataSourceDescriptor): string {
-  if (source.kind === "stdio-cli") return "本地 CLI";
   if (source.kind === "file") return "文件";
   if (source.kind === "db") {
     if (source.dbType === "mysql") return "MySQL";
@@ -123,17 +56,14 @@ function kindBadge(source: DataSourceDescriptor): string {
     if (source.dbType === "clickhouse") return "ClickHouse";
     return "PostgreSQL";
   }
-  return "HTTP MCP";
+  return "数据库";
 }
 
 function badgeClass(source: DataSourceDescriptor): string {
   if (source.kind === "db") {
     return "bg-sky-soft-strong text-sky-fg-strong";
   }
-  if (source.kind === "file") {
-    return "bg-warning-soft-strong text-warning-fg-strong";
-  }
-  return "bg-indigo-soft-strong text-indigo-fg-strong";
+  return "bg-warning-soft-strong text-warning-fg-strong";
 }
 
 export function DatasourceSettings() {
@@ -145,7 +75,7 @@ export function DatasourceSettings() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [errors, setErrors] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
-  /** 行内操作 pending：启停/删除涉及 PATCH + 全量探活刷新，秒级耗时必须有反馈 */
+  /** 行内操作 pending：启停/删除涉及 PATCH/DELETE，秒级耗时必须有反馈 */
   const [pending, setPending] = useState<{
     id: string;
     action: "toggle" | "delete";
@@ -179,58 +109,25 @@ export function DatasourceSettings() {
       mode: "create",
       id: "",
       name: "",
-      kind: "http-mcp",
-      url: "",
-      token: "",
-      headersJson: "",
-      paramsJson: "",
+      kind: "db",
       dbType: "postgres",
       connectionString: "",
-      hasExistingToken: false,
-      hasExistingHeaders: false,
-      urlPreview: "",
       connPreview: "",
-      headersPreview: "",
-      paramsPreview: "",
-      command: "",
-      argsRaw: "",
     });
   };
 
   const openEdit = (s: DataSourceDescriptor) => {
     setErrors([]);
     const maskedConn = s.kind === "db" ? (s.maskedConnectionString ?? "") : "";
-    const headersStr =
-      s.kind === "http-mcp" && s.maskedHeaders
-        ? JSON.stringify(s.maskedHeaders, null, 2)
-        : "";
-    const paramsStr =
-      s.kind === "http-mcp" && s.params
-        ? JSON.stringify(s.params, null, 2)
-        : "";
     setForm({
       mode: "edit",
       id: s.id,
       name: s.name,
       kind: s.kind,
-      url: "",
-      token: "",
-      headersJson: headersStr,
-      paramsJson: paramsStr,
       dbType: s.dbType ?? "postgres",
       // db 连接串支持回显已配置的连接串（含脱敏串），方便查看与编辑
       connectionString: maskedConn,
-      hasExistingToken: Boolean(s.hasToken),
-      hasExistingHeaders: Boolean(s.hasHeaders),
-      urlPreview: s.kind === "http-mcp" ? (s.maskedUrl ?? "") : "",
       connPreview: maskedConn,
-      headersPreview: headersStr,
-      paramsPreview: paramsStr,
-      command: s.kind === "stdio-cli" ? (s.command ?? "") : "",
-      argsRaw:
-        s.kind === "stdio-cli" && Array.isArray(s.args)
-          ? s.args.join(" ")
-          : "",
     });
   };
 
@@ -252,28 +149,9 @@ export function DatasourceSettings() {
           name: form.name.trim(),
           kind: form.kind,
         };
-        if (form.kind === "http-mcp") {
-          body.url = form.url.trim();
-          const headers = resolveJsonFieldCreate(form.headersJson, "Headers");
-          if (headers.error) {
-            setErrors([headers.error]);
-            setSaving(false);
-            return;
-          }
-          if (headers.value) body.headers = headers.value;
-          const params = resolveJsonFieldCreate(form.paramsJson, "参数配置");
-          if (params.error) {
-            setErrors([params.error]);
-            setSaving(false);
-            return;
-          }
-          if (params.value) body.params = params.value;
-        } else if (form.kind === "db") {
+        if (form.kind === "db") {
           body.dbType = form.dbType;
           body.connectionString = form.connectionString.trim();
-        } else if (form.kind === "stdio-cli") {
-          body.command = form.command.trim();
-          body.args = form.argsRaw.split(/\s+/).filter(Boolean);
         }
         // file：若选择了文件，创建完成后立即上传
         const result = await createSource(body);
@@ -311,36 +189,9 @@ export function DatasourceSettings() {
       }
 
       // 编辑模式：
-      // - token/url: 留空表示不更新
       // - db: 若连接串未修改（仍等于初始回显值）或留空，则不提交 connectionString，保留服务端凭证；若修改且含 *** 则拦截
-      // - stdio: 命令非机密总是提交；参数留空表示不更新
       const patch: Record<string, unknown> = { name: form.name.trim() };
-      if (form.kind === "http-mcp") {
-        if (form.url.trim()) patch.url = form.url.trim();
-        const headers = resolveJsonFieldPatch(
-          form.headersJson,
-          form.headersPreview,
-          "Headers"
-        );
-        if (headers.error) {
-          setErrors([headers.error]);
-          setSaving(false);
-          return;
-        }
-        if (headers.value) patch.headers = headers.value;
-
-        const params = resolveJsonFieldPatch(
-          form.paramsJson,
-          form.paramsPreview,
-          "参数配置"
-        );
-        if (params.error) {
-          setErrors([params.error]);
-          setSaving(false);
-          return;
-        }
-        if (params.value) patch.params = params.value;
-      } else if (form.kind === "db") {
+      if (form.kind === "db") {
         patch.dbType = form.dbType;
         const conn = form.connectionString.trim();
         const originalConn = form.connPreview.trim();
@@ -350,11 +201,6 @@ export function DatasourceSettings() {
             return;
           }
           patch.connectionString = conn;
-        }
-      } else if (form.kind === "stdio-cli") {
-        patch.command = form.command.trim();
-        if (form.argsRaw.trim()) {
-          patch.args = form.argsRaw.split(/\s+/).filter(Boolean);
         }
       }
 
@@ -380,7 +226,6 @@ export function DatasourceSettings() {
     try {
       await removeSource(id);
     } catch (err) {
-      // removeSource 失败时抛错，必须接住并反馈，避免 unhandled rejection 静默失败
       toast(err instanceof Error ? err.message : "删除数据源失败", "error");
     } finally {
       setPending(null);
@@ -422,7 +267,7 @@ export function DatasourceSettings() {
                       ? "bg-surface-raised"
                       : h.ok
                         ? "bg-success-solid"
-                        : "bg-danger-solid"
+                        : "bg-destructive-solid"
                   }`}
                   title={h?.error || ""}
                 />
@@ -474,7 +319,7 @@ export function DatasourceSettings() {
                     disabled={busy}
                     aria-busy={busyDelete}
                     aria-label={`删除 ${s.id}`}
-                    className="p-1 rounded text-foreground-faint hover:text-danger-fg hover:bg-muted disabled:opacity-50"
+                    className="p-1 rounded text-foreground-faint hover:text-destructive-fg hover:bg-muted disabled:opacity-50"
                   >
                     {busyDelete ? (
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -522,19 +367,6 @@ export function DatasourceSettings() {
               {form.mode === "create" && (
                 <div className="grid grid-cols-2 gap-2">
                   <label
-                    htmlFor="ds-kind-http"
-                    className="flex items-center gap-2 p-2.5 rounded-lg border border-border bg-surface-sunken cursor-pointer hover:border-border-strong transition-colors"
-                  >
-                    <input
-                      id="ds-kind-http"
-                      type="radio"
-                      name="ds-kind"
-                      checked={form.kind === "http-mcp"}
-                      onChange={() => setForm({ ...form, kind: "http-mcp" })}
-                    />
-                    <span className="font-medium text-foreground-subtle">HTTP MCP</span>
-                  </label>
-                  <label
                     htmlFor="ds-kind-db"
                     className="flex items-center gap-2 p-2.5 rounded-lg border border-border bg-surface-sunken cursor-pointer hover:border-border-strong transition-colors"
                   >
@@ -546,19 +378,6 @@ export function DatasourceSettings() {
                       onChange={() => setForm({ ...form, kind: "db" })}
                     />
                     <span className="font-medium text-foreground-subtle">数据库连接</span>
-                  </label>
-                  <label
-                    htmlFor="ds-kind-stdio"
-                    className="flex items-center gap-2 p-2.5 rounded-lg border border-border bg-surface-sunken cursor-pointer hover:border-border-strong transition-colors"
-                  >
-                    <input
-                      id="ds-kind-stdio"
-                      type="radio"
-                      name="ds-kind"
-                      checked={form.kind === "stdio-cli"}
-                      onChange={() => setForm({ ...form, kind: "stdio-cli" })}
-                    />
-                    <span className="font-medium text-foreground-subtle">本地 CLI</span>
                   </label>
                   <label
                     htmlFor="ds-kind-file"
@@ -586,7 +405,7 @@ export function DatasourceSettings() {
                     type="text"
                     value={form.id}
                     onChange={(e) => setForm({ ...form, id: e.target.value })}
-                    placeholder="jira-mcp / mysql-orders"
+                    placeholder="mysql-orders / crm-db"
                     className={inputClass}
                   />
                 </div>
@@ -601,76 +420,10 @@ export function DatasourceSettings() {
                   type="text"
                   value={form.name}
                   onChange={(e) => setForm({ ...form, name: e.target.value })}
-                  placeholder="Jira MCP / 订单库"
+                  placeholder="订单库 / 销售表"
                   className={inputClass}
                 />
               </div>
-
-              {form.kind === "http-mcp" && (
-                <>
-                  <div>
-                    <label htmlFor="ds-url" className={labelClass}>
-                      URL
-                    </label>
-                    <input
-                      id="ds-url"
-                      type="text"
-                      value={form.url}
-                      onChange={(e) => setForm({ ...form, url: e.target.value })}
-                      placeholder={
-                        form.mode === "edit" && form.urlPreview
-                          ? `${form.urlPreview}（留空保持不变）`
-                          : "http://127.0.0.1:6000/mcp"
-                      }
-                      className={inputClass}
-                    />
-                  </div>
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <label htmlFor="ds-headers" className={labelClass}>
-                        Headers 配置（JSON 格式）
-                      </label>
-                      <span className="text-[10px] text-muted-foreground">可选</span>
-                    </div>
-                    <textarea
-                      id="ds-headers"
-                      rows={3}
-                      value={form.headersJson}
-                      onChange={(e) =>
-                        setForm({ ...form, headersJson: e.target.value })
-                      }
-                      placeholder={
-                        '{\n  "Authorization": "Bearer your-token",\n  "X-Custom-Header": "value"\n}'
-                      }
-                      className={`${inputClass} resize-y leading-relaxed`}
-                    />
-                    <div className="text-[10px] text-foreground-faint mt-1">
-                      以 JSON 键值对形式配置，如 Authorization、自定义标头等
-                    </div>
-                  </div>
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <label htmlFor="ds-params" className={labelClass}>
-                        参数配置（Params，JSON 格式）
-                      </label>
-                      <span className="text-[10px] text-muted-foreground">可选</span>
-                    </div>
-                    <textarea
-                      id="ds-params"
-                      rows={2}
-                      value={form.paramsJson}
-                      onChange={(e) =>
-                        setForm({ ...form, paramsJson: e.target.value })
-                      }
-                      placeholder={'{\n  "tenant": "acme",\n  "env": "prod"\n}'}
-                      className={`${inputClass} resize-y leading-relaxed`}
-                    />
-                    <div className="text-[10px] text-foreground-faint mt-1">
-                      可选，请求时自动拼装至目标 URL 的查询参数
-                    </div>
-                  </div>
-                </>
-              )}
 
               {form.kind === "db" && (
                 <>
@@ -806,7 +559,7 @@ export function DatasourceSettings() {
                                       prev.filter((_, i) => i !== idx)
                                     );
                                   }}
-                                  className="text-foreground-faint hover:text-danger-fg ml-2 shrink-0 p-0.5"
+                                  className="text-foreground-faint hover:text-destructive-fg ml-2 shrink-0 p-0.5"
                                   title="移除"
                                 >
                                   <Trash2 className="w-3 h-3" />
@@ -828,39 +581,8 @@ export function DatasourceSettings() {
                 </div>
               )}
 
-              {form.kind === "stdio-cli" && (
-                <>
-                  <div>
-                    <label htmlFor="ds-command" className={labelClass}>
-                      命令
-                    </label>
-                    <input
-                      id="ds-command"
-                      type="text"
-                      value={form.command}
-                      onChange={(e) => setForm({ ...form, command: e.target.value })}
-                      placeholder="如 my-mcp-cli"
-                      className={inputClass}
-                    />
-                  </div>
-                  <div>
-                    <label htmlFor="ds-args" className={labelClass}>
-                      参数（空格分隔，编辑留空表示不变）
-                    </label>
-                    <input
-                      id="ds-args"
-                      type="text"
-                      value={form.argsRaw}
-                      onChange={(e) => setForm({ ...form, argsRaw: e.target.value })}
-                      placeholder="mcp --read-only"
-                      className={inputClass}
-                    />
-                  </div>
-                </>
-              )}
-
               {errors.length > 0 && (
-                <div className="text-[11px] text-danger-fg space-y-1 p-2 rounded-lg bg-danger-soft border border-danger-border">
+                <div className="text-[11px] text-destructive-fg space-y-1 p-2 rounded-lg bg-destructive-soft border border-destructive-border">
                   {errors.map((e) => (
                     <div key={e}>· {e}</div>
                   ))}

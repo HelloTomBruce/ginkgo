@@ -75,7 +75,7 @@ function makeGateway(opts: {
           throw new Error("connection refused");
         })
       : vi.fn(async (): Promise<McpConnection> => ({
-          callTool: callToolMock,
+          callTool: callToolMock as never,
           listTools: async () => [],
           close: async () => {},
         })),

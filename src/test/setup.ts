@@ -1,6 +1,24 @@
 import "@testing-library/jest-dom/vitest";
 import { afterEach } from "vitest";
 import { cleanup } from "@testing-library/react";
+import {
+  TransformStream as NodeTransformStream,
+  ReadableStream as NodeReadableStream,
+  WritableStream as NodeWritableStream,
+} from "node:stream/web";
+
+if (typeof globalThis.TransformStream === "undefined") {
+  // @ts-expect-error polyfill for jsdom
+  globalThis.TransformStream = NodeTransformStream;
+}
+if (typeof globalThis.ReadableStream === "undefined") {
+  // @ts-expect-error polyfill for jsdom
+  globalThis.ReadableStream = NodeReadableStream;
+}
+if (typeof globalThis.WritableStream === "undefined") {
+  // @ts-expect-error polyfill for jsdom
+  globalThis.WritableStream = NodeWritableStream;
+}
 
 // vmThreads 复用同一 jsdom 实例:不清理则上一文件的已挂载树(含 Radix dialog
 // 的 document 级监听)泄漏到下一文件,截胡事件。globals 未开启,自动 cleanup

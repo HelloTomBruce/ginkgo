@@ -12,10 +12,12 @@
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import RedisMock from "ioredis-mock";
-import { SessionStreamHub } from "./streamHub";
-import { RedisTaskStore } from "./redisTaskStore";
+import {
+  SessionStreamHub,
+  RedisTaskStore,
+  InMemoryTaskStore,
+} from "@openui-analytics/harness-core";
 import { createAnalyzeHandler } from "./handler";
-import { InMemoryTaskStore } from "./taskStore";
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();

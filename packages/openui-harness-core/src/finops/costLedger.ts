@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { importRedisConstructor, type RedisLike } from "./redisTaskStore";
+import { importRedisConstructor, type RedisLike } from "../stream/redisTaskStore";
 
 /**
  * 成本台账与配额（WS-11）：
@@ -21,6 +21,10 @@ export interface UsageRecord {
   model: string;
   promptTokens: number;
   completionTokens: number;
+  /** Prompt Caching 命中读取 token 数（可选） */
+  cachedPromptTokens?: number;
+  /** 思考/推理 token 数（可选） */
+  reasoningTokens?: number;
   /** 单价表命中时计算；缺单价则 undefined（只记量不记钱） */
   costUsd?: number;
   finishedAt: number;
@@ -44,30 +48,42 @@ export const DEFAULT_QUOTA_WINDOW_MS = 86_400_000;
 
 // ========== 计价表（用户维护，零硬编码；热加载沿用 mtime 检查模式） ==========
 
-/** 模型单价：USD / 1M tokens（input/output 分列） */
+/** 模型单价：USD / 1M tokens（支持标准/缓存/推理分档计价） */
 export interface ModelPricing {
   input: number;
   output: number;
+  /** Prompt Cache 命中读取单价（USD / 1M tokens）；缺省按 input * 0.5 计算 */
+  cacheRead?: number;
+  /** 思考/推理 token 单价（USD / 1M tokens）；缺省按 output 计算 */
+  reasoning?: number;
 }
 
 const PRICING_PATH_DEFAULT = path.join(process.cwd(), "config", "model-pricing.json");
 
 /**
- * config/model-pricing.json：`{ "gpt-4o": { "input": 2.5, "output": 10 }, ... }`。
+ * config/model-pricing.json：`{ "gpt-4o": { "input": 2.5, "output": 10, "cacheRead": 1.25 }, ... }`。
  * 模型名前缀匹配（最长前缀优先，同 context.ts 窗口表语义）；文件缺失/未命中
  * = 只记量不记钱，不阻塞任何主链路。
+ * 支持传入文件路径或直接传入内存价格映射表。
  */
 export class ModelPricingTable {
-  readonly #configPath: string;
+  readonly #configPath?: string;
+  #staticTable?: Record<string, ModelPricing>;
   #cache: Record<string, ModelPricing> | null = null;
   #mtimeMs = -1;
 
-  constructor(configPath: string = PRICING_PATH_DEFAULT) {
-    this.#configPath = configPath;
+  constructor(configOrPath: string | Record<string, ModelPricing> = PRICING_PATH_DEFAULT) {
+    if (typeof configOrPath === "string") {
+      this.#configPath = configOrPath;
+    } else {
+      this.#staticTable = { ...configOrPath };
+    }
   }
 
   /** 文件 mtime 变化时重载（改 config 无需重启进程）；读失败静默清空缓存 */
   reloadIfChanged(): void {
+    if (this.#staticTable) return;
+    if (!this.#configPath) return;
     try {
       const stat = fs.statSync(this.#configPath);
       if (stat.mtimeMs === this.#mtimeMs) return;
@@ -97,6 +113,20 @@ export class ModelPricingTable {
 
   /** 最长前缀匹配；未命中返回 undefined */
   priceFor(model: string): ModelPricing | undefined {
+    if (this.#staticTable) {
+      const lower = model.toLowerCase();
+      let best: string | undefined;
+      for (const key of Object.keys(this.#staticTable)) {
+        if (
+          lower.startsWith(key.toLowerCase()) &&
+          (best === undefined || key.length > best.length)
+        ) {
+          best = key;
+        }
+      }
+      return best === undefined ? undefined : this.#staticTable[best];
+    }
+
     this.reloadIfChanged();
     const table = this.#cache;
     if (!table) return undefined;
@@ -114,13 +144,30 @@ export class ModelPricingTable {
   }
 }
 
-/** USD 计价：6 位小数（微美元级），避免浮点累加误差进账本 */
+/** USD 计价：6 位小数（微美元级），避免浮点累加误差进账本，支持 Prompt Cache 与 Reasoning 分档 */
 export function computeCostUsd(
   pricing: ModelPricing,
   promptTokens: number,
-  completionTokens: number
+  completionTokens: number,
+  options?: {
+    cachedPromptTokens?: number;
+    reasoningTokens?: number;
+  }
 ): number {
-  const usd = (promptTokens / 1e6) * pricing.input + (completionTokens / 1e6) * pricing.output;
+  const cachedTokens = Math.min(promptTokens, Math.max(0, options?.cachedPromptTokens ?? 0));
+  const regularPromptTokens = Math.max(0, promptTokens - cachedTokens);
+  const cacheRate = pricing.cacheRead ?? pricing.input * 0.5;
+
+  const reasoningTokens = Math.min(completionTokens, Math.max(0, options?.reasoningTokens ?? 0));
+  const regularOutputTokens = Math.max(0, completionTokens - reasoningTokens);
+  const reasoningRate = pricing.reasoning ?? pricing.output;
+
+  const usd =
+    (regularPromptTokens / 1e6) * pricing.input +
+    (cachedTokens / 1e6) * cacheRate +
+    (regularOutputTokens / 1e6) * pricing.output +
+    (reasoningTokens / 1e6) * reasoningRate;
+
   return Number(usd.toFixed(6));
 }
 

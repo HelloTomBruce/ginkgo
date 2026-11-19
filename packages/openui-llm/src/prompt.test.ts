@@ -22,7 +22,8 @@ const ACTIVE: ActiveSourceSummary[] = [
   {
     id: "zentao-cli",
     name: "禅道",
-    kind: "stdio-cli",
+    kind: "db",
+    dbType: "postgres",
     tools: ["zentao-cli_zentao_bug"],
   },
 ];
@@ -33,7 +34,8 @@ const PAIRED: ActiveSourceSummary[] = [
   {
     id: "gitlab",
     name: "gitlab",
-    kind: "http-mcp",
+    kind: "db",
+    dbType: "postgres",
     tools: ["gitlab_list_commits"],
   },
 ];

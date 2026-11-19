@@ -67,7 +67,9 @@ export function resolveEncodingForModel(
 ): string {
   try {
     // 每次读盘 + mtime 对比成本可忽略（仅 LLM_TOKENIZER=tiktoken 时调用）
-    const table = JSON.parse(fs.readFileSync(configPath, "utf-8")) as Record<string, string>;
+    const table = JSON.parse(
+      fs.readFileSync(/*turbopackIgnore: true*/ configPath, "utf-8")
+    ) as Record<string, string>;
     const lower = model.toLowerCase();
     let best: string | undefined;
     for (const key of Object.keys(table)) {

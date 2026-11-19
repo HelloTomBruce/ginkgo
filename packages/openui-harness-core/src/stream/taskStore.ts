@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import type { AbortReason } from "./telemetry";
+import type { AbortReason } from "../telemetry/telemetry";
 
 export type TaskStatus = "running" | "completed" | "error";
 

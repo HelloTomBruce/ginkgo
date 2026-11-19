@@ -18,13 +18,6 @@ import path from "node:path";
  *   ]
  * }
  * ```
- *
- * 能力成立条件（没有独立的「是否跨源」开关）：
- *   存在至少一条映射，且其 projectSource / repoSource 都在当前激活源集合内。
- *   会话级取消勾选某一侧源，跨源能力对该会话即自动关闭。
- *
- * 兼容：旧版顶层 pair + zentaoProjectId/gitlabProject 字段名的条目仍可读，
- * 源 id 从顶层 pair 补齐。
  */
 
 export interface CrossSourcePair {
@@ -41,22 +34,19 @@ export interface CrossSourceLink {
   projectName?: string;
 }
 
-interface MappingEntry extends CrossSourcePair {
+export interface MappingEntry extends CrossSourcePair {
   project: string;
   projectName?: string;
   repo: string;
 }
 
-const DEFAULT_CONFIG_PATH = path.join(
+export const DEFAULT_CONFIG_PATH = path.join(
   process.cwd(),
   "config",
   "cross-source-map.json"
 );
 
-let cache: MappingEntry[] | null = null;
-let cachePath = DEFAULT_CONFIG_PATH;
-
-function load(configPath: string): MappingEntry[] {
+function parseMappingsFromFile(configPath: string): MappingEntry[] {
   try {
     const raw = fs.readFileSync(configPath, "utf-8");
     const parsed: unknown = JSON.parse(raw);
@@ -104,69 +94,110 @@ function load(configPath: string): MappingEntry[] {
   }
 }
 
-function mappings(): MappingEntry[] {
-  if (cache === null) cache = load(cachePath);
-  return cache;
-}
+/**
+ * 跨源映射注册表类（实例隔离，消除全局状态竞争）
+ */
+export class CrossSourceRegistry {
+  private configPath?: string;
+  private cache: MappingEntry[] | null = null;
 
-/** 配置中出现的全部源配对（去重） */
-export function listCrossSourcePairs(): CrossSourcePair[] {
-  const seen = new Map<string, CrossSourcePair>();
-  for (const m of mappings()) {
-    const key = `${m.projectSource}${m.repoSource}`;
-    if (!seen.has(key)) {
-      seen.set(key, {
-        projectSource: m.projectSource,
-        repoSource: m.repoSource,
-      });
+  constructor(options?: { configPath?: string; initialMappings?: MappingEntry[] }) {
+    if (options?.initialMappings) {
+      this.cache = [...options.initialMappings];
+    } else {
+      this.configPath = options?.configPath ?? DEFAULT_CONFIG_PATH;
     }
   }
-  return [...seen.values()];
+
+  private getMappings(): MappingEntry[] {
+    if (this.cache === null) {
+      this.cache = this.configPath ? parseMappingsFromFile(this.configPath) : [];
+    }
+    return this.cache;
+  }
+
+  /** 配置中出现的全部源配对（去重） */
+  listCrossSourcePairs(): CrossSourcePair[] {
+    const seen = new Map<string, CrossSourcePair>();
+    for (const m of this.getMappings()) {
+      const key = `${m.projectSource}:${m.repoSource}`;
+      if (!seen.has(key)) {
+        seen.set(key, {
+          projectSource: m.projectSource,
+          repoSource: m.repoSource,
+        });
+      }
+    }
+    return [...seen.values()];
+  }
+
+  /**
+   * 解析当前激活源集合下成立的源配对：
+   * 映射存在且双侧源都激活的配对才会返回；空数组 = 跨源能力关闭。
+   */
+  resolveCrossSourcePairs(activeSourceIds: string[]): CrossSourcePair[] {
+    return this.listCrossSourcePairs().filter(
+      (p) =>
+        activeSourceIds.includes(p.projectSource) &&
+        activeSourceIds.includes(p.repoSource)
+    );
+  }
+
+  /**
+   * 查询项目 → 仓库映射（可选限定项目管理侧源，多配对场景消歧）。
+   */
+  getCrossSourceLinks(
+    projectId: string,
+    projectSource?: string
+  ): CrossSourceLink {
+    const hit = this.getMappings().find(
+      (m) =>
+        m.project === projectId &&
+        (projectSource === undefined || m.projectSource === projectSource)
+    );
+    if (hit) {
+      return {
+        repo: hit.repo,
+        repoSource: hit.repoSource,
+        confidence: "mapped",
+        projectName: hit.projectName,
+      };
+    }
+    return { repo: null, confidence: "none" };
+  }
+
+  /** 重新加载或切换配置路径 */
+  reload(newConfigPath?: string): void {
+    if (newConfigPath !== undefined) {
+      this.configPath = newConfigPath;
+    }
+    this.cache = this.configPath ? parseMappingsFromFile(this.configPath) : [];
+  }
 }
 
-/**
- * 解析当前激活源集合下成立的源配对：
- * 映射存在且双侧源都激活的配对才会返回；空数组 = 跨源能力关闭。
- */
+/** 默认单例（向后兼容） */
+export const defaultCrossSourceRegistry = new CrossSourceRegistry();
+
+/** 兼容旧版顶层导出函数 */
+export function listCrossSourcePairs(): CrossSourcePair[] {
+  return defaultCrossSourceRegistry.listCrossSourcePairs();
+}
+
 export function resolveCrossSourcePairs(
   activeSourceIds: string[]
 ): CrossSourcePair[] {
-  return listCrossSourcePairs().filter(
-    (p) =>
-      activeSourceIds.includes(p.projectSource) &&
-      activeSourceIds.includes(p.repoSource)
-  );
+  return defaultCrossSourceRegistry.resolveCrossSourcePairs(activeSourceIds);
 }
 
-/**
- * 查询项目 → 仓库映射（可选限定项目管理侧源，多配对场景消歧）。
- */
 export function getCrossSourceLinks(
   projectId: string,
   projectSource?: string
 ): CrossSourceLink {
-  const hit = mappings().find(
-    (m) =>
-      m.project === projectId &&
-      (projectSource === undefined || m.projectSource === projectSource)
-  );
-  if (hit) {
-    return {
-      repo: hit.repo,
-      repoSource: hit.repoSource,
-      confidence: "mapped",
-      projectName: hit.projectName,
-    };
-  }
-  return { repo: null, confidence: "none" };
+  return defaultCrossSourceRegistry.getCrossSourceLinks(projectId, projectSource);
 }
 
-/**
- * 重新加载映射配置（配置变更后调用；测试可传入临时路径）。
- */
 export function reloadCrossSourceMap(
   configPath: string = DEFAULT_CONFIG_PATH
 ): void {
-  cachePath = configPath;
-  cache = load(cachePath);
+  defaultCrossSourceRegistry.reload(configPath);
 }

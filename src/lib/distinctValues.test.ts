@@ -26,8 +26,7 @@ const PG: DynamicSourceConfig = {
 const HTTP_SRC: DynamicSourceConfig = {
   id: "gl1",
   name: "GitLab",
-  kind: "http-mcp",
-  url: "http://localhost:3000",
+  kind: "file",
   enabled: true,
 };
 

@@ -1,15 +1,12 @@
 import {
   describeDynamicSource,
   isDbType,
-  MASKED_PLACEHOLDER,
   type DynamicSourceConfig,
 } from "@openui-analytics/datasources";
 import { datasources } from "@/lib/datasources";
 
 /**
- * PATCH /api/datasources/:id — 部分更新（所有源同构）。
- * name/enabled/命令类字段（url/command/args/dbType）显式传入才更新；
- * 凭证类字段（token/connectionString）留空 = 保留旧值，显式 "" = 清空。
+ * PATCH /api/datasources/:id — 部分更新（db / file 源）。
  * 成功后关闭旧连接按新配置重建。
  */
 export async function PATCH(
@@ -28,52 +25,16 @@ export async function PATCH(
       return Response.json({ error: `数据源不存在: ${id}` }, { status: 404 });
     }
 
-    // 凭证防腐蚀：任何调用方提交脱敏占位值（***）都拒绝，
-    // 避免脱敏回显被原样写回覆盖真实凭证（不能只在 UI 层防）
-    for (const field of ["headers", "params"] as const) {
-      const record = body[field];
-      if (record && typeof record === "object" && !Array.isArray(record)) {
-        for (const [k, v] of Object.entries(record as Record<string, unknown>)) {
-          if (v === MASKED_PLACEHOLDER) {
-            return Response.json(
-              {
-                error: `${field}.${k} 命中脱敏占位值（${MASKED_PLACEHOLDER}），请提交完整值或留空保持不变`,
-              },
-              { status: 400 }
-            );
-          }
-        }
-      }
-    }
-
     const merged: DynamicSourceConfig = {
       ...existing,
       ...(typeof body.name === "string" ? { name: body.name.trim() } : {}),
       ...(typeof body.enabled === "boolean" ? { enabled: body.enabled } : {}),
-      ...(existing.kind === "http-mcp" && typeof body.token === "string"
-        ? { token: body.token }
-        : {}),
-      ...(existing.kind === "http-mcp" && body.headers !== undefined
-        ? { headers: body.headers as Record<string, string> }
-        : {}),
-      ...(existing.kind === "http-mcp" && body.params !== undefined
-        ? { params: body.params as Record<string, string> }
-        : {}),
-      ...(existing.kind === "http-mcp" && typeof body.url === "string"
-        ? { url: body.url }
-        : {}),
       ...(existing.kind === "db" &&
       typeof body.connectionString === "string"
         ? { connectionString: body.connectionString }
         : {}),
       ...(existing.kind === "db" && isDbType(body.dbType)
         ? { dbType: body.dbType }
-        : {}),
-      ...(existing.kind === "stdio-cli" && typeof body.command === "string"
-        ? { command: body.command.trim() }
-        : {}),
-      ...(existing.kind === "stdio-cli" && Array.isArray(body.args)
-        ? { args: body.args.map(String).filter((a) => a.length > 0) }
         : {}),
     };
 
@@ -105,7 +66,6 @@ export async function DELETE(
     }
     datasources.delete(id);
     await datasources.close(id).catch(() => {});
-    // 文件源联动清理落盘内容（原始文件 + DuckDB 库 + manifest）
     if (existing.kind === "file") {
       await datasources.removeFiles(id).catch(() => {});
     }

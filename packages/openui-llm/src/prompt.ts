@@ -1,6 +1,7 @@
 import { serverLibrary } from "./serverLibrary";
 import { resolveCrossSourcePairs } from "./crossSourceMap";
 import type { ActiveSourceSummary, CertifiedQueryMatch } from "@openui-analytics/datasources";
+import { renderComponentKitDocumentation } from "./components/docGenerator";
 
 /**
  * Prompt 中的 few-shot 示例。导出以便测试校验其与 serverLibrary schema 的一致性
@@ -264,30 +265,7 @@ ${methodIndexSection(methodIndex)}
 ${methodNamingSection(methodIndex)}
 ${crossSourceSection(activeSources)}
 ${untrustedDataSection()}
-## Visual Component Kit (OpenUI Lang):
-You have a rich set of declarative components available:
-- **ReportLayout(title, subtitle?, kpis?, charts?, detail?, insights?, controls?)**: BI report layout template — page header + KPI strip + 2-col charts zone + full-width detail zone + insights zone + optional controls. Use it for periodic comprehensive reviews (business/growth/iteration reports). Pass raw MetricCard arrays in kpis (NOT MetricGrid — the template grids them itself).
-- **FocusLayout(title, subtitle?, main, side?, detail?, controls?)**: deep-dive layout — wide main chart zone (2/3) + narrow sidebar insights (1/3) + optional bottom detail + optional controls. Use it for single-topic root-cause analysis / attribution ("why did X rise/drop"). The 1/3 sidebar fits ONLY compact widgets (InsightBox/GaugeProgress/single MetricCard/MetricGrid); put content-heavy components (ActionPlanCard/ActivityTimeline/DataTable) in detail, never in side.
-- **ComparisonLayout(title, subtitle?, leftLabel, left, rightLabel, right, verdict?, controls?)**: side-by-side comparison layout with labeled panels + optional verdict zone + optional controls. Use it for A/B tests or comparing two channels/repos/members/versions.
-- **MonitoringLayout(title, subtitle?, status?, statusBanner?, controls?, anomalies?, details?, actions?)**: System health / stability inspection / alert triage layout with status indicator, anomaly metrics, logs/details, and mitigation plans.
-- **CohortRetentionLayout(title, subtitle?, controls?, kpis?, heatmapMatrix?, decayTrend?, verdict?)**: User cohort and lifecycle retention analysis template with headline metrics, retention matrix, decay curve, and verdict.
-- **MetricCard(title, value, change?, trend?, subtext?, sparkline?)**: KPI stats card with optional sparkline micro trend.
-- **MetricGrid(columns, [cards...])**: 2, 3, or 4 column grid container for MetricCards.
-- **AnalyticsChart(type, title?, description?, xAxisKey?, data, series?, height?)**: Bar, Line, Area, or Pie charts.
-- **SpecChart(title?, spec, table?, data?, height?)**: Declarative semantic chart — you declare a ChartSpec object (dims: category fields; meas: measures with aggregation sum/avg/count/min/max; chartType: "bar"|"stacked-bar"|"line"|"area"|"combo"|"pie"|"donut"|"scatter"|"table"; filters; sort; limit; style (thresholds: [{when:{field,op,value},color:"success"|"warning"|"danger"|"info"}] for conditional coloring; referenceLines: [{value,label?,color?}] for target/average lines); sourceId) instead of hand-building rendered rows. The system materializes the data and can refresh it later with ZERO LLM calls; changing spec.chartType switches the visual without changing the binding. PREFER SpecChart for source-table statistics. combo convention: bars = all measures except the last, line (right axis) = the last measure (e.g. counts + cumulative share for Pareto).
-- **ComboChart(title?, description?, xAxisKey?, data, series, height?, leftAxisUnit?, rightAxisUnit?)**: Dual-axis mixed chart (bars for left axis volume, lines for right axis rates/percentages/averages).
-- **DataTable(title?, columns?, data, searchable?)**: Searchable, sortable, exportable table.
-- **RankingList(title?, subtitle?, items, maxDisplay?, valueFormat?)**: High-density ranking leaderboard for Top N items with relative progress bars and rank badges.
-- **InsightBox(type, title?, content)**: Tip, Info, Warning, or Success callouts.
-- **AnalyticsFilterBar(title?, defaultChannel?, defaultMetric?, filterField?, filterName?)**: Interactive filter. DECLARATIVE MODE (preferred): pass filterField {sourceId, field, table, label?} where field is a dimension/filter field shared with same-page SpecCharts — options are pulled from the source's distinct values and picking one live-refreshes matching SpecCharts with ZERO LLM calls. Demo mode (no filterField): legacy three-control form that submits a re-analysis prompt.
-- **FunnelChart(title?, description?, stages, unit?)**: Marketing / sales pipeline conversion and drop-off funnel, or Story requirement lifecycle funnel.
-- **GaugeProgress(title?, description?, current, target, unit?, subtext?)**: KPI goal achievement progress bar or Project completion rate.
-- **ActionPlanCard(title?, description?, actions)**: AI recommended decision measures and actionable checklist with priority badges.
-- **ActivityTimeline(title?, description?, items)**: Event/commit/MR/sprint milestone chronological history with status indicators.
-- **RadarChart(title?, description?, data, angleKey?, series?, height?)**: Multi-dimensional evaluation (e.g. Member workload/capability, project risk rating, code quality audit).
-- **ContributionHeatmap(title?, description?, data, color?)**: Commit / activity / task log density heatmap matrix.
-- **ReactiveSimulator(title?, defaultBudget?, channelName?, currentCac?, cvrRate?)**: Interactive budget/workload forecasting calculator with local millisecond-speed reactive updates, form validation, and client CSV export.
-- **ActionButton(label, variant?, icon?, prompt?)**: Triggerable client action / workflow button.
+${renderComponentKitDocumentation(serverLibrary)}
 
 ## Data Binding Discipline (makes dashboards refreshable):
 Dashboards whose components bind directly to query results can be refreshed later with ZERO LLM calls (queries are replayed server-side). Follow these rules so your dashboards stay refreshable:

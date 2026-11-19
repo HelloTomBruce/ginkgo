@@ -22,43 +22,10 @@ const SOURCES = [
   {
     id: "postgres",
     name: "PostgreSQL 分析库",
-    kind: "postgres",
+    kind: "db",
+    dbType: "postgres",
     tools: [],
     enabled: true,
-    builtin: true,
-  },
-  {
-    id: "gitlab-mcp",
-    name: "GitLab MCP (外部)",
-    kind: "gitlab-mcp",
-    tools: [],
-    enabled: true,
-    builtin: true,
-  },
-  {
-    id: "zentao-cli",
-    name: "ZenTao 禅道 CLI MCP (本地)",
-    kind: "zentao-cli",
-    tools: [],
-    enabled: false,
-    builtin: true,
-  },
-  {
-    id: "jira",
-    name: "Jira MCP",
-    kind: "http-mcp",
-    tools: [],
-    enabled: true,
-    hasToken: true,
-    hasHeaders: true,
-    maskedHeaders: {
-      Authorization: "***",
-      "X-Env": "prod",
-    },
-    params: {
-      tenant: "acme",
-    },
-    maskedUrl: "http://10.0.0.1:6000/mcp",
   },
   {
     id: "mysql-a",
@@ -66,18 +33,32 @@ const SOURCES = [
     kind: "db",
     tools: [],
     enabled: true,
-    
     dbType: "mysql",
     maskedConnectionString: "mysql://u:***@h:3306/db",
+  },
+  {
+    id: "clickhouse-b",
+    name: "日志库",
+    kind: "db",
+    tools: [],
+    enabled: false,
+    dbType: "clickhouse",
+    maskedConnectionString: "http://default:***@h:8123/default",
+  },
+  {
+    id: "csv1",
+    name: "销售表",
+    kind: "file",
+    tools: ["execute_sql", "list_tables", "describe_table"],
+    enabled: true,
   },
 ];
 
 const HEALTH = {
   postgres: { ok: true, latencyMs: 12 },
-  "gitlab-mcp": { ok: true, latencyMs: 30 },
-  "zentao-cli": { ok: false, latencyMs: 0, error: "down" },
-  jira: { ok: true, latencyMs: 40 },
   "mysql-a": { ok: true, latencyMs: 8 },
+  "clickhouse-b": { ok: false, latencyMs: 0, error: "down" },
+  csv1: { ok: true, latencyMs: 1 },
 };
 
 function mockGetAll() {
@@ -85,6 +66,17 @@ function mockGetAll() {
     const url = String(input);
     if (init?.method === "POST") {
       return jsonResponse({ source: { id: "ok", name: "ok" }, manifest: { tables: [] } }, 201);
+    }
+    if (url === "/api/datasources/csv1/file") {
+      return jsonResponse({
+        manifest: {
+          files: [{ name: "sales.csv", size: 10, uploadedAt: "t" }],
+          tables: [
+            { table: "sales", fromFile: "sales.csv", rowCount: 3, columns: [] },
+          ],
+          ingestedAt: "t",
+        },
+      });
     }
     if (url.includes("/api/datasources") && url.indexOf("/api/datasources/") === -1) {
       return jsonResponse({ sources: SOURCES, health: HEALTH });
@@ -116,18 +108,22 @@ describe("DatasourceSettings", () => {
     vi.unstubAllGlobals();
   });
 
-  it("渲染内置源与动态源行：类型徽章 / 启停 / 编辑 / 删除", async () => {
+  it("渲染数据源列表行：类型徽章 / 启停 / 编辑 / 删除", async () => {
     renderSettings();
 
     expect(await screen.findByText("PostgreSQL 分析库")).toBeInTheDocument();
-    expect(screen.getByText("ZenTao 禅道 CLI MCP (本地)")).toBeInTheDocument();
+    expect(screen.getByText("订单库")).toBeInTheDocument();
+    expect(screen.getByText("日志库")).toBeInTheDocument();
+    expect(screen.getByText("销售表")).toBeInTheDocument();
+
     // 动态源类型徽章
-    expect(screen.getAllByText("HTTP MCP").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("MySQL")).toBeInTheDocument();
-    // 编辑/删除仅动态源有
-    expect(screen.getByRole("button", { name: /编辑 jira/ })).toBeInTheDocument();
+    expect(screen.getByText("ClickHouse")).toBeInTheDocument();
+    expect(screen.getByText("文件")).toBeInTheDocument();
+
+    // 操作按钮
+    expect(screen.getByRole("button", { name: /编辑 mysql-a/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /删除 mysql-a/ })).toBeInTheDocument();
-    
   });
 
   it("添加数据源：切到 db 类型出现连接串字段，提交 POST 携带完整 body", async () => {
@@ -189,82 +185,6 @@ describe("DatasourceSettings", () => {
     });
   });
 
-  it("添加 stdio 源：本地 CLI 表单提交命令与空格解析后的参数", async () => {
-    renderSettings();
-    await openCreateForm();
-
-    fireEvent.change(screen.getByLabelText(/ID/), { target: { value: "zc" } });
-    fireEvent.change(screen.getByLabelText(/名称/), { target: { value: "禅道" } });
-    fireEvent.click(screen.getByLabelText(/本地 CLI/));
-    await screen.findByLabelText(/命令/);
-    fireEvent.change(screen.getByLabelText(/命令/), { target: { value: "zentao" } });
-    fireEvent.change(screen.getByLabelText(/参数/), {
-      target: { value: "mcp  --read-only " },
-    });
-    fireEvent.click(screen.getByRole("button", { name: /保存/ }));
-
-    await waitFor(() => {
-      const call = fetchMock.mock.calls.find(
-        (c) => String(c[0]) === "/api/datasources" && c[1]?.method === "POST"
-      );
-      expect(call).toBeTruthy();
-      const body = JSON.parse(call![1].body as string);
-      expect(body).toMatchObject({
-        id: "zc",
-        name: "禅道",
-        kind: "stdio-cli",
-        command: "zentao",
-        args: ["mcp", "--read-only"],
-      });
-    });
-  });
-
-  it("编辑模式 token 留空提交时 PATCH body 不含 token 字段", async () => {
-    renderSettings();
-    await screen.findByText("Jira MCP");
-
-    fireEvent.click(screen.getByRole("button", { name: /编辑 jira/ }));
-    const urlInput = await screen.findByLabelText(/URL/);
-    fireEvent.change(urlInput, { target: { value: "http://10.0.0.2:6000/mcp" } });
-    // token 留空
-    fireEvent.click(screen.getByRole("button", { name: /保存/ }));
-
-    await waitFor(() => {
-      const call = fetchMock.mock.calls.find(
-        (c) =>
-          String(c[0]) === "/api/datasources/jira" && c[1]?.method === "PATCH"
-      );
-      expect(call).toBeTruthy();
-      const body = JSON.parse(call![1].body as string);
-      expect(body).toMatchObject({ url: "http://10.0.0.2:6000/mcp" });
-      expect(body).not.toHaveProperty("token");
-    });
-  });
-
-  it("编辑 http 源：URL 留空提交时 PATCH body 不含 url（脱敏值不回填）", async () => {
-    renderSettings();
-    await screen.findByText("Jira MCP");
-
-    fireEvent.click(screen.getByRole("button", { name: /编辑 jira/ }));
-    const urlInput = await screen.findByLabelText(/URL/);
-    // 表单初值为空且提示留空保持不变（脱敏值仅展示）
-    expect(urlInput).toHaveValue("");
-    expect(urlInput).toHaveAttribute("placeholder", expect.stringContaining("留空保持不变"));
-    fireEvent.change(screen.getByLabelText(/名称/), { target: { value: "Jira MCP 2" } });
-    fireEvent.click(screen.getByRole("button", { name: /保存/ }));
-
-    await waitFor(() => {
-      const call = fetchMock.mock.calls.find(
-        (c) => String(c[0]) === "/api/datasources/jira" && c[1]?.method === "PATCH"
-      );
-      expect(call).toBeTruthy();
-      const body = JSON.parse(call![1].body as string);
-      expect(body).not.toHaveProperty("url");
-      expect(body).not.toHaveProperty("token");
-      expect(body.name).toBe("Jira MCP 2");
-    });
-  });
-
   it("编辑 db 源：连接串留空提交时 PATCH body 不含 connectionString", async () => {
     renderSettings();
     await screen.findByText("订单库");
@@ -272,6 +192,8 @@ describe("DatasourceSettings", () => {
     fireEvent.click(screen.getByRole("button", { name: /编辑 mysql-a/ }));
     await screen.findByLabelText(/连接串/);
     fireEvent.change(screen.getByLabelText(/名称/), { target: { value: "订单库 2" } });
+    // 清空连接串
+    fireEvent.change(screen.getByLabelText(/连接串/), { target: { value: "" } });
     fireEvent.click(screen.getByRole("button", { name: /保存/ }));
 
     await waitFor(() => {
@@ -287,14 +209,14 @@ describe("DatasourceSettings", () => {
 
   it("启停 toggle 发送 PATCH {enabled}", async () => {
     renderSettings();
-    await screen.findByText("订单库");
+    await screen.findByText("日志库");
 
-    fireEvent.click(screen.getByRole("button", { name: /启停 zentao-cli/ }));
+    fireEvent.click(screen.getByRole("button", { name: /启停 clickhouse-b/ }));
 
     await waitFor(() => {
       const call = fetchMock.mock.calls.find(
         (c) =>
-          String(c[0]) === "/api/datasources/zentao-cli" &&
+          String(c[0]) === "/api/datasources/clickhouse-b" &&
           c[1]?.method === "PATCH"
       );
       expect(call).toBeTruthy();
@@ -310,29 +232,31 @@ describe("DatasourceSettings", () => {
         return { status: 204 };
       }
       return jsonResponse({
-        sources: deleted ? SOURCES.filter((s) => s.id !== "jira") : SOURCES,
+        sources: deleted ? SOURCES.filter((s) => s.id !== "mysql-a") : SOURCES,
         health: HEALTH,
       });
     });
     renderSettings();
-    await screen.findByText("Jira MCP");
+    await screen.findByText("订单库");
 
-    fireEvent.click(screen.getByRole("button", { name: /删除 jira/ }));
+    fireEvent.click(screen.getByRole("button", { name: /删除 mysql-a/ }));
 
     await waitFor(() => {
-      expect(fetchMock.mock.calls.some(
-        (c) => String(c[0]) === "/api/datasources/jira" && c[1]?.method === "DELETE"
-      )).toBe(true);
+      expect(
+        fetchMock.mock.calls.some(
+          (c) => String(c[0]) === "/api/datasources/mysql-a" && c[1]?.method === "DELETE"
+        )
+      ).toBe(true);
     });
     await waitFor(() => {
-      expect(screen.queryByText("Jira MCP")).not.toBeInTheDocument();
+      expect(screen.queryByText("订单库")).not.toBeInTheDocument();
     });
   });
 
   it("再次打开时命中缓存立即渲染，不重新整屏 loading", async () => {
     // 第一次挂载填充模块级缓存
     const first = renderSettings();
-    expect(await first.findByText("Jira MCP")).toBeInTheDocument();
+    expect(await first.findByText("订单库")).toBeInTheDocument();
     first.unmount();
 
     // 第二次挂载：GET 挂起未返回，列表应同步来自缓存
@@ -340,7 +264,7 @@ describe("DatasourceSettings", () => {
       () => new Promise(() => {}) // 永不 resolve，隔离网络
     );
     renderSettings();
-    expect(screen.getByText("Jira MCP")).toBeInTheDocument();
+    expect(screen.getByText("订单库")).toBeInTheDocument();
     expect(screen.queryByText("加载中...")).not.toBeInTheDocument();
   });
 
@@ -359,7 +283,7 @@ describe("DatasourceSettings", () => {
       }
     );
     renderSettings();
-    const btn = await screen.findByRole("button", { name: /启停 zentao-cli/ });
+    const btn = await screen.findByRole("button", { name: /启停 clickhouse-b/ });
 
     fireEvent.click(btn);
 
@@ -384,7 +308,7 @@ describe("DatasourceSettings", () => {
       }
     );
     renderSettings();
-    const btn = await screen.findByRole("button", { name: /删除 jira/ });
+    const btn = await screen.findByRole("button", { name: /删除 mysql-a/ });
 
     fireEvent.click(btn);
 
@@ -402,7 +326,7 @@ describe("DatasourceSettings", () => {
         return { status: 204 };
       }
       return jsonResponse({
-        sources: deleted ? SOURCES.filter((s) => s.id !== "jira") : SOURCES,
+        sources: deleted ? SOURCES.filter((s) => s.id !== "mysql-a") : SOURCES,
         health: HEALTH,
       });
     });
@@ -415,7 +339,7 @@ describe("DatasourceSettings", () => {
     const probe = screen.getByTestId("probe-count");
     await waitFor(() => expect(probe).toHaveTextContent(String(SOURCES.length)));
 
-    fireEvent.click(screen.getByRole("button", { name: /删除 jira/ }));
+    fireEvent.click(screen.getByRole("button", { name: /删除 mysql-a/ }));
 
     await waitFor(() => expect(probe).toHaveTextContent(String(SOURCES.length - 1)));
   });
@@ -434,39 +358,14 @@ describe("DatasourceSettings", () => {
 
     fireEvent.change(screen.getByLabelText(/ID/), { target: { value: "BAD" } });
     fireEvent.change(screen.getByLabelText(/名称/), { target: { value: "x" } });
-    fireEvent.click(screen.getByLabelText(/HTTP MCP/));
-    fireEvent.change(screen.getByLabelText(/URL/), { target: { value: "http://x/mcp" } });
+    fireEvent.click(screen.getByLabelText(/数据库连接/));
+    fireEvent.change(screen.getByLabelText(/连接串/), { target: { value: "postgres://u:p@h:5432/db" } });
     fireEvent.click(screen.getByRole("button", { name: /保存/ }));
 
     expect(await screen.findByText(/id 非法/)).toBeInTheDocument();
   });
 
   it("文件源行：类型徽章与上传面板（manifest 表清单）", async () => {
-    const FILE_SOURCE = {
-      id: "csv1",
-      name: "销售表",
-      kind: "file",
-      tools: ["execute_sql", "list_tables", "describe_table"],
-      enabled: true,
-    };
-    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url === "/api/datasources/csv1/file") {
-        return jsonResponse({
-          manifest: {
-            files: [{ name: "sales.csv", size: 10, uploadedAt: "t" }],
-            tables: [
-              { table: "sales", fromFile: "sales.csv", rowCount: 3, columns: [] },
-            ],
-            ingestedAt: "t",
-          },
-        });
-      }
-      if (url.includes("/api/datasources") && url.indexOf("/api/datasources/") === -1) {
-        return jsonResponse({ sources: [...SOURCES, FILE_SOURCE], health: HEALTH });
-      }
-      return jsonResponse({ error: "unexpected" }, 500);
-    });
     renderSettings();
 
     expect(await screen.findByText("销售表")).toBeInTheDocument();
@@ -480,13 +379,11 @@ describe("DatasourceSettings", () => {
     renderSettings();
     await openCreateForm();
 
-    fireEvent.change(screen.getByLabelText(/ID/), { target: { value: "csv1" } });
-    fireEvent.change(screen.getByLabelText(/名称/), { target: { value: "销售表" } });
+    fireEvent.change(screen.getByLabelText(/ID/), { target: { value: "csv2" } });
+    fireEvent.change(screen.getByLabelText(/名称/), { target: { value: "用户表" } });
     fireEvent.click(screen.getByLabelText(/文件（CSV\/Excel\/Parquet\/JSON）/));
     // 文件类型不渲染连接字段
-    expect(screen.queryByLabelText(/URL/)).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/连接串/)).not.toBeInTheDocument();
-    expect(screen.queryByLabelText(/命令/)).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /保存/ }));
 
@@ -496,7 +393,7 @@ describe("DatasourceSettings", () => {
       );
       expect(call).toBeTruthy();
       const body = JSON.parse(call![1].body as string);
-      expect(body).toEqual({ id: "csv1", name: "销售表", kind: "file" });
+      expect(body).toEqual({ id: "csv2", name: "用户表", kind: "file" });
     });
   });
 
@@ -508,7 +405,8 @@ describe("DatasourceSettings", () => {
     expect(screen.getByText(/点击选择文件 或 拖拽文件到此处/)).toBeInTheDocument();
 
     const file = new File(["a,b\n1,2"], "orders.csv", { type: "text/csv" });
-    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    const dialog = screen.getByRole("dialog");
+    const fileInput = dialog.querySelector('input[type="file"]') as HTMLInputElement;
     expect(fileInput).toBeInTheDocument();
 
     // 选中文件后自动以文件名填充名称与 id
@@ -591,150 +489,6 @@ describe("DatasourceSettings", () => {
     // 不应发送 PATCH 请求
     const call = fetchMock.mock.calls.find(
       (c) => String(c[0]) === "/api/datasources/mysql-a" && c[1]?.method === "PATCH"
-    );
-    expect(call).toBeUndefined();
-  });
-
-  it("添加 http-mcp 源：支持配置 Headers (JSON) 与 Params (JSON) 并提交", async () => {
-    renderSettings();
-    await openCreateForm();
-
-    fireEvent.change(screen.getByLabelText(/ID/), { target: { value: "custom-api" } });
-    fireEvent.change(screen.getByLabelText(/名称/), { target: { value: "自定义接口" } });
-    fireEvent.click(screen.getByLabelText(/HTTP MCP/));
-    fireEvent.change(screen.getByLabelText(/URL/), { target: { value: "https://api.example.com/mcp" } });
-    fireEvent.change(screen.getByLabelText(/Headers 配置/), {
-      target: { value: JSON.stringify({ Authorization: "Bearer my-token", "X-Key": "123" }) },
-    });
-    fireEvent.change(screen.getByLabelText(/参数配置/), {
-      target: { value: JSON.stringify({ tenant: "t-1", env: "staging" }) },
-    });
-    fireEvent.click(screen.getByRole("button", { name: /保存/ }));
-
-    await waitFor(() => {
-      const call = fetchMock.mock.calls.find(
-        (c) => String(c[0]) === "/api/datasources" && c[1]?.method === "POST"
-      );
-      expect(call).toBeTruthy();
-      const body = JSON.parse(call![1].body as string);
-      expect(body).toEqual({
-        id: "custom-api",
-        name: "自定义接口",
-        kind: "http-mcp",
-        url: "https://api.example.com/mcp",
-        headers: {
-          Authorization: "Bearer my-token",
-          "X-Key": "123",
-        },
-        params: {
-          tenant: "t-1",
-          env: "staging",
-        },
-      });
-    });
-  });
-
-  it("添加 http-mcp 源：Headers 输入非法 JSON 格式时阻止提交并显示错误", async () => {
-    renderSettings();
-    await openCreateForm();
-
-    fireEvent.change(screen.getByLabelText(/ID/), { target: { value: "bad-json-mcp" } });
-    fireEvent.change(screen.getByLabelText(/名称/), { target: { value: "错误JSON测试" } });
-    fireEvent.click(screen.getByLabelText(/HTTP MCP/));
-    fireEvent.change(screen.getByLabelText(/URL/), { target: { value: "https://api.example.com/mcp" } });
-    fireEvent.change(screen.getByLabelText(/Headers 配置/), {
-      target: { value: "not a valid json" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: /保存/ }));
-
-    expect(await screen.findByText(/Headers 格式不合法/)).toBeInTheDocument();
-    const call = fetchMock.mock.calls.find(
-      (c) => String(c[0]) === "/api/datasources" && c[1]?.method === "POST"
-    );
-    expect(call).toBeUndefined();
-  });
-
-  it("编辑 http-mcp 源：正确回显脱敏 Headers 与 Params，支持修改 Headers 提交", async () => {
-    renderSettings();
-    await screen.findByText("Jira MCP");
-
-    fireEvent.click(screen.getByRole("button", { name: /编辑 jira/ }));
-    const headersTextarea = await screen.findByLabelText(/Headers 配置/);
-    expect(headersTextarea).toHaveValue(
-      JSON.stringify(
-        {
-          Authorization: "***",
-          "X-Env": "prod",
-        },
-        null,
-        2
-      )
-    );
-    const paramsTextarea = screen.getByLabelText(/参数配置/);
-    expect(paramsTextarea).toHaveValue(
-      JSON.stringify({ tenant: "acme" }, null, 2)
-    );
-
-    // 修改 Headers 为新合法内容
-    fireEvent.change(headersTextarea, {
-      target: {
-        value: JSON.stringify({ Authorization: "Bearer new-secret", "X-Env": "prod" }),
-      },
-    });
-    fireEvent.click(screen.getByRole("button", { name: /保存/ }));
-
-    await waitFor(() => {
-      const call = fetchMock.mock.calls.find(
-        (c) => String(c[0]) === "/api/datasources/jira" && c[1]?.method === "PATCH"
-      );
-      expect(call).toBeTruthy();
-      const body = JSON.parse(call![1].body as string);
-      expect(body.headers).toEqual({
-        Authorization: "Bearer new-secret",
-        "X-Env": "prod",
-      });
-    });
-  });
-
-  it("编辑 http-mcp 源：修改 Headers 若包含脱敏星号(***)时拦截并报错", async () => {
-    renderSettings();
-    await screen.findByText("Jira MCP");
-
-    fireEvent.click(screen.getByRole("button", { name: /编辑 jira/ }));
-    const headersTextarea = await screen.findByLabelText(/Headers 配置/);
-    // 只改动了一个字段，但保留了 Authorization 的 ***
-    fireEvent.change(headersTextarea, {
-      target: {
-        value: JSON.stringify({ Authorization: "***", "X-Env": "stage" }),
-      },
-    });
-    fireEvent.click(screen.getByRole("button", { name: /保存/ }));
-
-    expect(
-      await screen.findByText(/Headers 包含脱敏星号\(.*?\)，若修改 Headers 请填入完整的值/)
-    ).toBeInTheDocument();
-    const call = fetchMock.mock.calls.find(
-      (c) => String(c[0]) === "/api/datasources/jira" && c[1]?.method === "PATCH"
-    );
-    expect(call).toBeUndefined();
-  });
-
-  it("编辑 http-mcp 源：修改参数配置若包含脱敏星号(***)时同样拦截并报错", async () => {
-    renderSettings();
-    await screen.findByText("Jira MCP");
-
-    fireEvent.click(screen.getByRole("button", { name: /编辑 jira/ }));
-    const paramsTextarea = await screen.findByLabelText(/参数配置/);
-    fireEvent.change(paramsTextarea, {
-      target: { value: JSON.stringify({ api_key: "***", tenant: "acme" }) },
-    });
-    fireEvent.click(screen.getByRole("button", { name: /保存/ }));
-
-    expect(
-      await screen.findByText(/参数配置 包含脱敏星号\(.*?\)，若修改 参数配置 请填入完整的值/)
-    ).toBeInTheDocument();
-    const call = fetchMock.mock.calls.find(
-      (c) => String(c[0]) === "/api/datasources/jira" && c[1]?.method === "PATCH"
     );
     expect(call).toBeUndefined();
   });

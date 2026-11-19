@@ -1,9 +1,8 @@
 // @vitest-environment node
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createAnalyzeHandler } from "./handler";
-import { SessionStreamHub } from "./streamHub";
+import { SessionStreamHub, type HarnessEvent } from "@openui-analytics/harness-core";
 import type { AuthContext } from "./handler";
-import type { HarnessEvent } from "./telemetry";
 import type { DatasourceManager, McpToolBinding } from "@openui-analytics/datasources";
 import { streamText } from "ai";
 import fs from "node:fs";
@@ -42,10 +41,10 @@ async function makeFakeManager(): Promise<DatasourceManager> {
       sources: [
         {
           id: "jira",
-          name: "Jira MCP",
-          kind: "http-mcp",
-          url: "http://10.0.0.1:6000/mcp",
-          token: "",
+          name: "Jira DB",
+          kind: "db",
+          dbType: "postgres",
+          connectionString: "postgres://localhost/db",
           enabled: true,
         },
       ],

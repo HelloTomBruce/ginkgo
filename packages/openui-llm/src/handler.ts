@@ -5,8 +5,6 @@ import {
   tool,
   jsonSchema,
   createDataStreamResponse,
-  wrapLanguageModel,
-  extractReasoningMiddleware,
   type CoreMessage,
   type CoreTool,
   type LanguageModel,
@@ -20,8 +18,6 @@ import {
   buildSummaryPrompt,
   SUMMARY_MAX_TOKENS,
 } from "./context";
-import { createOpenAI } from "@ai-sdk/openai";
-import { createAnthropic } from "@ai-sdk/anthropic";
 import {
   mergeToolSets,
   renderCardForPrompt,
@@ -35,42 +31,49 @@ import {
   builtinMethodCards,
   createMethodLibrary,
   renderMethodIndex,
-  renderCardDetail,
   type MethodLibrary,
 } from "@openui-analytics/methodology";
 import { getOpenUISystemPrompt, getOpenUIPlanPrompt, getExecuteSystemPrompt } from "./prompt";
-import { serverLibrary } from "./serverLibrary";
-import { createParser } from "@openuidev/lang-core";
-import { getCrossSourceLinks, resolveCrossSourcePairs } from "./crossSourceMap";
-import { DEFAULT_TENANT_ID, SessionStreamHub, defaultStreamHub } from "./streamHub";
-import { FileTaskStore } from "./fileTaskStore";
-import { RedisTaskStore } from "./redisTaskStore";
-import type { TaskStore } from "./taskStore";
-import { createReasoningFetch } from "./reasoningStream";
+import { instrumentTools } from "./pipeline/instrumentTools";
 import {
+  buildMethodDetailsFromMessages,
+  renderMethodDetailsByIds,
+} from "./pipeline/methodSelector";
+import { extractPlanMethods } from "./pipeline/planExtractor";
+
+export { buildMethodDetailsFromMessages, extractPlanMethods };
+import {
+  defaultCrossSourceRegistry,
+  CrossSourceRegistry,
+} from "./crossSourceMap";
+import {
+  defaultModelCatalog,
+  type ModelCatalog,
+  DEFAULT_TENANT_ID,
+  SessionStreamHub,
+  defaultStreamHub,
+  FileTaskStore,
+  RedisTaskStore,
+  type TaskStore,
   classifyProviderError,
-  createResilientFetch,
   isRetriableErrorClass,
   resolveResiliencePolicy,
   type ResiliencePolicy,
   type ResolvedModelSpec,
-} from "./resilience";
-import type { RunId, TelemetrySink } from "./telemetry";
-import {
+  buildLanguageModel as createConfiguredModel,
+  type TelemetrySink,
   computeCostUsd,
   DEFAULT_QUOTA_WINDOW_MS,
   InMemoryCostLedger,
   ModelPricingTable,
   type CostLedger,
   type QuotaPolicy,
-} from "./costLedger";
-import { createConsoleSink, jsonByteSize, newRunId } from "./telemetry";
+  createConsoleSink,
+  newRunId,
+} from "@openui-analytics/harness-core";
 
 /** 全部启用源结构卡注入 prompt 的总量预算（与单卡 2KB 预算配套，快照测试守护） */
 export const SCHEMA_DIGEST_TOTAL_BUDGET_BYTES = 8 * 1024;
-
-/** WS-4:plan 代码块解析器(模块级构造一次;解析 PlanReviewCard.methods 用) */
-const planParser = createParser(serverLibrary.toJSONSchema(), "Root");
 
 /**
  * env → TaskStore（显式注入 opts.taskStore 时本函数不被调用——注入优先于 env，
@@ -184,164 +187,6 @@ function anySignal(signals: AbortSignal[]): AbortSignal {
   return combined.signal;
 }
 
-/**
- * 工具执行遥测包装:为数据源工具的 execute 叠加耗时/结果量级/成败采集,
- * 不改变工具的输入输出语义(含失败重抛)。无 execute 的纯查询型工具原样透传。
- */
-function instrumentTools(
-  tools: Record<string, CoreTool>,
-  ctx: { runId: RunId; sessionId?: string; sourceId?: string; telemetry: TelemetrySink }
-): Record<string, CoreTool> {
-  const wrapped: Record<string, CoreTool> = {};
-  for (const [name, t] of Object.entries(tools)) {
-    const orig = t as { execute?: (args: unknown, opts: unknown) => Promise<unknown> };
-    if (typeof orig.execute !== "function") {
-      wrapped[name] = t;
-      continue;
-    }
-    const origExecute = orig.execute.bind(t);
-    wrapped[name] = {
-      ...t,
-      execute: async (args: unknown, callOpts: unknown) => {
-        const t0 = Date.now();
-        try {
-          const result = await origExecute(args, callOpts);
-          ctx.telemetry.emit({
-            type: "tool_result",
-            runId: ctx.runId,
-            sessionId: ctx.sessionId,
-            tool: name,
-            sourceId: ctx.sourceId,
-            ok: !(
-              result &&
-              typeof result === "object" &&
-              (result as { isError?: unknown }).isError === true
-            ),
-            bytes: jsonByteSize(result),
-            durationMs: Date.now() - t0,
-          });
-          return result;
-        } catch (err) {
-          ctx.telemetry.emit({
-            type: "tool_result",
-            runId: ctx.runId,
-            sessionId: ctx.sessionId,
-            tool: name,
-            sourceId: ctx.sourceId,
-            ok: false,
-            bytes: -1,
-            durationMs: Date.now() - t0,
-          });
-          throw err;
-        }
-      },
-    } as CoreTool;
-  }
-  return wrapped;
-}
-
-/**
- * execute 模式方法提取（WS-4 结构化交接的降级兜底）：从消息历史**最近一条 assistant 消息**（即待执行的
- * PlanReviewCard 规划）中匹配方法 id（词边界）或卡名（中文语境兜底），
- * 命中卡按需注入详情（≤2 张，与 plan 阶段「选 1~2 个方法」契约一致）。
- * 未命中返回 undefined（execute prompt 回落到无详情的增量约束）。
- */
-export function buildMethodDetailsFromMessages(
-  library: MethodLibrary,
-  messages: unknown[]
-): string | undefined {
-  let lastAssistant: string | undefined;
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const m = messages[i] as { role?: unknown; content?: unknown } | null;
-    if (!m || m.role !== "assistant") continue;
-    lastAssistant = typeof m.content === "string" ? m.content : undefined;
-    break;
-  }
-  if (!lastAssistant) return undefined;
-
-  const matched: string[] = [];
-  for (const card of library.cards) {
-    if (matched.length >= 2) break;
-    const idRe = new RegExp(`\\b${card.id}\\b`, "i");
-    if (idRe.test(lastAssistant) || lastAssistant.includes(card.name)) {
-      matched.push(renderCardDetail(card));
-    }
-  }
-  return matched.length > 0 ? matched.join("\n\n") : undefined;
-}
-
-/** 按 id 注入方法卡详情（WS-4 结构化主路径;≤2 张,与 plan 契约一致;未知 id 跳过） */
-function renderMethodDetailsByIds(
-  library: MethodLibrary,
-  ids: string[]
-): string | undefined {
-  const matched: string[] = [];
-  for (const id of ids) {
-    if (matched.length >= 2) break;
-    const card = library.cards.find((c) => c.id === id);
-    if (card) matched.push(renderCardDetail(card));
-  }
-  return matched.length > 0 ? matched.join("\n\n") : undefined;
-}
-
-/** 在解析 AST 中泛型递归查找指定组件的 props(lang-core 元素以 typeName 标识组件名) */
-function findComponentProps(
-  node: unknown,
-  componentName: string
-): Record<string, unknown> | undefined {
-  if (!node || typeof node !== "object") return undefined;
-  const n = node as Record<string, unknown>;
-  if (
-    (n.typeName === componentName || n.name === componentName) &&
-    n.props &&
-    typeof n.props === "object"
-  ) {
-    return n.props as Record<string, unknown>;
-  }
-  for (const value of Object.values(n)) {
-    if (Array.isArray(value)) {
-      for (const v of value) {
-        const found = findComponentProps(v, componentName);
-        if (found) return found;
-      }
-    } else if (value && typeof value === "object") {
-      const found = findComponentProps(value, componentName);
-      if (found) return found;
-    }
-  }
-  return undefined;
-}
-
-/**
- * WS-4:plan 阶段 onFinish 从最后一步文本提取结构化方法列表。
- * 用 serverLibrary 的 parser 正规解析 ```openui 代码块,读取 PlanReviewCard.methods;
- * 任何失败(无代码块/解析错误/缺 methods)返回 [],由调用方决定降级路径。
- */
-export function extractPlanMethods(finalText: string): string[] {
-  if (!finalText || typeof finalText !== "string") return [];
-  const blockRe = /```openui\n([\s\S]*?)```/g;
-  let match: RegExpExecArray | null;
-  while ((match = blockRe.exec(finalText)) !== null) {
-    const code = match[1];
-    if (!code.includes("PlanReviewCard")) continue;
-    try {
-      const result = planParser.parse(code);
-      const props = findComponentProps(result.root, "PlanReviewCard");
-      const raw = props?.methods;
-      if (Array.isArray(raw)) {
-        const ids = raw
-          .filter((v): v is string => typeof v === "string" && v.length > 0)
-          .filter((v, i, arr) => arr.indexOf(v) === i)
-          .slice(0, 4);
-        if (ids.length > 0) return ids;
-      }
-    } catch {
-      // 单块解析失败继续尝试下一块(模型可能输出 InsightBox 附属块)
-    }
-  }
-  return [];
-}
-
 /** 会话上下文元数据（投影式压缩的锚点与摘要缓存；与应用层 SessionContextMeta 同构） */
 export interface SessionContextMeta {
   lastPromptTokens?: number;
@@ -426,6 +271,10 @@ export interface AnalyzeHandlerOptions {
    * 时按 config/model-tokenizer.json 映射动态加载 js-tiktoken（未安装回退启发式）。
    */
   tokenizer?: { encode(text: string): number };
+  /** 跨源联合映射注册表（可选注入；缺省全局单例 defaultCrossSourceRegistry） */
+  crossSourceRegistry?: CrossSourceRegistry;
+  /** 模型元数据注册表（可选注入；缺省全局单例 defaultModelCatalog） */
+  modelCatalog?: ModelCatalog;
 }
 
 export interface AnalyzeRequestBody {
@@ -532,6 +381,8 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
       : undefined);
   const costLedger = opts.costLedger ?? (quota ? new InMemoryCostLedger() : undefined);
   const pricingTable = costLedger ? (opts.pricing ?? new ModelPricingTable()) : undefined;
+  const crossSourceRegistry = opts.crossSourceRegistry ?? defaultCrossSourceRegistry;
+  const modelCatalog = opts.modelCatalog ?? defaultModelCatalog;
 
   const POST = async function (req: Request) {
     const runId = newRunId();
@@ -791,71 +642,32 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
       });
 
       /**
-       * 按模型链上的某个 ModelSpec 装配 languageModel：
-       * - 协议分派：anthropic 端点（如 Kimi Coding，实际路径 /v1/messages，baseURL 自动补 /v1）
-       *   或缺省 openai 兼容端点（/chat/completions，baseURL 去尾斜杠）
-       * - WS-9 韧性：provider fetch 外侧包指数退避重试（尊重 Retry-After + 首字节超时），
-       *   openai 侧内侧再挂 SSE 两道防御（reasoning 字段标准化 + 重复循环熔断）
-       * - 提取 <think>...</think> 标签为标准 reasoning 分块（统一兼容 DeepSeek/Qwen 以及
-       *   经由 createReasoningFetch 拦截转换的 GLM/Moonshot 等）
+       * 按模型链上的某个 ModelSpec 装配 languageModel（委托 providers/factory 装配）
        */
       const buildLanguageModel = (spec: ResolvedModelSpec): LanguageModel => {
-        const normalizedBase = spec.baseURL.replace(/\/+$/, "");
-        const anthropicBase = /\/v1$/.test(normalizedBase)
-          ? normalizedBase
-          : `${normalizedBase}/v1`;
-        const resilienceHooks = {
-          onRetry: (info: {
-            attempt: number;
-            errorClass: string;
-            delayMs: number;
-            reason: string;
-          }) => {
-            telemetry.emit({
-              type: "warn",
-              runId,
-              sessionId: sessionIdForEvents,
-              code: "PROVIDER_RETRY",
-              detail: `第 ${info.attempt} 次重试(${info.errorClass})，等待 ${info.delayMs}ms：${info.reason}`,
-            });
+        return createConfiguredModel(spec, {
+          resiliencePolicy,
+          telemetryHooks: {
+            onRetry: (info) => {
+              telemetry.emit({
+                type: "warn",
+                runId,
+                sessionId: sessionIdForEvents,
+                code: "PROVIDER_RETRY",
+                detail: `第 ${info.attempt} 次重试(${info.errorClass})，等待 ${info.delayMs}ms：${info.reason}`,
+              });
+            },
+            onCircuitBreak: (info) => {
+              telemetry.emit({
+                type: "warn",
+                runId,
+                sessionId: sessionIdForEvents,
+                code: "REPETITION_CIRCUIT",
+                detail: `输出重复循环已熔断:连续 ${info.repeats} 行相同,已产出 ${info.totalChars} 字符`,
+              });
+            },
           },
-        };
-        const guardedFetch =
-          spec.protocol === "anthropic"
-            ? createResilientFetch(fetch, resiliencePolicy, resilienceHooks)
-            : createResilientFetch(
-                createReasoningFetch(fetch, {
-                  onCircuitBreak: (info) => {
-                    telemetry.emit({
-                      type: "warn",
-                      runId,
-                      sessionId: sessionIdForEvents,
-                      code: "REPETITION_CIRCUIT",
-                      detail: `输出重复循环已熔断:连续 ${info.repeats} 行相同,已产出 ${info.totalChars} 字符`,
-                    });
-                  },
-                }),
-                resiliencePolicy,
-                resilienceHooks
-              );
-        const baseModel =
-          spec.protocol === "anthropic"
-            ? createAnthropic({
-                apiKey: spec.apiKey,
-                baseURL: anthropicBase,
-                fetch: guardedFetch,
-              })(spec.model)
-            : createOpenAI({
-                apiKey: spec.apiKey,
-                baseURL: normalizedBase,
-                fetch: guardedFetch,
-              })(spec.model);
-        return baseModel && typeof baseModel === "object"
-          ? wrapLanguageModel({
-              model: baseModel,
-              middleware: extractReasoningMiddleware({ tagName: "think" }),
-            })
-          : baseModel;
+        });
       };
 
       const languageModel = buildLanguageModel(modelChain[0]);
@@ -988,7 +800,7 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
         hint: unknown,
         summaryModel: LanguageModel
       ): Promise<{ system: string; messages: CoreMessage[] }> => {
-        const contextWindow = resolveContextWindow(modelName, hint);
+        const contextWindow = resolveContextWindow(modelName, hint, modelCatalog);
         const budget = computeBudget(contextWindow, maxOutputTokens);
         const projection = projectMessages({
           messages: messages as CoreMessage[],
@@ -1085,7 +897,7 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
       // 跨源映射工具：仅当用户在 cross-source-map.json 配置的源配对
       // 在当前激活源集合中成立时注册（代码不内置任何数据源名）
       const crossSourceTools: Record<string, CoreTool> = {};
-      const crossSourcePairs = resolveCrossSourcePairs(summaries.map((s) => s.id));
+      const crossSourcePairs = crossSourceRegistry.resolveCrossSourcePairs(summaries.map((s) => s.id));
       if (crossSourcePairs.length > 0) {
         const pairDesc = crossSourcePairs
           .map((p) => `${p.projectSource} ↔ ${p.repoSource}`)
@@ -1112,7 +924,7 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
               bytes: -1,
               durationMs: 0,
             });
-            return getCrossSourceLinks(project_id);
+            return crossSourceRegistry.getCrossSourceLinks(project_id);
           },
         });
       }

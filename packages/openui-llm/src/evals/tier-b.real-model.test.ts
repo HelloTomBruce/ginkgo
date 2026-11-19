@@ -21,7 +21,7 @@ import { createAnalyzeHandler } from "../handler";
 import { serverLibrary } from "../serverLibrary";
 import { createParser } from "@openuidev/lang-core";
 import { createDatasourceManager, type DatasourceManager } from "@openui-analytics/datasources";
-import type { HarnessEvent, TelemetrySink } from "../telemetry";
+import type { HarnessEvent, TelemetrySink } from "@openui-analytics/harness-core";
 
 const hasApiKey = Boolean(process.env.OPENAI_API_KEY || process.env.LLM_API_KEY);
 

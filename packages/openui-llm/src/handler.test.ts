@@ -1,8 +1,11 @@
 // @vitest-environment node
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createAnalyzeHandler, type SessionContextMeta, type SessionContextStore } from "./handler";
-import { InMemoryTaskStore } from "./taskStore";
-import { InMemoryCostLedger, type ModelPricingTable } from "./costLedger";
+import {
+  InMemoryTaskStore,
+  InMemoryCostLedger,
+  type ModelPricingTable,
+} from "@openui-analytics/harness-core";
 import type {
   DatasourceManager,
   McpToolBinding,
@@ -12,12 +15,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-const TEST_DYNAMIC_HTTP = {
+const TEST_DYNAMIC_SOURCE = {
   id: "jira",
-  name: "Jira MCP",
-  kind: "http-mcp" as const,
-  url: "http://10.0.0.1:6000/mcp",
-  token: "",
+  name: "Jira DB",
+  kind: "db" as const,
+  dbType: "postgres" as const,
+  connectionString: "postgres://localhost/db",
   enabled: true,
 };
 
@@ -39,10 +42,10 @@ async function makeFakeManager(
       sources: [
         {
           id: "jira",
-          name: "Jira MCP",
-          kind: "http-mcp",
-          url: "http://10.0.0.1:6000/mcp",
-          token: "",
+          name: "Jira DB",
+          kind: "db",
+          dbType: "postgres",
+          connectionString: "postgres://localhost/db",
           enabled: true,
         },
         ...extraSources,
@@ -230,7 +233,7 @@ describe("createAnalyzeHandler 全动态装配", () => {
       })
     );
 
-    expect(manager.tools).toHaveBeenCalledWith(TEST_DYNAMIC_HTTP);
+    expect(manager.tools).toHaveBeenCalledWith(TEST_DYNAMIC_SOURCE);
     const arg = vi.mocked(streamText).mock.calls[0][0];
     // 仅 jira 单源（无禅道×GitLab 对）：跨源映射工具不注册
     expect(Object.keys(arg.tools ?? {})).not.toContain("cross_source_link");
@@ -262,16 +265,17 @@ describe("createAnalyzeHandler 全动态装配", () => {
         {
           id: "zentao-cli",
           name: "禅道",
-          kind: "stdio-cli",
-          command: "zentao",
+          kind: "db",
+          dbType: "postgres",
+          connectionString: "postgres://localhost/zentao",
           enabled: true,
         },
         {
           id: "gitlab",
           name: "gitlab",
-          kind: "http-mcp",
-          url: "http://10.0.0.1:6001/mcp",
-          token: "",
+          kind: "db",
+          dbType: "postgres",
+          connectionString: "postgres://localhost/gitlab",
           enabled: true,
         },
       ]);
@@ -353,10 +357,10 @@ describe("createAnalyzeHandler 全动态装配", () => {
 
     await POST(makeRequest({ messages: [], apiKey: "k", sources: ["jira"] }));
 
-    expect(manager.tools).toHaveBeenCalledWith(TEST_DYNAMIC_HTTP);
+    expect(manager.tools).toHaveBeenCalledWith(TEST_DYNAMIC_SOURCE);
     const arg = vi.mocked(streamText).mock.calls[0][0];
     expect(Object.keys(arg.tools ?? {})).toContain("jira_jira_search");
-    expect(arg.system).toContain("Jira MCP");
+    expect(arg.system).toContain("Jira DB");
     // 无内置静态段
     expect(arg.system).not.toContain("PostgreSQL Analytics Database");
   });

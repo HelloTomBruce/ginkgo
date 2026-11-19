@@ -14,8 +14,8 @@ import {
   type TaskStore,
 } from "./taskStore";
 import { PROCESS_RESTART_ERROR_MESSAGE } from "./fileTaskStore";
-import type { AbortReason, RunId, TelemetrySink } from "./telemetry";
-import { createConsoleSink } from "./telemetry";
+import type { AbortReason, RunId, TelemetrySink } from "../telemetry/telemetry";
+import { createConsoleSink } from "../telemetry/telemetry";
 
 export interface StreamSubscriber {
   controller: ReadableStreamDefaultController<Uint8Array>;

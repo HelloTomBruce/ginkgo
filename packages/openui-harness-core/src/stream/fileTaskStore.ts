@@ -2,7 +2,7 @@ import { EventEmitter } from "node:events";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { AbortReason } from "./telemetry";
+import type { AbortReason } from "../telemetry/telemetry";
 import type { TaskSnapshot, TaskStatus, TaskStore } from "./taskStore";
 
 const TERMINAL_RETENTION_MS = 30_000;

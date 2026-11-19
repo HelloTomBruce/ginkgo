@@ -97,14 +97,15 @@ describe("manager: 文件源", () => {
 
   it("非文件源调用 ingestFiles 报错", async () => {
     manager.upsert({
-      id: "web1",
-      name: "HTTP",
-      kind: "http-mcp",
-      url: "http://example.com/mcp",
+      id: "db1",
+      name: "PG",
+      kind: "db",
+      dbType: "postgres",
+      connectionString: "postgres://root@localhost/db",
       enabled: true,
     });
     await expect(
-      manager.ingestFiles("web1", [{ name: "a.csv", data: CSV_V1 }])
+      manager.ingestFiles("db1", [{ name: "a.csv", data: CSV_V1 }])
     ).rejects.toThrow("不是文件类型");
   });
 

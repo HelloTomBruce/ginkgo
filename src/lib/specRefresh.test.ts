@@ -190,8 +190,7 @@ describe("MCP 源退化通道（M3-1）", () => {
   const HTTP_SOURCE: DynamicSourceConfig = {
     id: "gl1",
     name: "GitLab",
-    kind: "http-mcp",
-    url: "http://localhost",
+    kind: "file",
     enabled: true,
   };
   const MCP_SPEC_DSL = [

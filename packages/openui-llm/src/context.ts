@@ -1,64 +1,28 @@
 import type { CoreMessage } from "ai";
+import {
+  defaultModelCatalog,
+  CONTEXT_WINDOW_MIN,
+  CONTEXT_WINDOW_MAX,
+  DEFAULT_CONTEXT_WINDOW,
+  type ModelCatalog,
+} from "@openui-analytics/harness-core";
 
-/**
- * 上下文治理（投影式压缩）——设计定稿见 TASK-033：
- *
- * 管线：token 计量 → 未超阈值原样直发 → 超阈值走 tool-result pruning →
- * 仍超走 LLM 摘要（缓存在会话元数据）→ 发给模型。
- *
- * - 投影式：存储层永远保存完整历史，本模块只构造「发往模型的投影」
- * - 计量：usage.promptTokens 实测锚点 + 字符启发式增量（无 tokenizer 依赖）
- * - 豁免：用户消息、最近一张 PlanReviewCard 永不裁剪
- * - 触发：估算 prompt > min(窗口 × 0.7, 窗口 − maxTokens − 8k)
- * - 保留窗口：模型窗口 × 25% 的最近消息逐字保留
- */
-
-/** 窗口解析上下限（客户端 hint 与查表值都钳制在此区间） */
-export const CONTEXT_WINDOW_MIN = 8192;
-export const CONTEXT_WINDOW_MAX = 2_000_000;
-/** 未命中查表与 hint 时的保守缺省窗口 */
-export const DEFAULT_CONTEXT_WINDOW = 128_000;
-
-/** 常见模型窗口查表（前缀匹配，长前缀优先；命中不了回落缺省） */
-const MODEL_WINDOW_TABLE: [prefix: string, window: number][] = [
-  ["gpt-4o", 128_000],
-  ["gpt-4.1", 1_000_000],
-  ["gpt-5", 400_000],
-  ["o4-mini", 200_000],
-  ["o3", 200_000],
-  ["claude-", 200_000],
-  ["kimi", 262_144],
-  ["glm-5", 200_000],
-  ["glm-4", 128_000],
-  ["deepseek", 128_000],
-  ["qwen", 131_072],
-  ["gemini", 1_000_000],
-];
+export {
+  CONTEXT_WINDOW_MIN,
+  CONTEXT_WINDOW_MAX,
+  DEFAULT_CONTEXT_WINDOW,
+};
 
 /**
  * 解析本次请求的上下文窗口：客户端 hint（provider catalog 提供）优先，
- * 其次模型名前缀查表，兜底 128k；结果钳制在 8k–2M。
+ * 其次从 ModelCatalog 注册表最长前缀查表，兜底 128k；结果钳制在 8k–2M。
  */
 export function resolveContextWindow(
   model: string,
-  clientHint?: unknown
+  clientHint?: unknown,
+  catalog: ModelCatalog = defaultModelCatalog
 ): number {
-  const hint = Number(clientHint);
-  if (Number.isFinite(hint) && hint > 0) {
-    return Math.min(
-      Math.max(Math.round(hint), CONTEXT_WINDOW_MIN),
-      CONTEXT_WINDOW_MAX
-    );
-  }
-  const lower = model.toLowerCase();
-  // 长前缀优先（如 gpt-4.1 先于 gpt-4o 无关顺序地命中正确行）
-  const sorted = [...MODEL_WINDOW_TABLE].sort(
-    (a, b) => b[0].length - a[0].length
-  );
-  for (const [prefix, window] of sorted) {
-    if (lower.startsWith(prefix)) return window;
-  }
-  return DEFAULT_CONTEXT_WINDOW;
+  return catalog.resolveContextWindow(model, clientHint);
 }
 
 export interface ContextBudget {
