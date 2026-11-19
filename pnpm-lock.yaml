@@ -178,6 +178,9 @@ importers:
       '@openui-analytics/datasources':
         specifier: workspace:*
         version: link:packages/openui-datasources
+      '@openui-analytics/harness-core':
+        specifier: workspace:*
+        version: link:packages/openui-harness-core
       '@openui-analytics/llm':
         specifier: workspace:*
         version: link:packages/openui-llm

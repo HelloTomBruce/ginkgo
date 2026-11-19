@@ -62,6 +62,8 @@ export interface SettingsModalProps {
   maxSteps?: string;
   /** 上下文窗口容量（8192–2000000），留空根据模型自动推断 */
   contextWindow?: string;
+  /** 备选降级模型列表（逗号分隔），主模型不可用时自动按序回退 */
+  fallbackModels?: string;
   /** 接口协议：openai 兼容（/chat/completions）或 anthropic（/v1/messages，如 Kimi Coding） */
   protocol: "openai" | "anthropic";
   onProviderChange: (v: string) => void;
@@ -73,6 +75,7 @@ export interface SettingsModalProps {
   onMaxTokensChange: (v: string) => void;
   onMaxStepsChange?: (v: string) => void;
   onContextWindowChange?: (v: string) => void;
+  onFallbackModelsChange?: (v: string) => void;
   onProtocolChange: (v: "openai" | "anthropic") => void;
   onSave: () => void;
   onClose: () => void;
@@ -476,6 +479,7 @@ export function SettingsModal({
   maxTokens,
   maxSteps = "",
   contextWindow = "",
+  fallbackModels = "",
   protocol,
   onProviderChange,
   onApiKeyChange,
@@ -486,6 +490,7 @@ export function SettingsModal({
   onMaxTokensChange,
   onMaxStepsChange,
   onContextWindowChange,
+  onFallbackModelsChange,
   onProtocolChange,
   onSave,
   onClose,
@@ -1234,6 +1239,31 @@ export function SettingsModal({
                     placeholder="留空使用默认 25 步（双重终态保证适时退出，最高100）"
                     className="w-full p-2.5 rounded-lg border border-border bg-card font-mono"
                   />
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="settings-fallback-models"
+                    className="block text-muted-foreground mb-1 font-medium flex items-center justify-between"
+                  >
+                    <span>备选降级模型（Fallback Models，按序回退）</span>
+                    <span className="font-mono text-foreground-faint text-xs">
+                      {fallbackModels.trim()
+                        ? `${fallbackModels.split(/[,，\s]+/).filter(Boolean).length} 个备选`
+                        : "未配置"}
+                    </span>
+                  </label>
+                  <input
+                    id="settings-fallback-models"
+                    type="text"
+                    value={fallbackModels}
+                    onChange={(e) => onFallbackModelsChange?.(e.target.value)}
+                    placeholder="如: gpt-4o-mini, qwen-plus（主模型异常时自动按序切换）"
+                    className="w-full p-2.5 rounded-lg border border-border bg-card font-mono text-xs"
+                  />
+                  <p className="mt-1 text-[11px] text-foreground-faint leading-normal">
+                    当主模型发生不可用、限流或网络故障且重试耗尽时，系统将自动无缝降级到备选模型继续完成分析。
+                  </p>
                 </div>
 
                 <div className="pt-2 border-t border-border-subtle">

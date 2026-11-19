@@ -414,5 +414,24 @@ describe("SettingsModal 多 Provider 管理能力（参考 dsh）", () => {
       })
     );
   });
+
+  it("支持配置备选降级模型（Fallback Models）并触发回调", () => {
+    const onFallbackModelsChange = vi.fn();
+    renderModal({
+      fallbackModels: "qwen-plus, deepseek-chat",
+      onFallbackModelsChange,
+    });
+
+    const trigger = screen.getByText(/通用推理参数设置/);
+    fireEvent.click(trigger);
+
+    const input = screen.getByLabelText(/备选降级模型/);
+    expect(input).toBeInTheDocument();
+    expect(input).toHaveValue("qwen-plus, deepseek-chat");
+    expect(screen.getByText("2 个备选")).toBeInTheDocument();
+
+    fireEvent.change(input, { target: { value: "gpt-4o-mini" } });
+    expect(onFallbackModelsChange).toHaveBeenCalledWith("gpt-4o-mini");
+  });
 });
 

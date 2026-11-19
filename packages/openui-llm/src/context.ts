@@ -5,7 +5,7 @@ import {
   CONTEXT_WINDOW_MAX,
   DEFAULT_CONTEXT_WINDOW,
   type ModelCatalog,
-} from "@openui-analytics/harness-core";
+} from "@openui-analytics/harness-core/registry";
 
 export {
   CONTEXT_WINDOW_MIN,

@@ -380,7 +380,7 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
         }
       : undefined);
   const costLedger = opts.costLedger ?? (quota ? new InMemoryCostLedger() : undefined);
-  const pricingTable = costLedger ? (opts.pricing ?? new ModelPricingTable()) : undefined;
+  const pricingTable = opts.pricing ?? new ModelPricingTable();
   const crossSourceRegistry = opts.crossSourceRegistry ?? defaultCrossSourceRegistry;
   const modelCatalog = opts.modelCatalog ?? defaultModelCatalog;
 
@@ -1166,6 +1166,7 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
                     termination = "explicit";
                     status = explicitFinishDetails.status;
                   }
+                  const runDurationMs = Date.now() - runStartTs;
                   telemetry.emit({
                     type: "task_finish",
                     runId,
@@ -1176,17 +1177,35 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
                       typeof usage?.promptTokens === "number" ? usage.promptTokens : undefined,
                     totalCompletionTokens:
                       typeof usage?.completionTokens === "number" ? usage.completionTokens : undefined,
-                    durationMs: Date.now() - runStartTs,
+                    durationMs: runDurationMs,
                   });
 
-                  // WS-11 成本入账：口径与 task_finish 遥测一致（SDK 累计值）；
+                  // WS-11 成本计算与显式化下发（AI SDK 消息注解 + 流式数据双写）：
+                  // 客户端可在消息底部显示耗时、tokens 以及精确美元消耗
+                  const recordedPrompt =
+                    typeof usage?.promptTokens === "number" ? usage.promptTokens : 0;
+                  const recordedCompletion =
+                    typeof usage?.completionTokens === "number" ? usage.completionTokens : 0;
+                  const totalRecordedTokens = recordedPrompt + recordedCompletion;
+                  const pricing = pricingTable?.priceFor(model);
+                  const costUsd = pricing
+                    ? computeCostUsd(pricing, recordedPrompt, recordedCompletion)
+                    : undefined;
+
+                  const finopsPayload = {
+                    type: "finops_cost",
+                    model,
+                    promptTokens: recordedPrompt,
+                    completionTokens: recordedCompletion,
+                    totalTokens: totalRecordedTokens,
+                    durationMs: runDurationMs,
+                    ...(typeof costUsd === "number" ? { costUsd } : {}),
+                  };
+                  dataStream.writeData(finopsPayload);
+                  dataStream.writeMessageAnnotation(finopsPayload);
+
                   // fire-and-forget，台账失败不阻塞主链路。
                   if (costLedger) {
-                    const recordedPrompt =
-                      typeof usage?.promptTokens === "number" ? usage.promptTokens : 0;
-                    const recordedCompletion =
-                      typeof usage?.completionTokens === "number" ? usage.completionTokens : 0;
-                    const pricing = pricingTable?.priceFor(model);
                     void costLedger
                       .record({
                         runId,
@@ -1195,15 +1214,7 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
                         model,
                         promptTokens: recordedPrompt,
                         completionTokens: recordedCompletion,
-                        ...(pricing
-                          ? {
-                              costUsd: computeCostUsd(
-                                pricing,
-                                recordedPrompt,
-                                recordedCompletion
-                              ),
-                            }
-                          : {}),
+                        ...(costUsd !== undefined ? { costUsd } : {}),
                         finishedAt: Date.now(),
                       })
                       .catch(() => {});
@@ -1299,13 +1310,15 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
                 code: "MODEL_FALLBACK",
                 detail: `${spec.model} 失败(${errorClass}),切换 fallback 模型 ${next.model}`,
               });
-              // 向客户端声明切换:客户端可据此解释后续输出的模型来源变化
-              dataStream.writeData({
+              // 向客户端声明切换:客户端可据此解释后续输出的模型来源变化（流式下发 + 注解持久化）
+              const fallbackPayload = {
                 type: "model_fallback",
                 from: spec.model,
                 to: next.model,
                 reason: errorClass,
-              });
+              };
+              dataStream.writeData(fallbackPayload);
+              dataStream.writeMessageAnnotation(fallbackPayload);
               chainIndex++;
               // 控制者裁决:fallback 模型重解析上下文窗口(客户端 hint 仅主模型生效,
               // 这里传 undefined 只用查表值),并用重解析结果重算投影预算

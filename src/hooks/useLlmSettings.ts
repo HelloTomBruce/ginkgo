@@ -24,6 +24,7 @@ const STORAGE_KEYS = {
   maxSteps: "openui_llm_max_steps",
   contextWindow: "openui_llm_context_window",
   protocol: "openui_llm_protocol",
+  fallbackModels: "openui_llm_fallback_models",
 } as const;
 
 const DEFAULT_BASE_URL = "https://api.openai.com/v1";
@@ -36,6 +37,7 @@ const DEFAULT_MAX_STEPS = "";
 // 留空 → 根据模型自动推断（如 128k/1000k），支持用户显式指定（如 1024000）
 const DEFAULT_CONTEXT_WINDOW = "";
 const DEFAULT_PROTOCOL = "openai";
+const DEFAULT_FALLBACK_MODELS = "";
 
 function readStored(key: string, fallback: string): string {
   if (typeof window !== "undefined") {
@@ -167,6 +169,9 @@ export function useLlmSettings() {
   );
   const [contextWindow, setContextWindow] = useState(() =>
     readStored(STORAGE_KEYS.contextWindow, DEFAULT_CONTEXT_WINDOW)
+  );
+  const [fallbackModels, setFallbackModels] = useState(() =>
+    readStored(STORAGE_KEYS.fallbackModels, DEFAULT_FALLBACK_MODELS)
   );
 
   // 保持单项状态受控（为了兼容现有单个 provider 字段或旧组件）
@@ -345,6 +350,7 @@ export function useLlmSettings() {
       localStorage.setItem(STORAGE_KEYS.maxSteps, maxSteps);
       localStorage.setItem(STORAGE_KEYS.contextWindow, contextWindow);
       localStorage.setItem(STORAGE_KEYS.protocol, protocol);
+      localStorage.setItem(STORAGE_KEYS.fallbackModels, fallbackModels);
       localStorage.setItem(ACCESS_TOKEN_STORAGE_KEY, accessToken);
     }
     setActiveProviderId(providerId);
@@ -360,14 +366,20 @@ export function useLlmSettings() {
     maxTokens,
     maxSteps,
     contextWindow,
+    fallbackModels,
     accessToken,
   ]);
 
   const activeContextWindow = activeModelConfig?.contextWindow || contextWindow;
   const activeMaxTokens = activeModelConfig?.maxTokens || maxTokens;
 
-  const chatBody = useMemo(
-    () => ({
+  const chatBody = useMemo(() => {
+    const fallbackList = fallbackModels
+      .split(/[,，\n]+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    return {
       apiKey: (activeProvider?.apiKey || apiKey).trim() || undefined,
       baseURL: (activeProvider?.baseURL || baseURL).trim() || undefined,
       model: (activeModel || model).trim() || undefined,
@@ -376,24 +388,25 @@ export function useLlmSettings() {
       maxSteps: maxSteps.trim() || undefined,
       contextWindow: (activeModelConfig?.contextWindow || contextWindow).trim() || undefined,
       protocol: activeProvider?.protocol || protocol,
-    }),
-    [
-      activeProvider?.apiKey,
-      activeProvider?.baseURL,
-      activeProvider?.protocol,
-      activeModelConfig?.maxTokens,
-      activeModelConfig?.contextWindow,
-      activeModel,
-      apiKey,
-      baseURL,
-      model,
-      temperature,
-      maxTokens,
-      maxSteps,
-      contextWindow,
-      protocol,
-    ]
-  );
+      resilience: fallbackList.length > 0 ? { fallbacks: fallbackList } : undefined,
+    };
+  }, [
+    activeProvider?.apiKey,
+    activeProvider?.baseURL,
+    activeProvider?.protocol,
+    activeModelConfig?.maxTokens,
+    activeModelConfig?.contextWindow,
+    activeModel,
+    apiKey,
+    baseURL,
+    model,
+    temperature,
+    maxTokens,
+    maxSteps,
+    contextWindow,
+    fallbackModels,
+    protocol,
+  ]);
 
   return {
     showSettings,
@@ -428,6 +441,8 @@ export function useLlmSettings() {
     setMaxSteps,
     contextWindow: activeContextWindow,
     setContextWindow,
+    fallbackModels,
+    setFallbackModels,
     protocol: activeProvider?.protocol || protocol,
     setProtocol,
     authHeaders,

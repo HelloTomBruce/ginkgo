@@ -19,6 +19,7 @@
     "@openui-analytics/chart-spec": "workspace:*",
     "@openui-analytics/components": "workspace:*",
     "@openui-analytics/datasources": "workspace:*",
+    "@openui-analytics/harness-core": "workspace:*",
     "@openui-analytics/llm": "workspace:*",
     "@openui-analytics/methodology": "workspace:*",
     "@openuidev/devtools": "^0.2.2",

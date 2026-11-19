@@ -12,6 +12,8 @@ const nextConfig: NextConfig = {
     "@duckdb/node-api",
     "@duckdb/node-bindings",
     "@clickhouse/client",
+    "ioredis",
+    "@modelcontextprotocol/sdk",
   ],
   turbopack: {
     rules: {

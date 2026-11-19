@@ -130,6 +130,8 @@ export default function ChatDashboard() {
     setMaxSteps,
     contextWindow,
     setContextWindow,
+    fallbackModels,
+    setFallbackModels,
     protocol,
     setProtocol,
     authHeaders,
@@ -1137,6 +1139,7 @@ export default function ChatDashboard() {
           maxTokens={maxTokens}
           maxSteps={maxSteps}
           contextWindow={contextWindow}
+          fallbackModels={fallbackModels}
           protocol={protocol}
           onProviderChange={applyProvider}
           onApiKeyChange={setApiKey}
@@ -1147,6 +1150,7 @@ export default function ChatDashboard() {
           onMaxTokensChange={setMaxTokens}
           onMaxStepsChange={setMaxSteps}
           onContextWindowChange={setContextWindow}
+          onFallbackModelsChange={setFallbackModels}
           onProtocolChange={setProtocol}
           onSave={saveSettings}
           onClose={handleCloseSettings}

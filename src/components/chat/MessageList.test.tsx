@@ -1022,4 +1022,67 @@ describe("消息内容与工具执行按顺序交错渲染", () => {
     expect(openuiHeaders).toHaveLength(1);
     expect(screen.getByText("已就绪")).toBeInTheDocument();
   });
+
+  it("当消息包含 finops_cost 注解时，在消息底部渲染耗时、tokens 与费用微标", () => {
+    const costMsg = {
+      id: "a-cost",
+      role: "assistant",
+      content: "分析完成",
+      annotations: [
+        {
+          type: "finops_cost",
+          model: "gpt-4o-mini",
+          promptTokens: 1200,
+          completionTokens: 350,
+          totalTokens: 1550,
+          costUsd: 0.0035,
+          durationMs: 1500,
+        },
+      ],
+    } as unknown as Message;
+
+    render(
+      <MessageList
+        {...baseProps}
+        messages={[userMsg, costMsg]}
+        onRendererAction={vi.fn()}
+      />
+    );
+
+    const badge = screen.getByTestId("finops-cost-badge");
+    expect(badge).toBeInTheDocument();
+    expect(badge).toHaveTextContent("⚡ 1.5s");
+    expect(badge).toHaveTextContent("1,550 tokens");
+    expect(badge).toHaveTextContent("$0.0035");
+  });
+
+  it("当消息包含 model_fallback 注解时，在消息内部渲染模型降级提示", () => {
+    const fallbackMsg = {
+      id: "a-fallback",
+      role: "assistant",
+      content: "降级生成结果",
+      annotations: [
+        {
+          type: "model_fallback",
+          from: "deepseek-reasoner",
+          to: "deepseek-chat",
+          reason: "rate_limit",
+        },
+      ],
+    } as unknown as Message;
+
+    render(
+      <MessageList
+        {...baseProps}
+        messages={[userMsg, fallbackMsg]}
+        onRendererAction={vi.fn()}
+      />
+    );
+
+    const fallbackBadge = screen.getByTestId("model-fallback-badge");
+    expect(fallbackBadge).toBeInTheDocument();
+    expect(fallbackBadge).toHaveTextContent("deepseek-reasoner");
+    expect(fallbackBadge).toHaveTextContent("rate_limit");
+    expect(fallbackBadge).toHaveTextContent("deepseek-chat");
+  });
 });

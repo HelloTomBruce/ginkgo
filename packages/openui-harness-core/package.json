@@ -13,6 +13,7 @@
     "./stream": "./src/stream/index.ts",
     "./telemetry": "./src/telemetry/index.ts",
     "./mcp": "./src/mcp/index.ts",
+    "./registry": "./src/providers/registry.ts",
     "./config": "./src/config/index.ts"
   },
   "scripts": {

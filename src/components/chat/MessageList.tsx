@@ -20,6 +20,45 @@ import { captureDashboardQueries } from "@/lib/dashboardCapture";
 import { toast } from "@/lib/toast";
 import type { FavoriteDashboardInput, FavoriteResult } from "@/hooks/useDashboards";
 
+export interface FinopsCostAnnotation {
+  type: "finops_cost";
+  model?: string;
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  costUsd?: number;
+  durationMs: number;
+  [key: string]: unknown;
+}
+
+export interface ModelFallbackAnnotation {
+  type: "model_fallback";
+  from: string;
+  to: string;
+  reason: string;
+  [key: string]: unknown;
+}
+
+function extractFinopsAnnotation(annotations?: unknown[]): FinopsCostAnnotation | undefined {
+  if (!Array.isArray(annotations)) return undefined;
+  for (const a of annotations) {
+    if (typeof a === "object" && a !== null && "type" in a && (a as { type: unknown }).type === "finops_cost") {
+      return a as FinopsCostAnnotation;
+    }
+  }
+  return undefined;
+}
+
+function extractFallbackAnnotation(annotations?: unknown[]): ModelFallbackAnnotation | undefined {
+  if (!Array.isArray(annotations)) return undefined;
+  for (const a of annotations) {
+    if (typeof a === "object" && a !== null && "type" in a && (a as { type: unknown }).type === "model_fallback") {
+      return a as ModelFallbackAnnotation;
+    }
+  }
+  return undefined;
+}
+
 interface UIPart {
   type: string;
   text?: string;
@@ -208,6 +247,15 @@ const MessageItem = React.memo(function MessageItem({
   };
   const parts = rawMsg.parts;
   const toolInvocations = rawMsg.toolInvocations;
+
+  // 从消息 annotations 中提取 FinOps 耗时/成本与模型降级信息
+  const finopsAnnotation = useMemo(() => {
+    return extractFinopsAnnotation(msg.annotations as unknown[]);
+  }, [msg.annotations]);
+
+  const fallbackAnnotation = useMemo(() => {
+    return extractFallbackAnnotation(msg.annotations as unknown[]);
+  }, [msg.annotations]);
 
   // 将消息解析为按真实执行顺序排列的内容块（文本/工具/思考）
   const blocks = useMemo<ContentBlock[]>(() => {
@@ -642,24 +690,61 @@ const MessageItem = React.memo(function MessageItem({
             <span>数据查询已完成，大模型正在组织分析洞察并构建视觉看板...</span>
           </div>
         )}
+
+        {/* 模型降级提示徽标 */}
+        {fallbackAnnotation && (
+          <div
+            data-testid="model-fallback-badge"
+            className="no-print mt-2 flex items-center gap-2 p-2.5 rounded-xl bg-warning-soft text-warning-fg-strong border border-warning-border text-xs"
+          >
+            <AlertTriangle className="w-4 h-4 text-warning-fg shrink-0" />
+            <div className="leading-relaxed">
+              原模型 <span className="font-mono font-medium">{fallbackAnnotation.from}</span> 调用异常（{fallbackAnnotation.reason}），已自动无缝降级至 <span className="font-mono font-medium">{fallbackAnnotation.to}</span> 继续执行。
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* 会话操作行：分叉（任意消息）/ 欢迎语不展示 */}
-      {onForkMessage && msg.id !== "welcome" && (
-        <div className="no-print mt-1 flex items-center gap-2 text-[10px] text-foreground-faint justify-start">
-          <button
-            type="button"
-            onClick={() => onForkMessage(msg.id)}
-            disabled={isStreaming}
-            aria-label={`从该消息分叉新会话（消息 ${msg.id}）`}
-            title="复制到此为止的对话，分叉为新会话"
-            className="flex items-center gap-1 px-1.5 py-0.5 rounded hover:text-info-fg hover:bg-info-soft disabled:opacity-40 disabled:pointer-events-none transition-colors"
-          >
-            <GitFork className="w-3 h-3" />
-            <span>分叉</span>
-          </button>
+      {/* 会话操作与 FinOps 消耗指标行 */}
+      <div className="no-print mt-1.5 flex items-center justify-between text-[10px] text-foreground-faint w-full max-w-4xl px-1">
+        <div className="flex items-center gap-2">
+          {onForkMessage && msg.id !== "welcome" && (
+            <button
+              type="button"
+              onClick={() => onForkMessage(msg.id)}
+              disabled={isStreaming}
+              aria-label={`从该消息分叉新会话（消息 ${msg.id}）`}
+              title="复制到此为止的对话，分叉为新会话"
+              className="flex items-center gap-1 px-1.5 py-0.5 rounded hover:text-info-fg hover:bg-info-soft disabled:opacity-40 disabled:pointer-events-none transition-colors"
+            >
+              <GitFork className="w-3 h-3" />
+              <span>分叉</span>
+            </button>
+          )}
         </div>
-      )}
+
+        {finopsAnnotation && (
+          <div
+            data-testid="finops-cost-badge"
+            className="flex items-center gap-1.5 font-mono text-[10px] text-foreground-faint select-none ml-auto"
+            title={`模型: ${finopsAnnotation.model || "未知"}\nPrompt: ${finopsAnnotation.promptTokens.toLocaleString()} tokens\nCompletion: ${finopsAnnotation.completionTokens.toLocaleString()} tokens`}
+          >
+            <span>⚡ {(finopsAnnotation.durationMs / 1000).toFixed(1)}s</span>
+            <span>·</span>
+            <span>{finopsAnnotation.totalTokens.toLocaleString()} tokens</span>
+            {typeof finopsAnnotation.costUsd === "number" && (
+              <>
+                <span>·</span>
+                <span className="text-foreground-subtle font-medium">
+                  ${finopsAnnotation.costUsd < 0.0001 && finopsAnnotation.costUsd > 0
+                    ? finopsAnnotation.costUsd.toExponential(2)
+                    : finopsAnnotation.costUsd.toFixed(4)}
+                </span>
+              </>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 });

@@ -1495,8 +1495,8 @@ describe("Provider 韧性层 fallback 链（WS-9）", () => {
     const text = await res.text();
 
     expect(vi.mocked(streamText)).toHaveBeenCalledTimes(2);
-    // 只切换一次:不越过链尾
-    expect(text.match(/model_fallback/g) ?? []).toHaveLength(1);
+    // 只切换一次:不越过链尾（包含 writeData 与 writeMessageAnnotation 各一次）
+    expect(text.match(/"type":"model_fallback"/g) ?? []).toHaveLength(2);
     // 错误按 onError 路径写给客户端
     expect(text).toContain("backup also down");
     expect(hasWarn("MODEL_FALLBACK")).toBe(true);
@@ -1792,5 +1792,25 @@ describe("WS-11 成本入账", () => {
     expect(res.status).toBe(200);
     await res.text();
     expect(POST.costLedger).toBeUndefined();
+  });
+
+  it("流输出中同时下发 finops_cost 的 dataStream 与 messageAnnotation", async () => {
+    vi.mocked(streamText).mockImplementation((opts) =>
+      streamResult({
+        onStart: () => {
+          opts.onFinish?.({ usage: { promptTokens: 1200, completionTokens: 300 } } as never);
+        },
+      }) as never
+    );
+
+    const manager = await makeFakeManager();
+    const POST = createAnalyzeHandler({ datasources: manager });
+    const res = await POST(makeRequest({ messages: [], apiKey: "k" }));
+    expect(res.status).toBe(200);
+    const text = await res.text();
+    expect(text).toContain('"type":"finops_cost"');
+    expect(text).toContain('"promptTokens":1200');
+    expect(text).toContain('"completionTokens":300');
+    expect(text).toContain('"totalTokens":1500');
   });
 });
