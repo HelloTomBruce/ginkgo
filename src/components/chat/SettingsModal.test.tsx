@@ -3,14 +3,27 @@ import { render, screen, cleanup, fireEvent, waitFor } from "@testing-library/re
 import { SettingsModal, type SettingsModalProps } from "./SettingsModal";
 import type { ConfiguredProvider } from "@/lib/llmProviders";
 
-// mock /api/datasources：返回一个健康数据源，锁定「数据源」tab 状态渲染
-const fetchMock = vi.fn().mockResolvedValue({
-  json: async () => ({
-    sources: [
-      { id: "zentao", name: "ZenTao MCP", kind: "zentao-cli", tools: ["search_bugs"] },
-    ],
-    health: { zentao: { ok: true, latencyMs: 42 } },
-  }),
+// mock /api/datasources 与 /api/mcp
+const fetchMock = vi.fn().mockImplementation(async (url: string) => {
+  if (typeof url === "string" && url.includes("/api/mcp")) {
+    return {
+      ok: true,
+      json: async () => ({
+        servers: [
+          { id: "zentao-mcp", name: "ZenTao MCP", transport: "sse", enabled: true },
+        ],
+      }),
+    };
+  }
+  return {
+    ok: true,
+    json: async () => ({
+      sources: [
+        { id: "zentao", name: "ZenTao MCP", kind: "zentao-cli", tools: ["search_bugs"] },
+      ],
+      health: { zentao: { ok: true, latencyMs: 42 } },
+    }),
+  };
 });
 
 function renderModal(props: Partial<SettingsModalProps> = {}) {
@@ -53,11 +66,50 @@ describe("SettingsModal tab 布局", () => {
     vi.unstubAllGlobals();
   });
 
-  it("标题为「设置」，含模型配置 / 数据源两个 tab", () => {
+  it("标题为「设置」，含模型配置 / 数据源 / MCP 扩展 / 引擎调度 / 治理观测 五个 tab", () => {
     renderModal();
     expect(screen.getByRole("heading", { name: "设置" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "模型配置" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "数据源" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "MCP 扩展" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "引擎调度" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "治理观测" })).toBeInTheDocument();
+  });
+
+  it("点击「MCP 扩展」tab 切换面板，展示 MCP 扩展注册界面", async () => {
+    renderModal();
+    const tab = screen.getByRole("tab", { name: "MCP 扩展" });
+    fireEvent.mouseDown(tab, { button: 0 });
+    fireEvent.click(tab);
+
+    await waitFor(() => {
+      expect(screen.getByText(/MCP 工具扩展/)).toBeInTheDocument();
+    });
+    expect(screen.getByRole("button", { name: /注册 MCP 服务/ })).toBeInTheDocument();
+  });
+
+  it("点击「引擎调度」tab 切换面板，展示 Harness 引擎调度配置", async () => {
+    renderModal();
+    const tab = screen.getByRole("tab", { name: "引擎调度" });
+    fireEvent.mouseDown(tab, { button: 0 });
+    fireEvent.click(tab);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Harness 引擎调度与韧性配置/)).toBeInTheDocument();
+      expect(screen.getByText(/执行与韧性策略/)).toBeInTheDocument();
+    });
+  });
+
+  it("点击「治理观测」tab 切换面板，展示 FinOps 与 OTel 治理观测配置", async () => {
+    renderModal();
+    const tab = screen.getByRole("tab", { name: "治理观测" });
+    fireEvent.mouseDown(tab, { button: 0 });
+    fireEvent.click(tab);
+
+    await waitFor(() => {
+      expect(screen.getByText(/治理观测与成本控制/)).toBeInTheDocument();
+      expect(screen.getByText(/FinOps 成本控制与预算熔断/)).toBeInTheDocument();
+    });
   });
 
   it("默认展示模型配置面板，数据源内容不渲染", () => {

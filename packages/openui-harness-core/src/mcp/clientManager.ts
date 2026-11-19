@@ -202,6 +202,14 @@ export class MCPClientManager {
   }
 
   /**
+   * 获取指定 Server 的状态快照
+   */
+  getStatus(serverId: string): MCPClientStatus | undefined {
+    const managed = this.servers.get(serverId);
+    return managed ? { ...managed.status } : undefined;
+  }
+
+  /**
    * 获取所有已注册 Server 的状态快照
    */
   getAllStatus(): MCPClientStatus[] {

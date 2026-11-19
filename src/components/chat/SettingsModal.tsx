@@ -11,6 +11,9 @@ import {
   ChevronDown,
   Plus,
   RefreshCw,
+  Puzzle,
+  Zap,
+  ShieldCheck,
 } from "lucide-react";
 import {
   Select,
@@ -35,6 +38,9 @@ import {
 import { Slider } from "@/components/ui/slider";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { DatasourceSettings } from "./datasources/DatasourceSettings";
+import { McpSettings } from "./mcp/McpSettings";
+import { EngineSettings } from "./engine/EngineSettings";
+import { GovernanceSettings } from "./governance/GovernanceSettings";
 import {
   CUSTOM_PROVIDER_ID,
   LLM_PROVIDER_PRESETS,
@@ -90,11 +96,18 @@ export interface SettingsModalProps {
   onSwitchActiveModel?: (providerId: string, model: string) => void;
 }
 
-type SettingsTab = "model" | "datasources";
+type SettingsTab = "model" | "datasources" | "mcp" | "engine" | "governance";
 
-const SETTINGS_TABS: { id: SettingsTab; label: string; Icon: typeof Bot }[] = [
+const SETTINGS_TABS: {
+  id: SettingsTab;
+  label: string;
+  Icon: React.ComponentType<{ className?: string }>;
+}[] = [
   { id: "model", label: "模型配置", Icon: Bot },
   { id: "datasources", label: "数据源", Icon: Database },
+  { id: "mcp", label: "MCP 扩展", Icon: Puzzle },
+  { id: "engine", label: "引擎调度", Icon: Zap },
+  { id: "governance", label: "治理观测", Icon: ShieldCheck },
 ];
 
 /** 协议 + Base URL 字段 */
@@ -606,7 +619,7 @@ export function SettingsModal({
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent
         showCloseButton={false}
-        className="max-w-[calc(100%-2rem)] sm:max-w-2xl rounded-2xl bg-card border border-border p-6 gap-4 text-xs"
+        className="max-w-[calc(100%-2rem)] sm:max-w-2xl lg:max-w-3xl rounded-2xl bg-card border border-border p-6 gap-4 text-xs"
       >
         <div className="flex items-center justify-between border-b border-border-subtle pb-3">
           <div className="flex items-center gap-2">
@@ -627,7 +640,7 @@ export function SettingsModal({
           onValueChange={(v) => setActiveTab(v as SettingsTab)}
           className="gap-4"
         >
-          <TabsList className="w-full h-auto p-1 text-xs font-medium bg-muted">
+          <TabsList className="w-full h-auto p-1 text-xs font-medium bg-muted flex overflow-x-auto no-scrollbar">
             {SETTINGS_TABS.map(({ id, label, Icon }) => (
               <TabsTrigger
                 key={id}
@@ -1293,6 +1306,32 @@ export function SettingsModal({
             className="max-h-[60vh] overflow-y-auto pr-0.5 mt-0"
           >
             <DatasourceSettings />
+          </TabsContent>
+
+          <TabsContent
+            value="mcp"
+            className="max-h-[60vh] overflow-y-auto pr-0.5 mt-0"
+          >
+            <McpSettings />
+          </TabsContent>
+
+          <TabsContent
+            value="engine"
+            className="max-h-[60vh] overflow-y-auto pr-0.5 mt-0"
+          >
+            <EngineSettings
+              maxSteps={maxSteps}
+              onMaxStepsChange={onMaxStepsChange}
+              fallbackModels={fallbackModels}
+              onFallbackModelsChange={onFallbackModelsChange}
+            />
+          </TabsContent>
+
+          <TabsContent
+            value="governance"
+            className="max-h-[60vh] overflow-y-auto pr-0.5 mt-0"
+          >
+            <GovernanceSettings />
           </TabsContent>
         </Tabs>
 

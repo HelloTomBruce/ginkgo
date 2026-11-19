@@ -33,6 +33,10 @@ export function toast(message: string, kind: ToastKind = "info"): void {
   setTimeout(() => dismissToast(item.id), TOAST_DURATION_MS);
 }
 
+toast.success = (message: string) => toast(message, "success");
+toast.error = (message: string) => toast(message, "error");
+toast.info = (message: string) => toast(message, "info");
+
 export function dismissToast(id: number): void {
   toasts = toasts.filter((t) => t.id !== id);
   emit();
