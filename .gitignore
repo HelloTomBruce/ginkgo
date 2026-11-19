@@ -41,7 +41,7 @@ yarn-error.log*
 next-env.d.ts
 .vitest/
 graphify-out
-config
+/config
 /data/
 .worktrees/
 .pnpm-store/
