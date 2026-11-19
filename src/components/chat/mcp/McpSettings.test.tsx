@@ -98,11 +98,13 @@ describe("McpSettings Component", () => {
     // 确认已移除预设快速填充
     expect(screen.queryByText("从常用生态预设快速填充：")).not.toBeInTheDocument();
 
-    // 默认 SSE 模式下展示 HTTP 请求头 Headers 输入
-    expect(screen.getByText(/HTTP 请求头 Headers/)).toBeInTheDocument();
-    const headersInput = screen.getByPlaceholderText(/Authorization: Bearer/);
-    fireEvent.change(headersInput, { target: { value: "Authorization: Bearer my-secret-token" } });
-    expect(headersInput).toHaveValue("Authorization: Bearer my-secret-token");
+    // 默认 SSE 模式下展示 HTTP 请求头 Headers（JSON 格式）输入
+    expect(screen.getByText(/HTTP 请求头 Headers（JSON 格式/)).toBeInTheDocument();
+    const headersInput = screen.getByPlaceholderText(/Authorization/);
+    const jsonVal = '{\n  "Authorization": "Bearer my-secret-token"\n}';
+    fireEvent.change(headersInput, { target: { value: jsonVal } });
+    expect(headersInput).toHaveValue(jsonVal);
+    expect(screen.getByText(/✓ JSON 有效/)).toBeInTheDocument();
 
     // 切换至 Stdio 本地进程模式
     const stdioRadio = screen.getByRole("radio", { name: /Stdio 本地进程/ });

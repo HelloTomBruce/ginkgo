@@ -48,7 +48,7 @@ interface FormState {
   name: string;
   transport: "sse" | "stdio";
   url: string;
-  headersText: string;
+  headersJson: string;
   command: string;
   argsText: string;
   envText: string;
@@ -63,7 +63,7 @@ const INITIAL_FORM: FormState = {
   name: "",
   transport: "sse",
   url: "",
-  headersText: "",
+  headersJson: "",
   command: "npx",
   argsText: "",
   envText: "",
@@ -200,11 +200,10 @@ export function McpSettings() {
         : "";
     }
 
-    const headersText = server.headers
-      ? Object.entries(server.headers)
-          .map(([k, v]) => `${k}: ${v}`)
-          .join("\n")
-      : "";
+    const headersJson =
+      server.headers && Object.keys(server.headers).length > 0
+        ? JSON.stringify(server.headers, null, 2)
+        : "";
 
     setForm({
       mode: "edit",
@@ -212,7 +211,7 @@ export function McpSettings() {
       name: server.name || server.id,
       transport: server.transport === "stdio" ? "stdio" : "sse",
       url: server.transport !== "stdio" ? server.url || "" : "",
-      headersText,
+      headersJson,
       command: server.transport === "stdio" ? server.command || "npx" : "npx",
       argsText,
       envText,
@@ -257,32 +256,38 @@ export function McpSettings() {
       base.env = Object.keys(parsedEnv).length > 0 ? parsedEnv : undefined;
       base.cwd = form.cwd.trim() || undefined;
     } else {
-      const parsedHeaders: Record<string, string> = {};
-      form.headersText
-        .split("\n")
-        .map((line) => line.trim())
-        .filter(Boolean)
-        .forEach((line) => {
-          const colonIdx = line.indexOf(":");
-          const eqIdx = line.indexOf("=");
-          const idx =
-            colonIdx > 0 && (eqIdx === -1 || colonIdx < eqIdx) ? colonIdx : eqIdx;
-          if (idx > 0) {
-            const k = line.slice(0, idx).trim();
-            const v = line.slice(idx + 1).trim();
-            if (k) parsedHeaders[k] = v;
-          }
-        });
-
       base.url = form.url.trim();
-      base.headers = Object.keys(parsedHeaders).length > 0 ? parsedHeaders : undefined;
+      if (form.headersJson.trim()) {
+        try {
+          const parsed = JSON.parse(form.headersJson.trim());
+          if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+            throw new Error("Headers 必须为 JSON 对象格式，如 {\"Authorization\": \"Bearer ...\"}");
+          }
+          const parsedHeaders: Record<string, string> = {};
+          for (const [k, v] of Object.entries(parsed)) {
+            parsedHeaders[k] = String(v);
+          }
+          base.headers = parsedHeaders;
+        } catch (err) {
+          throw new Error(
+            `Headers JSON 解析失败: ${err instanceof Error ? err.message : "格式不合法"}`
+          );
+        }
+      }
     }
 
     return base;
   };
 
   const handleFormProbe = async () => {
-    const config = buildServerConfigFromForm();
+    let config: StoredMcpServer;
+    try {
+      config = buildServerConfigFromForm();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "配置校验失败");
+      return;
+    }
+
     if (!config.id) {
       toast.error("请先填写服务 ID");
       return;
@@ -325,7 +330,14 @@ export function McpSettings() {
   };
 
   const handleSaveForm = async () => {
-    const config = buildServerConfigFromForm();
+    let config: StoredMcpServer;
+    try {
+      config = buildServerConfigFromForm();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "配置校验失败");
+      return;
+    }
+
     if (!config.id) {
       toast.error("请输入 MCP 服务器 ID");
       return;
@@ -740,26 +752,70 @@ export function McpSettings() {
                 </div>
 
                 <div>
-                  <label className="block text-muted-foreground mb-1 font-medium flex items-center justify-between">
-                    <span>HTTP 请求头 Headers（可选，每行 Header-Name: Value）</span>
-                    <span className="font-mono text-foreground-faint text-[10px]">
-                      {
-                        form.headersText
-                          .split("\n")
-                          .filter((l) => l.includes(":") || l.includes("=")).length
-                      }{" "}
-                      项已输入
-                    </span>
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label
+                      htmlFor="mcp-headers-json"
+                      className="block text-muted-foreground font-medium"
+                    >
+                      HTTP 请求头 Headers（JSON 格式，可选）
+                    </label>
+                    <div className="flex items-center gap-2">
+                      {form.headersJson.trim() && (
+                        <span
+                          className={`text-[10px] font-mono ${
+                            (() => {
+                              try {
+                                const p = JSON.parse(form.headersJson);
+                                return typeof p === "object" && p !== null && !Array.isArray(p)
+                                  ? "text-success-fg"
+                                  : "text-danger-fg";
+                              } catch {
+                                return "text-danger-fg";
+                              }
+                            })()
+                          }`}
+                        >
+                          {(() => {
+                            try {
+                              const p = JSON.parse(form.headersJson);
+                              if (typeof p === "object" && p !== null && !Array.isArray(p)) {
+                                return `✓ JSON 有效（${Object.keys(p).length} 项）`;
+                              }
+                              return "✗ 必须为 JSON 对象结构";
+                            } catch {
+                              return "✗ JSON 语法错误";
+                            }
+                          })()}
+                        </span>
+                      )}
+                      {form.headersJson.trim() && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            try {
+                              const p = JSON.parse(form.headersJson);
+                              setForm({ ...form, headersJson: JSON.stringify(p, null, 2) });
+                            } catch {
+                              toast.error("JSON 格式错误，无法美化");
+                            }
+                          }}
+                          className="text-[10px] text-info-fg hover:underline cursor-pointer"
+                        >
+                          美化格式
+                        </button>
+                      )}
+                    </div>
+                  </div>
                   <textarea
-                    rows={3}
-                    value={form.headersText}
-                    onChange={(e) => setForm({ ...form, headersText: e.target.value })}
-                    placeholder={"Authorization: Bearer <your-token>\nX-API-Key: secret-key\nAccept: text/event-stream"}
+                    id="mcp-headers-json"
+                    rows={4}
+                    value={form.headersJson}
+                    onChange={(e) => setForm({ ...form, headersJson: e.target.value })}
+                    placeholder={`{\n  "Authorization": "Bearer <your-token>",\n  "X-API-Key": "secret-key"\n}`}
                     className="w-full p-2.5 rounded-lg border border-border bg-surface-sunken font-mono text-xs leading-relaxed"
                   />
                   <p className="text-[10px] text-foreground-faint mt-1">
-                    用于向远程 SSE 服务端传递鉴权令牌（如 Bearer Token）或网关路由头。
+                    使用标准 JSON 键值对格式传递认证令牌（如 Bearer Token）或网关路由头。
                   </p>
                 </div>
               </div>
