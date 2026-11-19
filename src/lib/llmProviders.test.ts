@@ -5,6 +5,8 @@ import {
   LLM_PROVIDER_PRESETS,
   CUSTOM_PROVIDER_ID,
   inferProviderByBaseURL,
+  dedupeModels,
+  ensureModelInList,
 } from "./llmProviders";
 
 const CATALOG_FIXTURE = {
@@ -112,5 +114,26 @@ describe("inferProviderByBaseURL", () => {
     expect(inferProviderByBaseURL("http://my-gw.local/v1")).toBe(
       CUSTOM_PROVIDER_ID
     );
+  });
+});
+
+describe("dedupeModels & ensureModelInList", () => {
+  it("按 ID 去重字符串与对象混合模型，优先保留对象配置", () => {
+    const raw = ["k3", { id: "k3", contextWindow: "128000" }, "gpt-4o", "k3"];
+    const result = dedupeModels(raw);
+    expect(result).toHaveLength(2);
+    expect(result[0]).toEqual({ id: "k3", contextWindow: "128000" });
+    expect(result[1]).toBe("gpt-4o");
+  });
+
+  it("ensureModelInList: 已存在同名模型时不重复追加，不存在时才追加", () => {
+    const list = [{ id: "k3", contextWindow: "128000" }];
+    const res1 = ensureModelInList(list, "k3");
+    expect(res1).toHaveLength(1);
+    expect(res1[0]).toEqual({ id: "k3", contextWindow: "128000" });
+
+    const res2 = ensureModelInList(list, "k4");
+    expect(res2).toHaveLength(2);
+    expect(res2[1]).toBe("k4");
   });
 });

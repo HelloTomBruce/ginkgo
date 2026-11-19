@@ -45,4 +45,39 @@ describe("useLlmSettings", () => {
       fallbacks: ["claude-3-5-sonnet", "deepseek-chat"],
     });
   });
+
+  it("当添加模型（如 k3）并保存设置时，模型列表自动按 ID 去重，不出现两个重复模型", () => {
+    const { result } = renderHook(() => useLlmSettings());
+
+    const kimiProvider = result.current.providers.find((p) => p.id === "kimi-coding");
+    expect(kimiProvider).toBeDefined();
+
+    // 模拟添加单个模型 k3
+    act(() => {
+      result.current.saveProvider({
+        ...kimiProvider!,
+        models: [{ id: "k3", contextWindow: "128000" }],
+        defaultModel: "k3",
+      });
+    });
+
+    // 切换当前活跃为 kimi-coding 与 k3
+    act(() => {
+      result.current.switchActiveModel("kimi-coding", "k3");
+    });
+
+    // 点击保存设置
+    act(() => {
+      result.current.saveSettings();
+    });
+
+    // 重新获取 kimi-coding Provider
+    const updatedKimi = result.current.providers.find((p) => p.id === "kimi-coding");
+    expect(updatedKimi).toBeDefined();
+    // 绝不出现两个 k3
+    const k3Models = updatedKimi!.models.filter(
+      (m) => (typeof m === "string" ? m : m.id) === "k3"
+    );
+    expect(k3Models).toHaveLength(1);
+  });
 });

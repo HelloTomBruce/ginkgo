@@ -51,6 +51,44 @@ export function getModelId(m: ModelDefinition): string {
   return typeof m === "string" ? m : m.id;
 }
 
+/**
+ * 健壮的模型列表去重函数：
+ * - 统一按 Model ID 去重，防止同一模型因 string/object 混合存储导致界面出现多个相同条目
+ * - 当同时存在纯字符串与带参数的对象配置时，优先保留更丰富的对象配置
+ * - 保持先出现的相对顺序
+ */
+export function dedupeModels(list: (ModelDefinition | undefined | null)[]): ModelDefinition[] {
+  const map = new Map<string, ModelDefinition>();
+  for (const item of list) {
+    if (!item) continue;
+    const id = getModelId(item).trim();
+    if (!id) continue;
+    const existing = map.get(id);
+    if (!existing) {
+      map.set(id, item);
+    } else if (typeof existing === "string" && typeof item === "object") {
+      map.set(id, item);
+    }
+  }
+  return Array.from(map.values());
+}
+
+/**
+ * 确保某个模型在列表中，若已存在则直接返回去重后的列表，若不存在则追加
+ */
+export function ensureModelInList(
+  list: (ModelDefinition | undefined | null)[],
+  targetModel: string
+): ModelDefinition[] {
+  const trimmed = targetModel.trim();
+  if (!trimmed) return dedupeModels(list);
+  const exists = list.some((m) => m && getModelId(m) === trimmed);
+  if (exists) {
+    return dedupeModels(list);
+  }
+  return dedupeModels([...list, trimmed]);
+}
+
 /** 已配置的多 Provider 实体（支持多模型、自定义端点） */
 export interface ConfiguredProvider {
   /** 唯一标识，如 deepseek, openai, custom-1 */

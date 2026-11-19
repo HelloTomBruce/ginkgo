@@ -8,6 +8,8 @@ import {
   type ConfiguredProvider,
   normalizeModel,
   getModelId,
+  dedupeModels,
+  ensureModelInList,
   createDefaultConfiguredProviders,
   PROVIDERS_STORAGE_KEY,
   ACTIVE_PROVIDER_STORAGE_KEY,
@@ -56,7 +58,10 @@ function loadInitialProviders(): ConfiguredProvider[] {
     try {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed as ConfiguredProvider[];
+        return parsed.map((p: ConfiguredProvider) => ({
+          ...p,
+          models: dedupeModels(p.models || []),
+        }));
       }
     } catch {
       // ignore
@@ -81,7 +86,7 @@ function loadInitialProviders(): ConfiguredProvider[] {
         apiKey: legacyKey,
         baseURL: legacyBaseURL || defaults[existingIndex].baseURL,
         protocol: legacyProtocol,
-        models: Array.from(new Set([legacyModel, ...defaults[existingIndex].models])),
+        models: ensureModelInList(defaults[existingIndex].models, legacyModel),
         defaultModel: legacyModel,
       };
     } else {
@@ -228,14 +233,18 @@ export function useLlmSettings() {
    */
   const saveProvider = useCallback(
     (provider: ConfiguredProvider) => {
+      const sanitizedProvider: ConfiguredProvider = {
+        ...provider,
+        models: dedupeModels(provider.models || []),
+      };
       setProviders((prev) => {
-        const index = prev.findIndex((p) => p.id === provider.id);
+        const index = prev.findIndex((p) => p.id === sanitizedProvider.id);
         let next: ConfiguredProvider[];
         if (index >= 0) {
           next = [...prev];
-          next[index] = provider;
+          next[index] = sanitizedProvider;
         } else {
-          next = [...prev, provider];
+          next = [...prev, sanitizedProvider];
         }
         if (typeof window !== "undefined") {
           localStorage.setItem(PROVIDERS_STORAGE_KEY, JSON.stringify(next));
@@ -245,11 +254,11 @@ export function useLlmSettings() {
 
       // 如果更新的是当前正在使用的 Provider，同步活跃状态
       if (provider.id === activeProviderId) {
-        syncFromProvider(provider, activeModel);
+        syncFromProvider(sanitizedProvider, activeModel);
         if (typeof window !== "undefined") {
-          localStorage.setItem(STORAGE_KEYS.apiKey, provider.apiKey);
-          localStorage.setItem(STORAGE_KEYS.baseURL, provider.baseURL);
-          localStorage.setItem(STORAGE_KEYS.protocol, provider.protocol);
+          localStorage.setItem(STORAGE_KEYS.apiKey, sanitizedProvider.apiKey);
+          localStorage.setItem(STORAGE_KEYS.baseURL, sanitizedProvider.baseURL);
+          localStorage.setItem(STORAGE_KEYS.protocol, sanitizedProvider.protocol);
         }
       }
     },
@@ -312,7 +321,7 @@ export function useLlmSettings() {
           apiKey,
           baseURL,
           protocol,
-          models: Array.from(new Set([model, ...next[idx].models].filter(Boolean))),
+          models: ensureModelInList(next[idx].models, model),
           defaultModel: model,
         };
       } else {
@@ -325,7 +334,7 @@ export function useLlmSettings() {
             protocol,
             baseURL,
             apiKey,
-            models: [model].filter(Boolean),
+            models: ensureModelInList([], model),
             defaultModel: model,
             enabled: true,
           },

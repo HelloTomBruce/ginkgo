@@ -45,6 +45,7 @@ import {
   findPreset,
   getModelId,
   normalizeModel,
+  dedupeModels,
 } from "@/lib/llmProviders";
 import { useProviderCatalog } from "@/hooks/useProviderCatalog";
 
@@ -220,15 +221,15 @@ function ModelCatalogEditor({
     if (editingIndex !== null) {
       const next = [...models];
       next[editingIndex] = newConfig;
-      onModelsChange(next);
+      onModelsChange(dedupeModels(next));
     } else {
       const existingIdx = models.findIndex((m) => getModelId(m) === trimmedId);
       if (existingIdx >= 0) {
         const next = [...models];
         next[existingIdx] = newConfig;
-        onModelsChange(next);
+        onModelsChange(dedupeModels(next));
       } else {
-        onModelsChange([...models, newConfig]);
+        onModelsChange(dedupeModels([...models, newConfig]));
       }
     }
 
@@ -542,7 +543,7 @@ export function SettingsModal({
     setFormApiKey(p.apiKey);
     setFormBaseURL(p.baseURL);
     setFormProtocol(p.protocol);
-    setFormModels(p.models || []);
+    setFormModels(dedupeModels(p.models || []));
   };
 
   // 打开新建 Provider
@@ -579,7 +580,7 @@ export function SettingsModal({
 
     const finalId = formId.trim() || `custom-${Date.now()}`;
     const finalName = formName.trim() || finalId;
-    const finalModels = formModels.length > 0 ? formModels : ["default-model"];
+    const finalModels = dedupeModels(formModels.length > 0 ? formModels : ["default-model"]);
 
     const updatedProvider: ConfiguredProvider = {
       id: finalId,
