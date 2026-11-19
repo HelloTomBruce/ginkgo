@@ -5,6 +5,7 @@ import {
   createMetricsSink,
 } from "@openui-analytics/llm";
 import { datasources } from "@/lib/datasources";
+import { getMcpManager, loadMcpServers } from "@/lib/mcpStore";
 import { createAppMethodology } from "@/lib/methodologyLoader";
 import { sessionStore } from "@/lib/sessionStore";
 
@@ -33,6 +34,10 @@ export const metrics = createMetricsSink();
 export const POST = createAnalyzeHandler({
   authenticate: devModeAuthenticate,
   datasources,
+  mcp: {
+    manager: getMcpManager(),
+    getServers: () => loadMcpServers(),
+  },
   methodology: createAppMethodology().library,
   sessions: {
     async getContext(sessionId) {

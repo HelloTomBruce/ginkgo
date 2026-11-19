@@ -1,4 +1,4 @@
-import type { CoreTool } from "ai";
+import { jsonSchema, type CoreTool } from "ai";
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import type { MCPClientManager } from "./clientManager";
@@ -18,7 +18,11 @@ export function adaptMcpToolToCoreTool(
 
   return {
     description: tool.description ?? `MCP Tool: ${tool.name} (from ${serverId})`,
-    parameters: z.record(z.string(), z.any()),
+    parameters: tool.inputSchema
+      ? jsonSchema<Record<string, unknown>>(
+          tool.inputSchema as Record<string, unknown>
+        )
+      : z.record(z.string(), z.any()),
     execute: async (args: Record<string, unknown>) => {
       const result = await manager.callTool(serverId, tool.name, args);
 

@@ -5,6 +5,7 @@ import {
   InMemoryTaskStore,
   InMemoryCostLedger,
   type ModelPricingTable,
+  type MCPClientManager,
 } from "@openui-analytics/harness-core";
 import type {
   DatasourceManager,
@@ -1812,5 +1813,76 @@ describe("WS-11 成本入账", () => {
     expect(text).toContain('"promptTokens":1200');
     expect(text).toContain('"completionTokens":300');
     expect(text).toContain('"totalTokens":1500');
+  });
+
+  describe("MCP 工具动态注入到 Analyze 对话管道", () => {
+    it("启用 MCP 服务时，动态装配 MCP tools 挂载至 streamText 并注入提示词", async () => {
+      const mockMcpManager = {
+        registerServers: vi.fn(),
+        listTools: vi.fn().mockResolvedValue([
+          {
+            name: "search_repositories",
+            description: "Search repos",
+            inputSchema: { type: "object", properties: { query: { type: "string" } } },
+          },
+        ]),
+        callTool: vi.fn().mockResolvedValue({
+          content: [{ type: "text", text: JSON.stringify([{ id: 1, name: "openui" }]) }],
+        }),
+      } as unknown as MCPClientManager;
+
+      const manager = await makeFakeManager();
+      const POST = createAnalyzeHandler({
+        datasources: manager,
+        mcp: {
+          manager: mockMcpManager,
+          getServers: () => [
+            {
+              id: "gitlab",
+              name: "GitLab 协同",
+              transport: "sse",
+              enabled: true,
+            },
+          ],
+        },
+      });
+
+      await POST(makeRequest({ messages: [{ role: "user", content: "查仓库" }], apiKey: "k" }));
+
+      const callArgs = vi.mocked(streamText).mock.calls[0][0];
+      expect(callArgs.tools).toHaveProperty("gitlab_search_repositories");
+      expect(callArgs.system).toContain("GitLab 协同");
+      expect(callArgs.system).toContain("gitlab_search_repositories");
+    });
+
+    it("当 MCP 服务连接失败时，优雅降级记录告警且不中断正常请求", async () => {
+      const events: Array<{ type: string; code?: string }> = [];
+      const sink = { emit: (e: never) => events.push(e) };
+      const mockMcpManager = {
+        registerServers: vi.fn(),
+        listTools: vi.fn().mockRejectedValue(new Error("Connection refused")),
+      } as unknown as MCPClientManager;
+
+      const manager = await makeFakeManager();
+      const POST = createAnalyzeHandler({
+        datasources: manager,
+        telemetry: sink,
+        mcp: {
+          manager: mockMcpManager,
+          getServers: () => [
+            {
+              id: "broken_mcp",
+              name: "Broken MCP",
+              transport: "sse",
+              enabled: true,
+            },
+          ],
+        },
+      });
+
+      const res = await POST(makeRequest({ messages: [], apiKey: "k" }));
+      expect(res.status).toBe(200);
+      expect(events.some((e) => e.type === "warn" && e.code === "MCP_SERVER_LOAD_FAILED")).toBe(true);
+    });
   });
 });

@@ -54,7 +54,7 @@ export interface HealthResult {
 export interface ActiveSourceSummary {
   id: string;
   name: string;
-  kind: DataSourceDescriptor["kind"];
+  kind: DataSourceDescriptor["kind"] | "mcp";
   dbType?: DbSourceType;
   tools: string[];
 }

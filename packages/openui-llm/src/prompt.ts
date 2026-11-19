@@ -94,8 +94,10 @@ function dataAccessSection(activeSources: ActiveSourceSummary[]): string {
       src.kind === "db" ? `db${src.dbType ? `: ${src.dbType}` : ""}` : src.kind;
     const tools =
       src.tools.length > 0 ? src.tools.join(", ") : "tools discovered dynamically";
+    const readOnlyNote =
+      src.kind === "db" ? " Database sources are strictly read-only." : "";
     lines.push(
-      `${n++}. **${src.name}** (${kindLabel}):\n   - ${tools}. Database sources are strictly read-only.`
+      `${n++}. **${src.name}** (${kindLabel}):\n   - ${tools}.${readOnlyNote}`
     );
   }
   const pairNames = resolvePairNames(activeSources);

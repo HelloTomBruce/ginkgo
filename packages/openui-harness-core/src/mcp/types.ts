@@ -11,6 +11,8 @@ export interface MCPServerConfig {
   name?: string;
   /** 传输协议 */
   transport: MCPTransportType;
+  /** 是否启用，缺省 true */
+  enabled?: boolean;
 
   // Stdio 传输配置
   command?: string;

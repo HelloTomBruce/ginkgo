@@ -70,6 +70,9 @@ import {
   type QuotaPolicy,
   createConsoleSink,
   newRunId,
+  getCoreToolsFromMcp,
+  type MCPClientManager,
+  type MCPServerConfig,
 } from "@openui-analytics/harness-core";
 
 /** 全部启用源结构卡注入 prompt 的总量预算（与单卡 2KB 预算配套，快照测试守护） */
@@ -223,9 +226,16 @@ export interface AuthContext {
   claims?: Record<string, unknown>;
 }
 
+export interface McpOptions {
+  manager: MCPClientManager;
+  getServers: () => Promise<MCPServerConfig[]> | MCPServerConfig[];
+}
+
 export interface AnalyzeHandlerOptions {
   /** 应用持有的数据源单例（src/lib/datasources.ts），包不自建 */
   datasources: DatasourceManager;
+  /** MCP 扩展客户端与服务清单（可选注入） */
+  mcp?: McpOptions;
   /**
    * 方法论库（可选注入）：缺省用内置 10 卡装配（内置卡由 promptExamples.test
    * 的组件名一致性校验守护）；应用层可注入「内置 + 用户卡/业务包卡」合并库。
@@ -727,6 +737,82 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
           ? { ...s, tools: Object.keys(settled.value) }
           : s;
       });
+
+      // 装配已启用的 MCP 扩展工具集（如 gitlab, zentao 等）
+      if (opts.mcp) {
+        try {
+          const mcpConfigs = await opts.mcp.getServers();
+          const allEnabled = (
+            Array.isArray(mcpConfigs) ? mcpConfigs : []
+          ).filter((s) => s.enabled !== false);
+          // 若客户端明确限定了 sources，则按 sources 过滤，否则全量装载已启用的 MCP
+          const targetServers = clientSources
+            ? allEnabled.filter((s) => (clientSources as string[]).includes(s.id))
+            : allEnabled;
+
+          if (targetServers.length > 0) {
+            opts.mcp.manager.registerServers(targetServers);
+
+            for (const server of targetServers) {
+              try {
+                const serverTools = await getCoreToolsFromMcp(
+                  opts.mcp.manager,
+                  [server]
+                );
+                const toolNames = Object.keys(serverTools);
+                if (toolNames.length > 0) {
+                  mergeToolSets(
+                    loadedTools,
+                    instrumentTools(serverTools, {
+                      runId,
+                      sessionId: sessionIdForEvents,
+                      sourceId: server.id,
+                      telemetry,
+                    }),
+                    server.id
+                  );
+                  summaries.push({
+                    id: server.id,
+                    name: server.name || server.id,
+                    kind: "mcp",
+                    tools: toolNames,
+                  });
+                } else {
+                  telemetry.emit({
+                    type: "warn",
+                    runId,
+                    sessionId: sessionIdForEvents,
+                    code: "MCP_SERVER_LOAD_FAILED",
+                    detail: `MCP 服务 [${server.id}] 未发现可用工具或连接失败，降级跳过`,
+                  });
+                }
+              } catch (serverErr) {
+                telemetry.emit({
+                  type: "warn",
+                  runId,
+                  sessionId: sessionIdForEvents,
+                  code: "MCP_SERVER_LOAD_FAILED",
+                  detail: `MCP 服务 [${server.id}] 工具装配失败，降级跳过: ${
+                    serverErr instanceof Error
+                      ? serverErr.message
+                      : String(serverErr)
+                  }`,
+                });
+              }
+            }
+          }
+        } catch (mcpErr) {
+          telemetry.emit({
+            type: "warn",
+            runId,
+            sessionId: sessionIdForEvents,
+            code: "MCP_CONFIG_LOAD_FAILED",
+            detail: `MCP 配置加载失败: ${
+              mcpErr instanceof Error ? mcpErr.message : String(mcpErr)
+            }`,
+          });
+        }
+      }
 
       // 按阶段分派系统提示词：plan → 规划变体（探查边界 + PlanReviewCard 契约 + 选法指令）；
       // execute → base + 按已确认思路执行的增量约束 + 命中方法卡详情（按需注入）；
