@@ -1398,6 +1398,100 @@ describe("finish_task 服务端不变量（WS-5）", () => {
     expect(result.terminated).toBe(true);
     expect(result.status).toBe("completed");
   });
+
+  it("模型已输出实质性文本时宣告 completed:允许正常闭环(terminated=true)", async () => {
+    vi.mocked(streamText).mockImplementation((opts) =>
+      streamResult({
+        onStart: () => {
+          opts.onStepFinish?.({
+            stepType: "text",
+            toolCalls: [],
+            finishReason: "stop",
+            text: "谢谢！本次分析已完成闭环，祝你工作顺利！",
+            usage: { promptTokens: 50, completionTokens: 20 },
+          } as never);
+          opts.onFinish?.({ usage: { promptTokens: 50 } } as never);
+        },
+      }) as never
+    );
+
+    const manager = await makeFakeManager();
+    const POST = createAnalyzeHandler({ datasources: manager });
+    await POST(makeRequest({ messages: [{ role: "user", content: "不错" }], apiKey: "k" }));
+
+    const arg = vi.mocked(streamText).mock.calls[0][0];
+    const finishTool = arg.tools?.finish_task as unknown as {
+      execute: (args: unknown) => Promise<{ terminated: boolean; status: string; message: string }>;
+    };
+    const result = await finishTool.execute({ status: "completed", summary: "感谢反馈" });
+    expect(result.terminated).toBe(true);
+    expect(result.status).toBe("completed");
+    expect(result.message).toContain("任务已确认闭环");
+  });
+
+  it("问答查询已产生文本说明时宣告 completed:允许正常闭环(terminated=true)", async () => {
+    vi.mocked(streamText).mockImplementation((opts) =>
+      streamResult({
+        onStart: () => {
+          opts.onStepFinish?.({
+            stepType: "text",
+            toolCalls: [],
+            finishReason: "stop",
+            text: "GitLab MCP 共有 38 个工具，覆盖 MR、Issue 与项目管理。",
+            usage: { promptTokens: 80, completionTokens: 30 },
+          } as never);
+          opts.onFinish?.({ usage: { promptTokens: 80 } } as never);
+        },
+      }) as never
+    );
+
+    const manager = await makeFakeManager();
+    const POST = createAnalyzeHandler({ datasources: manager });
+    await POST(makeRequest({ messages: [{ role: "user", content: "gitlab mcp 有哪些工具" }], apiKey: "k" }));
+
+    const arg = vi.mocked(streamText).mock.calls[0][0];
+    const finishTool = arg.tools?.finish_task as unknown as {
+      execute: (args: unknown) => Promise<{ terminated: boolean; status: string; message: string }>;
+    };
+    const result = await finishTool.execute({ status: "completed", summary: "列举工具清单" });
+    expect(result.terminated).toBe(true);
+    expect(result.status).toBe("completed");
+  });
+
+  it("纯文本摘要交付时宣告 completed:允许正常闭环(terminated=true)", async () => {
+    vi.mocked(streamText).mockImplementation((opts) =>
+      streamResult({
+        onStart: () => {
+          opts.onStepFinish?.({
+            stepType: "text",
+            toolCalls: [],
+            finishReason: "stop",
+            text: "核心结论摘要：1. 10月GMV达1890万；2. 退款率集中在湖北与北京。",
+            usage: { promptTokens: 120, completionTokens: 40 },
+          } as never);
+          opts.onFinish?.({ usage: { promptTokens: 120 } } as never);
+        },
+      }) as never
+    );
+
+    const manager = await makeFakeManager();
+    const POST = createAnalyzeHandler({ datasources: manager });
+    await POST(
+      makeRequest({
+        messages: [{ role: "user", content: "请按已确认思路执行。澄清问题答复：「输出形式？」选择：仅核心结论摘要。" }],
+        apiKey: "k",
+        mode: "execute",
+      })
+    );
+
+    const arg = vi.mocked(streamText).mock.calls[0][0];
+    const finishTool = arg.tools?.finish_task as unknown as {
+      execute: (args: unknown) => Promise<{ terminated: boolean; status: string; message: string }>;
+    };
+    const result = await finishTool.execute({ status: "completed", summary: "核心结论已提炼" });
+    expect(result.terminated).toBe(true);
+    expect(result.status).toBe("completed");
+  });
 });
 
 describe("Provider 韧性层 fallback 链（WS-9）", () => {

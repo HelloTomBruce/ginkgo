@@ -12,7 +12,7 @@ vi.mock("@openuidev/react-lang", async (importOriginal) => {
 });
 
 import { useTriggerAction } from "@openuidev/react-lang";
-import { PlanReviewCard } from "./PlanReviewCard";
+import { PlanReviewCard, buildPlanExecutionPrompt } from "./PlanReviewCard";
 
 // vitest 未开 globals，testing-library 的自动 cleanup 不会注册，需显式清理
 afterEach(cleanup);
@@ -103,9 +103,45 @@ describe("PlanReviewCard 规划确认卡", () => {
     expect(screen.getByText("计算 CAC 与转化率")).toBeInTheDocument();
   });
 
-  it("无 Renderer 上下文（useTriggerAction 为 undefined）时确认按钮禁用不抛错", () => {
-    vi.mocked(useTriggerAction).mockReturnValue(undefined as never);
-    render(<PlanReviewCard steps={STEPS} />);
-    expect(screen.getByRole("button", { name: /按此思路开始分析/ })).toBeDisabled();
+  it("确认指令首句保持意图中立，完整透传用户澄清答复", async () => {
+    const triggerAction = setupTrigger();
+    const clarificationsWithFormat = [
+      ...CLARIFICATIONS,
+      {
+        question: "输出形式？",
+        options: ["完整看板报告", "仅核心结论摘要"],
+        default: "完整看板报告",
+      },
+    ];
+
+    render(
+      <PlanReviewCard
+        steps={STEPS}
+        clarifications={clarificationsWithFormat}
+      />
+    );
+
+    fireEvent.click(screen.getByText("仅核心结论摘要", { selector: "button" }));
+    fireEvent.click(screen.getByRole("button", { name: /按此思路开始分析/ }));
+
+    await waitFor(() => expect(triggerAction).toHaveBeenCalledTimes(1));
+    const msg = triggerAction.mock.calls[0][0];
+    expect(msg).toContain("请按上述已确认的分析思路开始执行。");
+    expect(msg).not.toContain("产出完整的分析报告与看板");
+    expect(msg).toContain("「输出形式？」选择：仅核心结论摘要");
+  });
+
+  it("buildPlanExecutionPrompt 纯函数组装已选与未选澄清项", () => {
+    const prompt = buildPlanExecutionPrompt(
+      [
+        { question: "交付形式偏好", sel: "仅核心结论摘要" },
+        { question: "时间范围", sel: "近30天" },
+      ],
+      1
+    );
+    expect(prompt).toContain("请按上述已确认的分析思路开始执行。");
+    expect(prompt).not.toContain("产出完整的分析报告与看板");
+    expect(prompt).toContain("「交付形式偏好」选择：仅核心结论摘要");
+    expect(prompt).toContain("未答复的 1 个澄清问题按其默认假设执行");
   });
 });

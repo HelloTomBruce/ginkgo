@@ -125,6 +125,9 @@ describe("getOpenUIPlanPrompt 规划模式提示词", () => {
     expect(prompt).toContain("LIMIT");
     // 严禁直出看板的约束
     expect(prompt).toContain("NOT producing the final dashboard");
+    // 方案 A：模糊输入意图分流与反问指引
+    expect(prompt).toContain("Ambiguous or Broad Input Screening");
+    expect(prompt).toContain("Intent Ambiguity Screening");
   });
 });
 
@@ -138,6 +141,9 @@ describe("getExecuteSystemPrompt 执行模式提示词", () => {
     // 执行增量约束
     expect(prompt).toContain("Confirmed Plan Execution Mode");
     expect(prompt).toContain("REVISED PlanReviewCard");
+    // 交付物分级适配约束
+    expect(prompt).toContain("Deliverable Adaptation");
+    expect(prompt).toContain("Summary-Only Mode");
   });
 });
 

@@ -33,6 +33,31 @@ export interface PlanReviewCardProps {
  * 步骤清单 + 数据基础徽标 + 澄清问题选项 chips，点「确认」经 ToAssistant 通道
  * 注入答复消息并触发执行阶段。仅在规划轮次产出，执行轮次不应再出现。
  */
+export interface PlanClarificationAnswer {
+  question: string;
+  sel: string;
+}
+
+/**
+ * 组装规划确认后的执行阶段指令，包含已选澄清项与默认假设说明。
+ * 首句保持意图中立，不预设必须输出长篇大论或大看板，交付形式完全遵循用户的澄清答复与上下文意图。
+ */
+export function buildPlanExecutionPrompt(
+  answered: PlanClarificationAnswer[],
+  unansweredCount: number
+): string {
+  const parts: string[] = ["请按上述已确认的分析思路开始执行。"];
+  if (answered.length > 0) {
+    parts.push(
+      `澄清问题答复：${answered.map(({ question, sel }) => `「${question}」选择：${sel}`).join("；")}。`
+    );
+  }
+  if (unansweredCount > 0) {
+    parts.push(`未答复的 ${unansweredCount} 个澄清问题按其默认假设执行。`);
+  }
+  return parts.join("\n");
+}
+
 export const PlanReviewCard: React.FC<PlanReviewCardProps> = ({
   title = "分析思路确认",
   question,
@@ -86,20 +111,12 @@ export const PlanReviewCard: React.FC<PlanReviewCardProps> = ({
     if (!triggerAction) return;
     setConfirming(true);
     try {
-      const parts: string[] = ["请按上述已确认的分析思路开始执行，产出完整的分析报告与看板。"];
       const answered = safeClarifications
-        .map((c, i) => ({ c, sel: selections[i] }))
-        .filter((x): x is { c: PlanClarification; sel: string } => Boolean(x.sel));
-      if (answered.length > 0) {
-        parts.push(
-          `澄清问题答复：${answered.map(({ c, sel }) => `「${c.question}」选择：${sel}`).join("；")}。`
-        );
-      }
-      const unanswered = safeClarifications.filter((_, i) => !selections[i]);
-      if (unanswered.length > 0) {
-        parts.push(`未答复的 ${unanswered.length} 个澄清问题按其默认假设执行。`);
-      }
-      await triggerAction(parts.join("\n"));
+        .map((c, i) => ({ question: c.question, sel: selections[i] }))
+        .filter((x): x is PlanClarificationAnswer => Boolean(x.sel));
+      const unansweredCount = safeClarifications.filter((_, i) => !selections[i]).length;
+      const prompt = buildPlanExecutionPrompt(answered, unansweredCount);
+      await triggerAction(prompt);
     } catch (e) {
       console.error("[PlanReviewCard confirm error]:", e);
     } finally {

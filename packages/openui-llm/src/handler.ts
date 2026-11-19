@@ -1040,9 +1040,10 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
       let explicitFinishDetails: { status: string; summary?: string } | undefined;
       /** 最后一步的模型文本(plan 模式 onFinish 据此提取 methods,WS-4) */
       let lastStepText: string | undefined;
-      // WS-5 finish_task 不变量:跨步骤累计「已产出看板/规划卡」的证据
+      // WS-5 finish_task 不变量:跨步骤累计产出证据
       let hasDashboardOutput = false;
       let hasPlanCardOutput = false;
+      let totalTextChars = 0;
       // 任务级中止控制器:abortTask(用户停止/看门狗超时)经 hub 触发后传导进
       // streamText 并以 error 语义终止订阅;预算熔断走独立 controller——只取消
       // provider 生成,流自然收尾(客户端已收到 task_finish,订阅不得 error)
@@ -1078,26 +1079,26 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
               required: ["status"],
             }),
             execute: async ({ status, summary }) => {
-              // WS-5 服务端不变量:completed 必须有产出证据(看板代码块或规划卡),
-              // 把提示词的「严禁无产出宣告完成」从软约束变成硬兜底
-              if (
-                status === "completed" &&
-                !hasDashboardOutput &&
-                !hasPlanCardOutput
-              ) {
+              // WS-5 服务端不变量: 校验任务是否有实质性产出证据
+              // 产出形式包含：可视化看板代码块、规划卡代码块、或实质性文本内容（如纯文本分析结论、问答解答、交互闭环等）。
+              // 唯有当三者皆无（模型未输出任何实质内容却宣告完成）时，才予以拒绝，避免空跑兜底。
+              const hasVisualArtifact = hasDashboardOutput || hasPlanCardOutput;
+              const hasOutputEvidence = hasVisualArtifact || totalTextChars > 0;
+
+              if (status === "completed" && !hasOutputEvidence) {
                 telemetry.emit({
                   type: "warn",
                   runId,
                   sessionId: sessionIdForEvents,
                   code: "FINV_GATE_REJECTED",
-                  detail: `finish_task(completed) 被拒:无看板/规划卡产出证据`,
+                  detail: `finish_task(completed) 被拒:无任何实质性产出证据`,
                 });
                 return {
                   terminated: false,
                   status: "rejected",
                   summary: summary ?? "",
                   message:
-                    "尚未输出分析报告与 ```openui 看板代码块（规划模式则为 PlanReviewCard），不能宣告 completed。请先完成正式输出；若确属数据缺失或遇到阻塞，请改用 status=insufficient_data 或 status=blocked。",
+                    "尚未输出分析结论、报告或看板，不能宣告 completed。请先完成正式输出；若确属数据缺失或遇到阻塞，请改用 status=insufficient_data 或 status=blocked。",
                 };
               }
               explicitFinishDetails = { status, summary };
@@ -1111,8 +1112,9 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
                 terminated: true,
                 status,
                 summary: summary ?? "",
-                message:
-                  "数据取数与任务终态已确认闭环。若你在上一步或当前步骤已输出了完整的 Markdown 分析报告与 ```openui 看板代码块，严禁重复输出，直接输出一句简要闭环致辞即可自然结束；若尚未输出报告与看板，请在此处基于已获取的数据输出一份完整的 Markdown 深度分析报告及 ```openui ... ``` 可视化动态看板代码块。每轮回复严格只能有一份报告和一个看板，绝对不可重复输出两遍！",
+                message: hasVisualArtifact
+                  ? "数据取数与任务终态已确认闭环。若你在上一步或当前步骤已输出了完整的 Markdown 分析报告与 ```openui 看板代码块，严禁重复输出，直接输出一句简要闭环致辞即可自然结束；若尚未输出报告与看板，请在此处基于已获取的数据输出一份完整的 Markdown 深度分析报告及 ```openui ... ``` 可视化动态看板代码块。每轮回复严格只能有一份报告和一个看板，绝对不可重复输出两遍！"
+                  : "任务已确认闭环。请直接自然结束当前回复，无需重复输出。",
               };
             },
           });
@@ -1172,6 +1174,7 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
                   stepIndex++;
                   if (typeof text === "string" && text.length > 0) {
                     lastStepText = text;
+                    totalTextChars += text.trim().length;
                     // 不变量证据跨步骤累计(报告与看板可能分步输出)
                     if (text.includes("```openui")) hasDashboardOutput = true;
                     if (text.includes("PlanReviewCard")) hasPlanCardOutput = true;

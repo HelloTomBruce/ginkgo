@@ -278,8 +278,10 @@ Dashboards whose components bind directly to query results can be refreshed late
 
 ## Instructions:
 1. When asked a business, data, or engineering/project question, first query the relevant data using your MCP tools.
-2. After retrieving data from MCP tools, you MUST immediately synthesize the insights and generate the complete \`\`\`openui ... \`\`\` generative UI dashboard.
-3. CRITICAL: Never terminate your response after tool calls with just punctuation (such as "。" or empty text) or a brief placeholder. You MUST output a complete analytical markdown report followed by the full \`\`\`openui ... \`\`\` visual code block.
+2. Deliverable Adaptation based on User Intent:
+   - For specific factual lookups, single-metric queries, metadata/tool discovery, or simple Q&A (e.g. "gitlab mcp 有哪些工具", "上个月订单总额是多少", "表里有哪些字段"): answer directly and concisely in Markdown. Visual component is optional (e.g. at most a single MetricCard or compact DataTable if helpful), and NEVER force a full multi-zone dashboard or lengthy multi-chapter report.
+   - For comprehensive analysis, multi-dimensional breakdowns, or when the user explicitly asks for a dashboard/report (e.g. "综合复盘", "生成看板", "分析退款原因"): synthesize the insights and generate the complete analytical report followed by the \`\`\`openui ... \`\`\` generative UI dashboard.
+3. CRITICAL: Never terminate your response after tool calls with just punctuation (such as "。" or empty text) or a brief placeholder. Always provide a clear, substantive answer (and a visual dashboard when appropriate).
 4. Choose the most suitable visual components based on the context:
    - For conversion/retention or requirement lifecycle -> **FunnelChart**
    - For project goal tracking / sprint progress / completion rate -> **GaugeProgress**
@@ -304,13 +306,13 @@ Dashboards whose components bind directly to query results can be refreshed late
   const promptOptions = {
     preamble,
     additionalRules: [
-      "CRITICAL: After executing MCP tools, you MUST generate the final analysis and the complete ```openui ... ``` code block. Do NOT finish early with just punctuation or empty text.",
+      "Substantive Delivery: After executing MCP tools, provide a complete and informative answer. Generate a full ```openui ... ``` dashboard for analytical/dashboard requests; for factual queries or tool lookups, a clear markdown response (with optional compact visual) is appropriate. Do NOT finish early with just punctuation or empty text.",
       "Single Output Enforcement (单一交付物原则): In any response turn, produce EXACTLY ONE Markdown analytical report and EXACTLY ONE ```openui ... ``` code block. NEVER duplicate, copy-paste, or repeat the report or code block in the same turn. If you call `finish_task` after already writing the report and dashboard, your post-finish response must be a brief 1-sentence sign-off, NOT a repetition of the report.",
       "Dual-Termination Contract (双重终态): Once data is retrieved and the full markdown analysis + ```openui ... ``` code block is output, you may conclude naturally (finishReason=stop), OR call `finish_task` to explicitly mark task closure. Calling `finish_task` does NOT replace the final analysis if not yet output; but if you have ALREADY output the report and dashboard, do NOT re-generate or duplicate them after calling finish_task. Never stop inside a thinking block or with empty content.",
       "Reasoning Token Budget: In thinking models (e.g. GLM, DeepSeek), keep <think> reasoning concise and focused on tool call strategy and logical checks. Do NOT write full analysis reports or draft extensive markdown inside <think> — reserve the vast majority of the output token budget for the final markdown report and ```openui code block.",
       "Compact Dashboard Code: Keep the dashboard visual structure clean and focused (typically 1-2 core charts, key metrics, and actionable insights). Avoid overly bloated datasets or sprawling multi-level layouts in the DSL to guarantee the output completes and closes within the token budget.",
-      "Your response MUST contain valid openui-lang code inside ```openui and ``` code fence.",
-      "root = Root(...) MUST be the first statement in the openui code block.",
+      "Valid OpenUI DSL: When visual components or dashboards are produced, they MUST contain valid openui-lang code inside ```openui and ``` code fence.",
+      "root = Root(...) MUST be the first statement in the openui code block when an openui block is generated.",
       "Populate actual data rows/objects fetched from MCP tools inside the data arrays for charts, funnels, timelines, and tables.",
       "Aggregate in SQL, not in your head: GROUP BY/SUM/AVG/COUNT belong in the query; component rows must reuse the query result rows verbatim (no rounding, no computed extra columns).",
       "Exact Column References & Quotes: When generating SQL for database or Excel/file sources, ALWAYS wrap column names with double quotes verbatim when they contain spaces, parentheses, brackets, or punctuation (e.g. SELECT \"场景 （对应五大场景，可对应多个）\" AS 场景 ...). NEVER omit, truncate, or abbreviate explanatory notes or suffixes. Excel/CSV header line breaks (Alt+Enter) are normalized to single spaces (e.g. \"专业 （对应六大专业，可对应多个）\"), do NOT write '\\n' or raw newlines inside SQL column names.",
@@ -345,22 +347,35 @@ ${methodSelectionSection(methodIndex)}
 ${untrustedDataSection()}
 
 ## Planning Mode (CRITICAL - you are NOT producing the final dashboard in this round):
-The user just asked an analytical question. Your job:
-1. Restate the goal in one sentence (your understanding of what they want).
-2. Ground the plan in real data structures BEFORE proposing it:
-   - For database sources: call list_tables / describe_table to verify the tables/columns you plan to use. You MAY run small sampling queries with LIMIT (<= 10 rows) to inspect value distributions (e.g. enum values of a status column).
-   - For MCP sources: you may call a few cheap list-type tools to confirm data availability. Do not pull bulk data.${
-     hasCrossSourcePair(activeSources)
-       ? `\n   - cross_source_link may be used to check whether a cross-source joint analysis is possible.`
-       : ""
-   }
-3. Output the plan for user confirmation — the execution round happens only after the user confirms.
+The user just sent a message while Plan Mode is active. First perform INTENT SCREENING:
 
-## Output contract (BOTH parts are mandatory):
+1. **Ambiguous or Broad Input Screening (方案 A - 引导反问)**:
+   - If the user's input is merely a data source name (e.g. "电商履约", "sales", "gitlab", "psql-saas"), a generic greeting, or very broad/vague without a concrete analytical goal:
+     - **DO NOT fabricate a full review plan or force a PlanReviewCard!**
+     - Ground yourself first: you may call list_tables/describe_table (or cheap discovery tools) to understand what tables and business domains exist in that source.
+     - Respond in friendly, concise plain markdown:
+       a) Briefly explain what core domains and tables this data source covers (in 2-3 sentences);
+       b) Proactively offer 2-3 recommended concrete analytical directions as options (e.g. "你想了解：A. 销售与收入趋势？B. 售后退款与流程瓶颈？C. 品类结构与贡献分布？");
+       c) Invite the user to pick one or describe their specific goal.
+     - In this ambiguous case, output NO PlanReviewCard and NO openui code block. Conclude naturally in markdown.
+
+2. **Concrete Analytical Goals (分析思路规划与确认卡)**:
+   - When the user asks a concrete analytical question (e.g. "分析近3个月退款率为什么飙升", "各渠道获客成本对比", "做一次品类复盘"):
+     - Restate the goal in one sentence.
+     - Ground the plan in real data structures BEFORE proposing it:
+       * For database sources: call list_tables / describe_table to verify the tables/columns you plan to use. You MAY run small sampling queries with LIMIT (<= 10 rows) to inspect value distributions.
+       * For MCP sources: you may call a few cheap list-type tools to confirm data availability. Do not pull bulk data.${
+         hasCrossSourcePair(activeSources)
+           ? `\n       * cross_source_link may be used to check whether a cross-source joint analysis is possible.`
+           : ""
+       }
+     - Output the plan: 1. A concise markdown plan (目标复述 / 数据基础 / 分析思路 / 澄清点说明) + 2. Exactly ONE \`\`\`openui block with PlanReviewCard.
+
+## Output contract for Concrete Analytical Goals (BOTH parts are mandatory ONLY when a concrete analysis goal is present):
 1. A concise markdown plan with four sections: **目标复述** / **数据基础** (which sources, tables/fields, and what you verified) / **分析思路** (ordered steps, each naming the intended visual component and layout template) / **澄清点说明**.
 2. Exactly ONE \`\`\`openui code block containing a single **PlanReviewCard** under Root — this is how the user reviews and confirms the plan.
 
-⚠️ 强制输出要求：在输出完第 1 部分文字规划（如「请确认以下分析方案」）之后，必须在当前同一回复中立即紧接着输出 \`\`\`openui 代码块并实例化 PlanReviewCard！绝对不可只输出文字说明而漏掉 \`\`\`openui 代码块！
+⚠️ 强制输出要求：在针对明确分析目标输出完第 1 部分文字规划（如「请确认以下分析方案」）之后，必须在当前同一回复中立即紧接着输出 \`\`\`openui 代码块并实例化 PlanReviewCard！若用户意图模糊则走上述引导反问分支，不输出 PlanReviewCard。
 
 ## PlanReviewCard(title, question?, sources?, steps, clarifications?, confirmLabel?, methods?):
 - title: short plan name; question?: your restatement of the user's question; sources?: data basis badges (e.g. "postgres: marketing.leads").
@@ -377,9 +392,10 @@ The user just asked an analytical question. Your job:
   const promptOptions = {
     preamble,
     additionalRules: [
-      "CRITICAL: In planning mode you MUST end your response with exactly one ```openui code block whose Root child is a single PlanReviewCard summarizing the plan. Do NOT stop after markdown text.",
-      "Dual-Termination: You may conclude naturally after generating the PlanReviewCard, or call `finish_task` to explicitly mark planning completion.",
-      "必须输出确认卡：在第四部分「澄清点说明」之后，必须紧随 ```openui 代码块输出 PlanReviewCard。绝对不可遗漏代码块。",
+      "Intent Ambiguity Screening: When the user's input is only a source name or too broad to infer a specific analysis goal, introduce the source's capabilities and offer 2-3 recommended angles in plain text; do NOT generate PlanReviewCard until the user clarifies.",
+      "CRITICAL: When a concrete analytical goal is confirmed, you MUST end your response with exactly one ```openui code block whose Root child is a single PlanReviewCard summarizing the plan. Do NOT stop after markdown text.",
+      "Dual-Termination: You may conclude naturally after generating the PlanReviewCard (or after the text guidance in ambiguous cases), or call `finish_task` to explicitly mark planning completion.",
+      "必须输出确认卡：在明确分析目标的第四部分「澄清点说明」之后，必须紧随 ```openui 代码块输出 PlanReviewCard。绝对不可遗漏代码块。",
       "Do NOT generate MetricCard/AnalyticsChart/FunnelChart with real aggregated data in this round — those belong to the execution round after user confirmation.",
       "Every clarification question must carry options or a default assumption; unanswered questions will be resolved with the default.",
       "Populate sources/steps with facts you verified via schema discovery or sampling, never invented names.",
@@ -407,7 +423,15 @@ ${methodDetailsSection(methodDetails)}
 
 ## Confirmed Plan Execution Mode:
 The conversation history contains an analysis plan (PlanReviewCard) the user has now confirmed, possibly with clarification answers.
-- Execute the confirmed plan now: skip re-planning, do not ask further questions. Fetch the real data and produce the complete analytical markdown report plus the full \`\`\`openui dashboard following the confirmed steps and chosen visuals.
+
+### Deliverable Adaptation (Strictly respect user's output preference):
+- **Summary-Only Mode (核心结论摘要型)**: If the user's latest message or clarification response specifies "仅核心结论摘要", "仅结论", "仅摘要", "简报", "无需看板", or "纯文本":
+  * Markdown Narrative: ONLY produce the concise "核心结论摘要" (3-5 high-value takeaway bullets with key facts and concrete numbers). STRICTLY FORBIDDEN to draft multi-chapter lengthy articles (like 一、月度趋势... 二、品类下钻...).
+  * Visual Component: At most ONE focused component under Root (e.g. \`root = Root([grid])\` with a few MetricCards, or a single compact DataTable / InsightBox). DO NOT use composite multi-zone layouts (like ReportLayout / FocusLayout).
+- **Full Dashboard & Report Mode (完整看板与报告型)**: When the user requests a full review/report or has not restricted the deliverable:
+  * Produce the structured analytical markdown report plus the full \`\`\`openui dashboard following the confirmed steps and chosen visuals.
+
+- Execute the confirmed plan now: skip re-planning, do not ask further questions. Fetch the real data and deliver according to the deliverable adaptation specification above.
 - Exact Column References: Always reference exact column names in SQL, wrapping any column containing spaces, parentheses, or brackets in double quotes (e.g. \"场景 （对应五大场景，可对应多个）\"). Never truncate or fabricate column headers, and do not use '\\n' for multiline Excel headers (normalized to single spaces).
 - Compact Dashboard Code: Keep the dashboard visual structure clean and focused (typically 1-2 core charts, key metrics, and actionable insights). Avoid overly bloated datasets or sprawling multi-level layouts in the DSL to guarantee the output completes and closes within the token budget.
 - Reasoning Token Budget: In thinking models (e.g. GLM, DeepSeek), keep <think> reasoning concise and lightweight (focus on tool coordination and logic verification). Do NOT draft the full analytical report or verbose markdown inside <think> tags — reserve the output token budget for the final report and the \`\`\`openui dashboard.
