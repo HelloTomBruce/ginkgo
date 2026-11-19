@@ -48,60 +48,14 @@ interface FormState {
   name: string;
   transport: "sse" | "stdio";
   url: string;
+  headersText: string;
   command: string;
   argsText: string;
   envText: string;
+  cwd: string;
   timeoutSeconds: number;
   allowedToolsText: string;
 }
-
-const PRESET_TEMPLATES = [
-  {
-    id: "github",
-    name: "GitHub 代码协同",
-    transport: "stdio" as const,
-    command: "npx",
-    argsText: "-y @modelcontextprotocol/server-github",
-    envText: "GITHUB_PERSONAL_ACCESS_TOKEN=ghp_xxxx",
-    url: "",
-  },
-  {
-    id: "gitlab",
-    name: "GitLab 代码协同",
-    transport: "stdio" as const,
-    command: "npx",
-    argsText: "-y @modelcontextprotocol/server-gitlab",
-    envText: "GITLAB_PERSONAL_ACCESS_TOKEN=glpat-xxxx\nGITLAB_API_URL=https://gitlab.com/api/v4",
-    url: "",
-  },
-  {
-    id: "zentao",
-    name: "ZenTao 禅道项目管理",
-    transport: "sse" as const,
-    url: "http://localhost:8080/sse",
-    command: "",
-    argsText: "",
-    envText: "",
-  },
-  {
-    id: "postgres",
-    name: "PostgreSQL 数据库协同",
-    transport: "stdio" as const,
-    command: "npx",
-    argsText: "-y @modelcontextprotocol/server-postgres postgresql://user:pass@localhost:5432/mydb",
-    envText: "",
-    url: "",
-  },
-  {
-    id: "filesystem",
-    name: "本地文件系统",
-    transport: "stdio" as const,
-    command: "npx",
-    argsText: "-y @modelcontextprotocol/server-filesystem ./data",
-    envText: "",
-    url: "",
-  },
-];
 
 const INITIAL_FORM: FormState = {
   mode: "create",
@@ -109,9 +63,11 @@ const INITIAL_FORM: FormState = {
   name: "",
   transport: "sse",
   url: "",
+  headersText: "",
   command: "npx",
   argsText: "",
   envText: "",
+  cwd: "",
   timeoutSeconds: 30,
   allowedToolsText: "",
 };
@@ -244,35 +200,28 @@ export function McpSettings() {
         : "";
     }
 
+    const headersText = server.headers
+      ? Object.entries(server.headers)
+          .map(([k, v]) => `${k}: ${v}`)
+          .join("\n")
+      : "";
+
     setForm({
       mode: "edit",
       id: server.id,
       name: server.name || server.id,
       transport: server.transport === "stdio" ? "stdio" : "sse",
       url: server.transport !== "stdio" ? server.url || "" : "",
+      headersText,
       command: server.transport === "stdio" ? server.command || "npx" : "npx",
       argsText,
       envText,
+      cwd: server.cwd || "",
       timeoutSeconds: server.timeoutMs ? Math.round(server.timeoutMs / 1000) : 30,
       allowedToolsText: (server.allowedTools || []).join(", "),
     });
     setFormProbeResult(null);
     setFormOpen(true);
-  };
-
-  const handleApplyPreset = (presetId: string) => {
-    const p = PRESET_TEMPLATES.find((item) => item.id === presetId);
-    if (!p) return;
-    setForm((prev) => ({
-      ...prev,
-      id: prev.mode === "create" ? p.id : prev.id,
-      name: prev.mode === "create" ? p.name : prev.name,
-      transport: p.transport,
-      url: p.url,
-      command: p.command || "npx",
-      argsText: p.argsText,
-      envText: p.envText,
-    }));
   };
 
   const buildServerConfigFromForm = (): StoredMcpServer => {
@@ -293,17 +242,40 @@ export function McpSettings() {
         .map((line) => line.trim())
         .filter(Boolean)
         .forEach((line) => {
-          const idx = line.indexOf("=");
+          const eqIdx = line.indexOf("=");
+          const colonIdx = line.indexOf(":");
+          const idx = eqIdx > 0 ? eqIdx : colonIdx;
           if (idx > 0) {
-            parsedEnv[line.slice(0, idx).trim()] = line.slice(idx + 1).trim();
+            const k = line.slice(0, idx).trim();
+            const v = line.slice(idx + 1).trim();
+            if (k) parsedEnv[k] = v;
           }
         });
 
       base.command = form.command.trim();
       base.args = form.argsText.split(/\s+/).filter(Boolean);
       base.env = Object.keys(parsedEnv).length > 0 ? parsedEnv : undefined;
+      base.cwd = form.cwd.trim() || undefined;
     } else {
+      const parsedHeaders: Record<string, string> = {};
+      form.headersText
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .forEach((line) => {
+          const colonIdx = line.indexOf(":");
+          const eqIdx = line.indexOf("=");
+          const idx =
+            colonIdx > 0 && (eqIdx === -1 || colonIdx < eqIdx) ? colonIdx : eqIdx;
+          if (idx > 0) {
+            const k = line.slice(0, idx).trim();
+            const v = line.slice(idx + 1).trim();
+            if (k) parsedHeaders[k] = v;
+          }
+        });
+
       base.url = form.url.trim();
+      base.headers = Object.keys(parsedHeaders).length > 0 ? parsedHeaders : undefined;
     }
 
     return base;
@@ -685,7 +657,7 @@ export function McpSettings() {
 
       {/* 注册 / 编辑弹窗 */}
       <Dialog open={formOpen} onOpenChange={setFormOpen}>
-        <DialogContent className="max-w-lg p-5">
+        <DialogContent className="max-w-[calc(100%-2rem)] sm:max-w-2xl lg:max-w-3xl p-6">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-base font-semibold">
               <Puzzle className="w-4 h-4 text-brand-fg" />
@@ -695,29 +667,8 @@ export function McpSettings() {
             </DialogTitle>
           </DialogHeader>
 
-          <div className="space-y-3.5 py-1 text-xs max-h-[70vh] overflow-y-auto pr-1">
-            {/* 快速预设导入 */}
-            {form.mode === "create" && (
-              <div className="p-2.5 rounded-xl bg-surface-sunken border border-border-subtle space-y-1.5">
-                <label className="block text-[11px] font-medium text-foreground">
-                  从常用生态预设快速填充：
-                </label>
-                <div className="flex flex-wrap gap-1.5">
-                  {PRESET_TEMPLATES.map((p) => (
-                    <button
-                      key={p.id}
-                      type="button"
-                      onClick={() => handleApplyPreset(p.id)}
-                      className="px-2 py-1 rounded-md border border-border bg-card hover:bg-muted text-[11px] text-foreground-subtle cursor-pointer transition-colors"
-                    >
-                      {p.name}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-4 py-1 text-xs max-h-[75vh] overflow-y-auto pr-1">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="block text-muted-foreground mb-1 font-medium">
                   服务唯一标识 ID *
@@ -755,14 +706,14 @@ export function McpSettings() {
                 onValueChange={(v) => setForm({ ...form, transport: v as "sse" | "stdio" })}
                 className="grid grid-cols-2 gap-3"
               >
-                <label className="flex items-center gap-2 p-2.5 rounded-lg border border-border cursor-pointer hover:bg-muted">
+                <label className="flex items-center gap-2.5 p-3 rounded-xl border border-border cursor-pointer hover:bg-muted">
                   <RadioGroupItem value="sse" />
                   <div>
-                    <div className="font-medium text-foreground">SSE / HTTP</div>
+                    <div className="font-medium text-foreground">SSE / Streamable HTTP</div>
                     <div className="text-[10px] text-foreground-faint">远程微服务或容器网关</div>
                   </div>
                 </label>
-                <label className="flex items-center gap-2 p-2.5 rounded-lg border border-border cursor-pointer hover:bg-muted">
+                <label className="flex items-center gap-2.5 p-3 rounded-xl border border-border cursor-pointer hover:bg-muted">
                   <RadioGroupItem value="stdio" />
                   <div>
                     <div className="font-medium text-foreground">Stdio 本地进程</div>
@@ -774,43 +725,69 @@ export function McpSettings() {
 
             {/* SSE 字段 */}
             {form.transport === "sse" ? (
-              <div>
-                <label className="block text-muted-foreground mb-1 font-medium">
-                  SSE Endpoint URL *
-                </label>
-                <input
-                  type="text"
-                  value={form.url}
-                  onChange={(e) => setForm({ ...form, url: e.target.value })}
-                  placeholder="http://localhost:8080/sse 或 https://mcp.internal/v1"
-                  className="w-full p-2.5 rounded-lg border border-border bg-surface-sunken font-mono text-xs"
-                />
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-muted-foreground mb-1 font-medium">
+                    SSE Endpoint URL *
+                  </label>
+                  <input
+                    type="text"
+                    value={form.url}
+                    onChange={(e) => setForm({ ...form, url: e.target.value })}
+                    placeholder="http://localhost:8080/sse 或 https://mcp.internal/v1"
+                    className="w-full p-2.5 rounded-lg border border-border bg-surface-sunken font-mono text-xs"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-muted-foreground mb-1 font-medium flex items-center justify-between">
+                    <span>HTTP 请求头 Headers（可选，每行 Header-Name: Value）</span>
+                    <span className="font-mono text-foreground-faint text-[10px]">
+                      {
+                        form.headersText
+                          .split("\n")
+                          .filter((l) => l.includes(":") || l.includes("=")).length
+                      }{" "}
+                      项已输入
+                    </span>
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={form.headersText}
+                    onChange={(e) => setForm({ ...form, headersText: e.target.value })}
+                    placeholder={"Authorization: Bearer <your-token>\nX-API-Key: secret-key\nAccept: text/event-stream"}
+                    className="w-full p-2.5 rounded-lg border border-border bg-surface-sunken font-mono text-xs leading-relaxed"
+                  />
+                  <p className="text-[10px] text-foreground-faint mt-1">
+                    用于向远程 SSE 服务端传递鉴权令牌（如 Bearer Token）或网关路由头。
+                  </p>
+                </div>
               </div>
             ) : (
               /* Stdio 字段 */
               <div className="space-y-3">
-                <div className="grid grid-cols-3 gap-2">
-                  <div className="col-span-1">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="sm:col-span-1">
                     <label className="block text-muted-foreground mb-1 font-medium">
-                      启动命令 *
+                      启动命令 Command *
                     </label>
                     <input
                       type="text"
                       value={form.command}
                       onChange={(e) => setForm({ ...form, command: e.target.value })}
-                      placeholder="npx / uvx / docker"
+                      placeholder="npx / uvx / docker / python"
                       className="w-full p-2.5 rounded-lg border border-border bg-surface-sunken font-mono text-xs"
                     />
                   </div>
-                  <div className="col-span-2">
+                  <div className="sm:col-span-2">
                     <label className="block text-muted-foreground mb-1 font-medium">
-                      命令参数 Args
+                      命令参数 Args（空格分隔）
                     </label>
                     <input
                       type="text"
                       value={form.argsText}
                       onChange={(e) => setForm({ ...form, argsText: e.target.value })}
-                      placeholder="-y @modelcontextprotocol/server-postgres ..."
+                      placeholder="-y @modelcontextprotocol/server-postgres postgresql://..."
                       className="w-full p-2.5 rounded-lg border border-border bg-surface-sunken font-mono text-xs"
                     />
                   </div>
@@ -818,21 +795,40 @@ export function McpSettings() {
 
                 <div>
                   <label className="block text-muted-foreground mb-1 font-medium">
-                    环境变量注入（每行 KEY=VALUE）
+                    工作目录 CWD（可选，执行命令的工作路径）
+                  </label>
+                  <input
+                    type="text"
+                    value={form.cwd}
+                    onChange={(e) => setForm({ ...form, cwd: e.target.value })}
+                    placeholder="留空默认使用应用当前根目录"
+                    className="w-full p-2.5 rounded-lg border border-border bg-surface-sunken font-mono text-xs"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-muted-foreground mb-1 font-medium flex items-center justify-between">
+                    <span>环境变量注入 Environment Variables（每行 KEY=VALUE）</span>
+                    <span className="font-mono text-foreground-faint text-[10px]">
+                      {form.envText.split("\n").filter((l) => l.includes("=")).length} 项已输入
+                    </span>
                   </label>
                   <textarea
-                    rows={2}
+                    rows={3}
                     value={form.envText}
                     onChange={(e) => setForm({ ...form, envText: e.target.value })}
-                    placeholder="GITHUB_PERSONAL_ACCESS_TOKEN=ghp_xxx&#10;API_HOST=127.0.0.1"
-                    className="w-full p-2 rounded-lg border border-border bg-surface-sunken font-mono text-xs"
+                    placeholder={"GITHUB_PERSONAL_ACCESS_TOKEN=ghp_xxxx\nAPI_HOST=127.0.0.1\nDATABASE_URL=postgresql://..."}
+                    className="w-full p-2.5 rounded-lg border border-border bg-surface-sunken font-mono text-xs leading-relaxed"
                   />
+                  <p className="text-[10px] text-foreground-faint mt-1">
+                    启动 Stdio 进程时将环境变量注入子进程中，用于传递 API 凭证或连接串。
+                  </p>
                 </div>
               </div>
             )}
 
             {/* 高级选项 */}
-            <div className="grid grid-cols-2 gap-3 pt-1">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
               <div>
                 <label className="block text-muted-foreground mb-1 font-medium">
                   单次工具超时（秒）
@@ -845,7 +841,7 @@ export function McpSettings() {
                   onChange={(e) =>
                     setForm({ ...form, timeoutSeconds: Number(e.target.value) || 30 })
                   }
-                  className="w-full p-2 rounded-lg border border-border bg-surface-sunken font-mono text-xs"
+                  className="w-full p-2.5 rounded-lg border border-border bg-surface-sunken font-mono text-xs"
                 />
               </div>
               <div>
@@ -857,7 +853,7 @@ export function McpSettings() {
                   value={form.allowedToolsText}
                   onChange={(e) => setForm({ ...form, allowedToolsText: e.target.value })}
                   placeholder="如: read_file, list_directory"
-                  className="w-full p-2 rounded-lg border border-border bg-surface-sunken font-mono text-xs"
+                  className="w-full p-2.5 rounded-lg border border-border bg-surface-sunken font-mono text-xs"
                 />
               </div>
             </div>

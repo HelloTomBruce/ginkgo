@@ -85,7 +85,7 @@ describe("McpSettings Component", () => {
     });
   });
 
-  it("点击「注册 MCP 服务」打开表单弹窗，支持预设模板填充", async () => {
+  it("点击「注册 MCP 服务」打开宽表单弹窗，支持配置 HTTP Headers 与 Stdio Env 变量", async () => {
     render(<McpSettings />);
 
     await waitFor(() => {
@@ -95,13 +95,23 @@ describe("McpSettings Component", () => {
     fireEvent.click(screen.getByRole("button", { name: /注册 MCP 服务/ }));
 
     expect(screen.getByText("注册 MCP 服务器")).toBeInTheDocument();
-    expect(screen.getByText("从常用生态预设快速填充：")).toBeInTheDocument();
+    // 确认已移除预设快速填充
+    expect(screen.queryByText("从常用生态预设快速填充：")).not.toBeInTheDocument();
 
-    // 点击 GitHub 预设填充
-    const githubBtn = screen.getByRole("button", { name: "GitHub 代码协同" });
-    fireEvent.click(githubBtn);
+    // 默认 SSE 模式下展示 HTTP 请求头 Headers 输入
+    expect(screen.getByText(/HTTP 请求头 Headers/)).toBeInTheDocument();
+    const headersInput = screen.getByPlaceholderText(/Authorization: Bearer/);
+    fireEvent.change(headersInput, { target: { value: "Authorization: Bearer my-secret-token" } });
+    expect(headersInput).toHaveValue("Authorization: Bearer my-secret-token");
 
-    expect(screen.getByDisplayValue("github")).toBeInTheDocument();
-    expect(screen.getByDisplayValue("GitHub 代码协同")).toBeInTheDocument();
+    // 切换至 Stdio 本地进程模式
+    const stdioRadio = screen.getByRole("radio", { name: /Stdio 本地进程/ });
+    fireEvent.click(stdioRadio);
+
+    // Stdio 模式下展示环境变量注入输入
+    expect(screen.getByText(/环境变量注入 Environment Variables/)).toBeInTheDocument();
+    const envInput = screen.getByPlaceholderText(/GITHUB_PERSONAL_ACCESS_TOKEN/);
+    fireEvent.change(envInput, { target: { value: "GITHUB_TOKEN=ghp_test\nAPI_HOST=localhost" } });
+    expect(envInput).toHaveValue("GITHUB_TOKEN=ghp_test\nAPI_HOST=localhost");
   });
 });
