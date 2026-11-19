@@ -25,8 +25,21 @@ export type ReasoningEffort = "low" | "medium" | "high";
 
 /**
  * 判断指定模型是否为深度思考 / 推理模型（如 o1, o3-mini, deepseek-reasoner, QwQ 等）
+ * 支持通过 ModelConfig.supportsReasoning 显式指定，未显式指定时按模型 ID 规则智能推断
  */
-export function isReasoningModel(model: string): boolean {
+export function isReasoningModel(
+  model: string | { id?: string; supportsReasoning?: boolean } | null | undefined,
+  config?: { supportsReasoning?: boolean } | null
+): boolean {
+  if (config && typeof config.supportsReasoning === "boolean") {
+    return config.supportsReasoning;
+  }
+  if (typeof model === "object" && model !== null) {
+    if (typeof model.supportsReasoning === "boolean") {
+      return model.supportsReasoning;
+    }
+    return isReasoningModel(model.id);
+  }
   if (!model) return false;
   const lower = model.toLowerCase();
   return (

@@ -466,9 +466,15 @@ describe("SettingsModal 多 Provider 管理能力（参考 dsh）", () => {
     expect(ctxInput).toHaveValue(128000);
     expect(maxTokensInput).toHaveValue(8192);
 
-    // 修改为 256000 与 16384
+    // 修改为 256000 与 16384 并勾选支持深度思考 / 推理
     fireEvent.change(ctxInput, { target: { value: "256000" } });
     fireEvent.change(maxTokensInput, { target: { value: "16384" } });
+
+    const reasoningCheckbox = screen.getByLabelText(/支持深度思考 \/ 推理/);
+    expect(reasoningCheckbox).toBeInTheDocument();
+    expect(reasoningCheckbox).not.toBeChecked();
+    fireEvent.click(reasoningCheckbox);
+    expect(reasoningCheckbox).toBeChecked();
 
     fireEvent.click(screen.getByRole("button", { name: "保存参数" }));
 
@@ -482,6 +488,7 @@ describe("SettingsModal 多 Provider 管理能力（参考 dsh）", () => {
             id: "deepseek-chat",
             contextWindow: "256000",
             maxTokens: "16384",
+            supportsReasoning: true,
           }),
         ]),
       })

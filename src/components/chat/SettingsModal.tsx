@@ -197,6 +197,7 @@ function ModelCatalogEditor({
   const [modelInputId, setModelInputId] = useState("");
   const [modelInputCtx, setModelInputCtx] = useState("");
   const [modelInputMaxTokens, setModelInputMaxTokens] = useState("");
+  const [modelInputSupportsReasoning, setModelInputSupportsReasoning] = useState(false);
 
   const [fetching, setFetching] = useState(false);
   const [fetchNotice, setFetchNotice] = useState<string | null>(null);
@@ -207,6 +208,7 @@ function ModelCatalogEditor({
     setModelInputId("");
     setModelInputCtx("");
     setModelInputMaxTokens("");
+    setModelInputSupportsReasoning(false);
   };
 
   const handleStartEdit = (index: number) => {
@@ -216,6 +218,11 @@ function ModelCatalogEditor({
     setModelInputId(item.id);
     setModelInputCtx(item.contextWindow || "");
     setModelInputMaxTokens(item.maxTokens || "");
+    setModelInputSupportsReasoning(
+      typeof item.supportsReasoning === "boolean"
+        ? item.supportsReasoning
+        : isReasoningModel(item.id)
+    );
   };
 
   const handleCancelEdit = () => {
@@ -224,6 +231,7 @@ function ModelCatalogEditor({
     setModelInputId("");
     setModelInputCtx("");
     setModelInputMaxTokens("");
+    setModelInputSupportsReasoning(false);
   };
 
   const handleSaveModelItem = () => {
@@ -234,6 +242,7 @@ function ModelCatalogEditor({
       id: trimmedId,
       ...(modelInputCtx.trim() ? { contextWindow: modelInputCtx.trim() } : {}),
       ...(modelInputMaxTokens.trim() ? { maxTokens: modelInputMaxTokens.trim() } : {}),
+      supportsReasoning: modelInputSupportsReasoning,
     };
 
     if (editingIndex !== null) {
@@ -347,6 +356,12 @@ function ModelCatalogEditor({
               >
                 <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
                   <span className="font-mono font-medium text-foreground text-xs">{m.id}</span>
+                  {isReasoningModel(m.id, m) ? (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-brand-soft border border-brand-soft-strong text-brand-fg font-medium flex items-center gap-1">
+                      <Sparkles className="w-2.5 h-2.5" />
+                      <span>思考模型</span>
+                    </span>
+                  ) : null}
                   {m.contextWindow && Number(m.contextWindow) > 0 ? (
                     <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface-raised border border-border-subtle text-foreground-subtle font-mono">
                       {Math.round(Number(m.contextWindow) / 1000)}k 窗口
@@ -406,7 +421,13 @@ function ModelCatalogEditor({
                 id="model-input-id"
                 type="text"
                 value={modelInputId}
-                onChange={(e) => setModelInputId(e.target.value)}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setModelInputId(val);
+                  if (isAdding) {
+                    setModelInputSupportsReasoning(isReasoningModel(val));
+                  }
+                }}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") {
                     e.preventDefault();
@@ -454,6 +475,30 @@ function ModelCatalogEditor({
                   className="w-full p-2 rounded-lg border border-border bg-card font-mono text-xs"
                 />
               </div>
+            </div>
+
+            <div>
+              <label
+                htmlFor="model-input-supports-reasoning"
+                className="flex items-center gap-2 p-2.5 rounded-lg border border-border bg-card cursor-pointer hover:bg-muted select-none transition-colors"
+              >
+                <input
+                  id="model-input-supports-reasoning"
+                  type="checkbox"
+                  checked={modelInputSupportsReasoning}
+                  onChange={(e) => setModelInputSupportsReasoning(e.target.checked)}
+                  className="rounded border-border text-brand-fg focus:ring-ring w-4 h-4 cursor-pointer"
+                />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1 text-xs font-medium text-foreground">
+                    <Sparkles className="w-3.5 h-3.5 text-brand-fg shrink-0" />
+                    <span>支持深度思考 / 推理（Reasoning Effort）</span>
+                  </div>
+                  <div className="text-[10px] text-foreground-faint mt-0.5">
+                    勾选后在输入框支持选择思考预算（Low / Medium / High）并锁定采样温度
+                  </div>
+                </div>
+              </label>
             </div>
           </div>
 

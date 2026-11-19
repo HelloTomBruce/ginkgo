@@ -6,6 +6,7 @@ import { isReasoningModel, type ReasoningEffort } from "@/lib/llmProviders";
 
 export interface ReasoningEffortSwitcherProps {
   model: string;
+  supportsReasoning?: boolean;
   reasoningEffort: ReasoningEffort;
   onReasoningEffortChange: (effort: ReasoningEffort) => void;
   placement?: "top" | "bottom";
@@ -40,6 +41,7 @@ const EFFORT_OPTIONS: Array<{
 
 export function ReasoningEffortSwitcher({
   model,
+  supportsReasoning,
   reasoningEffort,
   onReasoningEffortChange,
   placement = "top",
@@ -75,8 +77,13 @@ export function ReasoningEffortSwitcher({
     };
   }, [isOpen]);
 
-  // 非推理思考模型不展示
-  if (!isReasoningModel(model)) {
+  // 非推理思考模型不展示：优先遵循显式配置 supportsReasoning，否则基于模型名称智能推断
+  const isReasoning =
+    typeof supportsReasoning === "boolean"
+      ? supportsReasoning
+      : isReasoningModel(model);
+
+  if (!isReasoning) {
     return null;
   }
 

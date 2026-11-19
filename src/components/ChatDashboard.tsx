@@ -110,6 +110,7 @@ export default function ChatDashboard() {
     providers,
     activeProviderId,
     activeModel,
+    activeModelConfig,
     switchActiveModel,
     saveProvider,
     deleteProvider,
@@ -1085,6 +1086,7 @@ export default function ChatDashboard() {
                 reasoningEffortNode={
                   <ReasoningEffortSwitcher
                     model={activeModel}
+                    supportsReasoning={activeModelConfig?.supportsReasoning}
                     reasoningEffort={reasoningEffort}
                     onReasoningEffortChange={setReasoningEffort}
                   />

@@ -54,4 +54,28 @@ describe("ReasoningEffortSwitcher", () => {
     // 弹层已自动关闭
     expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
   });
+
+  it("支持通过 supportsReasoning 显式开启或覆盖启发式推断", () => {
+    // 1. 自定义模型通过 supportsReasoning: true 强制开启
+    const { rerender } = render(
+      <ReasoningEffortSwitcher
+        model="my-custom-model"
+        supportsReasoning={true}
+        reasoningEffort="medium"
+        onReasoningEffortChange={vi.fn()}
+      />
+    );
+    expect(screen.getByRole("button", { name: /推理等级/ })).toBeInTheDocument();
+
+    // 2. 原本按名称命中的模型通过 supportsReasoning: false 强制关闭
+    rerender(
+      <ReasoningEffortSwitcher
+        model="o3-mini"
+        supportsReasoning={false}
+        reasoningEffort="medium"
+        onReasoningEffortChange={vi.fn()}
+      />
+    );
+    expect(screen.queryByRole("button", { name: /推理等级/ })).not.toBeInTheDocument();
+  });
 });

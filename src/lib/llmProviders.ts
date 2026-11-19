@@ -29,7 +29,7 @@ export interface LlmProviderPreset {
 
 export const CUSTOM_PROVIDER_ID = "custom";
 
-/** 单个模型的高级绑定配置（窗口容量、最大输出 tokens） */
+/** 单个模型的高级绑定配置（窗口容量、最大输出 tokens、思考/推理支持） */
 export interface ModelConfig {
   /** 模型 ID，如 gpt-4o, deepseek-chat */
   id: string;
@@ -39,6 +39,8 @@ export interface ModelConfig {
   contextWindow?: string;
   /** 最大输出 tokens（如 "16384"、"32768"、"65536"），留空走服务端默认 */
   maxTokens?: string;
+  /** 是否为深度思考 / 推理模型（勾选后在输入框支持选择 Reasoning Effort，自动锁定采样温度） */
+  supportsReasoning?: boolean;
 }
 
 export type ModelDefinition = string | ModelConfig;
@@ -55,8 +57,21 @@ export type ReasoningEffort = "low" | "medium" | "high";
 
 /**
  * 判断指定模型是否为深度思考 / 推理模型（如 o1, o3-mini, deepseek-reasoner, QwQ 等）
+ * 支持通过 ModelConfig.supportsReasoning 显式指定，未显式指定时按模型 ID 规则智能推断
  */
-export function isReasoningModel(model: string): boolean {
+export function isReasoningModel(
+  model: string | ModelConfig | null | undefined,
+  config?: ModelConfig | null
+): boolean {
+  if (config && typeof config.supportsReasoning === "boolean") {
+    return config.supportsReasoning;
+  }
+  if (typeof model === "object" && model !== null) {
+    if (typeof model.supportsReasoning === "boolean") {
+      return model.supportsReasoning;
+    }
+    return isReasoningModel(model.id);
+  }
   if (!model) return false;
   const lower = model.toLowerCase();
   return (

@@ -297,6 +297,8 @@ export interface AnalyzeRequestBody {
   model?: string;
   temperature?: number | string;
   reasoningEffort?: "low" | "medium" | "high";
+  /** 显式声明该模型是否支持深度思考 / 推理（若不传则基于模型名智能推断） */
+  supportsReasoning?: boolean;
   /**
    * 输出 token 上限（每个生成步）：
    * - Anthropic 协议端点强制要求 max_tokens，provider 缺省仅 4096，推理型模型思考阶段即烧尽，
@@ -431,6 +433,7 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
         model: clientModel,
         temperature: clientTemperature,
         reasoningEffort: clientReasoningEffort,
+        supportsReasoning: clientSupportsReasoning,
         maxTokens: clientMaxTokens,
         sources: clientSources,
         protocol: clientProtocol,
@@ -516,7 +519,10 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
         (allowEnvCredentials ? process.env.OPENAI_BASE_URL || process.env.LLM_BASE_URL : undefined) ||
         "https://api.openai.com/v1";
       const model = clientModel || process.env.OPENAI_MODEL || process.env.LLM_MODEL || "gpt-4o-mini";
-      const isReasoning = isReasoningModel(model);
+      const isReasoning =
+        typeof clientSupportsReasoning === "boolean"
+          ? clientSupportsReasoning
+          : isReasoningModel(model);
       // 温度由客户端设置页透传，钳制在 0–2，默认 0.2（数据分析场景）；思考模型（o1, o3, R1）锁定温度
       const parsedTemp = Number(clientTemperature);
       const temperature = isReasoning
