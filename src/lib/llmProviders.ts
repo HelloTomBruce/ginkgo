@@ -51,6 +51,24 @@ export function getModelId(m: ModelDefinition): string {
   return typeof m === "string" ? m : m.id;
 }
 
+export type ReasoningEffort = "low" | "medium" | "high";
+
+/**
+ * 判断指定模型是否为深度思考 / 推理模型（如 o1, o3-mini, deepseek-reasoner, QwQ 等）
+ */
+export function isReasoningModel(model: string): boolean {
+  if (!model) return false;
+  const lower = model.toLowerCase();
+  return (
+    /^o[1-9](-|$)/.test(lower) ||
+    lower.includes("reasoner") ||
+    lower.includes("-r1") ||
+    lower.endsWith("/r1") ||
+    lower.includes("qwq") ||
+    lower.includes("thinking")
+  );
+}
+
 /**
  * 健壮的模型列表去重函数：
  * - 统一按 Model ID 去重，防止同一模型因 string/object 混合存储导致界面出现多个相同条目

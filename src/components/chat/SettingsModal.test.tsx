@@ -261,10 +261,26 @@ describe("SettingsModal 协议类型", () => {
     );
   });
 
-  it("模型配置 Tab 直接展示推理随机度 Temperature 滑块，无需多余折叠", () => {
-    renderModal({ temperature: "0.2" });
-    expect(screen.getByText("推理随机度（Temperature）")).toBeInTheDocument();
+  it("非思考模型展示采样温度（Temperature）滑块", () => {
+    renderModal({ model: "gpt-4o-mini", temperature: "0.2" });
+    expect(screen.getByText("采样温度（Temperature）")).toBeInTheDocument();
     expect(screen.getByText("0.2")).toBeInTheDocument();
+  });
+
+  it("当选择思考模型（如 o3-mini/deepseek-reasoner）时，动态切换为展示推理等级（Reasoning Effort）单选卡", () => {
+    const onReasoningEffortChange = vi.fn();
+    renderModal({
+      model: "o3-mini",
+      reasoningEffort: "medium",
+      onReasoningEffortChange,
+    });
+    expect(screen.getByText("推理等级（Reasoning Effort）")).toBeInTheDocument();
+    expect(screen.getByText("深度思考模型")).toBeInTheDocument();
+    expect(screen.queryByText("采样温度（Temperature）")).not.toBeInTheDocument();
+
+    const highRadio = screen.getByRole("radio", { name: /High/ });
+    fireEvent.click(highRadio);
+    expect(onReasoningEffortChange).toHaveBeenCalledWith("high");
   });
 
   it("最大步数上限与备选降级模型在「引擎调度」Tab 中配置并触发回调", async () => {

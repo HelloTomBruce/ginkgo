@@ -22,6 +22,7 @@ const STORAGE_KEYS = {
   baseURL: "openui_llm_base_url",
   model: "openui_llm_model",
   temperature: "openui_llm_temperature",
+  reasoningEffort: "openui_llm_reasoning_effort",
   maxTokens: "openui_llm_max_tokens",
   maxSteps: "openui_llm_max_steps",
   contextWindow: "openui_llm_context_window",
@@ -32,6 +33,7 @@ const STORAGE_KEYS = {
 const DEFAULT_BASE_URL = "https://api.openai.com/v1";
 const DEFAULT_MODEL = "gpt-4o-mini";
 const DEFAULT_TEMPERATURE = "0.2";
+const DEFAULT_REASONING_EFFORT = "medium";
 // 留空 → 服务端默认 16384（Anthropic 协议端点必须显式带 max_tokens，避免 finishReason=length 静默截断）
 const DEFAULT_MAX_TOKENS = "";
 // 留空 → 服务端默认 25 步（双重终态机制保证适时退出，最高100）
@@ -166,6 +168,10 @@ export function useLlmSettings() {
   const [temperature, setTemperature] = useState(() =>
     readStored(STORAGE_KEYS.temperature, DEFAULT_TEMPERATURE)
   );
+  const [reasoningEffort, setReasoningEffort] = useState<"low" | "medium" | "high">(() => {
+    const val = readStored(STORAGE_KEYS.reasoningEffort, DEFAULT_REASONING_EFFORT);
+    return val === "low" || val === "high" ? val : "medium";
+  });
   const [maxTokens, setMaxTokens] = useState(() =>
     readStored(STORAGE_KEYS.maxTokens, DEFAULT_MAX_TOKENS)
   );
@@ -355,6 +361,7 @@ export function useLlmSettings() {
       localStorage.setItem(STORAGE_KEYS.baseURL, baseURL);
       localStorage.setItem(STORAGE_KEYS.model, model);
       localStorage.setItem(STORAGE_KEYS.temperature, temperature);
+      localStorage.setItem(STORAGE_KEYS.reasoningEffort, reasoningEffort);
       localStorage.setItem(STORAGE_KEYS.maxTokens, maxTokens);
       localStorage.setItem(STORAGE_KEYS.maxSteps, maxSteps);
       localStorage.setItem(STORAGE_KEYS.contextWindow, contextWindow);
@@ -372,6 +379,7 @@ export function useLlmSettings() {
     protocol,
     model,
     temperature,
+    reasoningEffort,
     maxTokens,
     maxSteps,
     contextWindow,
@@ -393,6 +401,7 @@ export function useLlmSettings() {
       baseURL: (activeProvider?.baseURL || baseURL).trim() || undefined,
       model: (activeModel || model).trim() || undefined,
       temperature: temperature.trim() || undefined,
+      reasoningEffort,
       maxTokens: (activeModelConfig?.maxTokens || maxTokens).trim() || undefined,
       maxSteps: maxSteps.trim() || undefined,
       contextWindow: (activeModelConfig?.contextWindow || contextWindow).trim() || undefined,
@@ -410,6 +419,7 @@ export function useLlmSettings() {
     baseURL,
     model,
     temperature,
+    reasoningEffort,
     maxTokens,
     maxSteps,
     contextWindow,
@@ -444,6 +454,8 @@ export function useLlmSettings() {
     setAccessToken,
     temperature,
     setTemperature,
+    reasoningEffort,
+    setReasoningEffort,
     maxTokens: activeMaxTokens,
     setMaxTokens,
     maxSteps,

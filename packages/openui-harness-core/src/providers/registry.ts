@@ -21,6 +21,24 @@ export const CONTEXT_WINDOW_MIN = 8192;
 export const CONTEXT_WINDOW_MAX = 2_000_000;
 export const DEFAULT_CONTEXT_WINDOW = 128_000;
 
+export type ReasoningEffort = "low" | "medium" | "high";
+
+/**
+ * 判断指定模型是否为深度思考 / 推理模型（如 o1, o3-mini, deepseek-reasoner, QwQ 等）
+ */
+export function isReasoningModel(model: string): boolean {
+  if (!model) return false;
+  const lower = model.toLowerCase();
+  return (
+    /^o[1-9](-|$)/.test(lower) ||
+    lower.includes("reasoner") ||
+    lower.includes("-r1") ||
+    lower.endsWith("/r1") ||
+    lower.includes("qwq") ||
+    lower.includes("thinking")
+  );
+}
+
 /**
  * 模型元数据注册表接口
  */

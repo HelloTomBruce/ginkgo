@@ -14,6 +14,7 @@ import {
   Puzzle,
   Zap,
   ShieldCheck,
+  Sparkles,
 } from "lucide-react";
 import {
   Select,
@@ -48,6 +49,8 @@ import {
   type LlmProtocol,
   type ModelDefinition,
   type ModelConfig,
+  type ReasoningEffort,
+  isReasoningModel,
   findPreset,
   getModelId,
   normalizeModel,
@@ -63,6 +66,8 @@ export interface SettingsModalProps {
   model: string;
   accessToken: string;
   temperature: string;
+  reasoningEffort?: ReasoningEffort;
+  onReasoningEffortChange?: (v: ReasoningEffort) => void;
   /** 最大输出 tokens（1024–65536），留空走服务端默认；Anthropic 端点必填 max_tokens */
   maxTokens: string;
   /** 最大步数上限（1–100），留空走服务端默认 25 步（双重终态防死循环熔断） */
@@ -490,6 +495,8 @@ export function SettingsModal({
   model,
   accessToken,
   temperature,
+  reasoningEffort = "medium",
+  onReasoningEffortChange,
   maxSteps = "",
   fallbackModels = "",
   protocol,
@@ -1137,33 +1144,79 @@ export function SettingsModal({
               </div>
             )}
 
-            {/* 推理随机度（Temperature） */}
-            <div className="p-3.5 rounded-xl border border-border bg-card space-y-2">
-              <div className="flex items-center justify-between">
-                <label
-                  htmlFor="settings-temperature"
-                  className="text-muted-foreground font-medium flex items-center gap-1.5"
+            {/* 采样温度 (Temperature) 或 推理等级 (Reasoning Effort) 动态切换 */}
+            {isReasoningModel(activeModel || model) ? (
+              <div className="p-3.5 rounded-xl border border-border bg-card space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-muted-foreground font-medium flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-brand-fg" />
+                    <span>推理等级（Reasoning Effort）</span>
+                  </label>
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-brand-soft-strong text-brand-fg-strong">
+                    深度思考模型
+                  </span>
+                </div>
+                <RadioGroup
+                  value={reasoningEffort}
+                  onValueChange={(v) =>
+                    onReasoningEffortChange?.(v as "low" | "medium" | "high")
+                  }
+                  className="grid grid-cols-3 gap-2 pt-0.5"
                 >
-                  <Sliders className="w-3.5 h-3.5 text-info-fg" />
-                  <span>推理随机度（Temperature）</span>
-                </label>
-                <span className="font-mono text-foreground font-medium text-xs">
-                  {temperature}
-                </span>
+                  <label className="flex items-center gap-2 p-2.5 rounded-lg border border-border cursor-pointer hover:bg-muted text-xs">
+                    <RadioGroupItem value="low" id="effort-low" />
+                    <div>
+                      <div className="font-medium text-foreground">Low (低)</div>
+                      <div className="text-[10px] text-foreground-faint">快速响应</div>
+                    </div>
+                  </label>
+                  <label className="flex items-center gap-2 p-2.5 rounded-lg border border-border cursor-pointer hover:bg-muted text-xs">
+                    <RadioGroupItem value="medium" id="effort-medium" />
+                    <div>
+                      <div className="font-medium text-foreground">Medium (中)</div>
+                      <div className="text-[10px] text-foreground-faint">平衡推荐</div>
+                    </div>
+                  </label>
+                  <label className="flex items-center gap-2 p-2.5 rounded-lg border border-border cursor-pointer hover:bg-muted text-xs">
+                    <RadioGroupItem value="high" id="effort-high" />
+                    <div>
+                      <div className="font-medium text-foreground">High (高)</div>
+                      <div className="text-[10px] text-foreground-faint">深度穷举</div>
+                    </div>
+                  </label>
+                </RadioGroup>
+                <p className="text-[11px] text-foreground-faint leading-normal">
+                  控制模型在开口回答前思维链（CoT）的思考 Token 预算。思考模型由服务方锁定采样温度，故自动切换为推理等级调节。
+                </p>
               </div>
-              <Slider
-                id="settings-temperature"
-                value={[Number(temperature) || 0]}
-                min={0}
-                max={2}
-                step={0.1}
-                onValueChange={([v]) => onTemperatureChange(String(v))}
-                className="w-full"
-              />
-              <p className="text-[11px] text-foreground-faint leading-normal">
-                数值越低回答越严谨确定（数据分析推荐 0.2），数值越高越富想象力。思考步数与降级策略已统一收拢至「⚡ 引擎调度」，上下文容量与最大输出可在上方「模型目录」针对各个模型独立配置。
-              </p>
-            </div>
+            ) : (
+              <div className="p-3.5 rounded-xl border border-border bg-card space-y-2">
+                <div className="flex items-center justify-between">
+                  <label
+                    htmlFor="settings-temperature"
+                    className="text-muted-foreground font-medium flex items-center gap-1.5"
+                  >
+                    <Sliders className="w-3.5 h-3.5 text-info-fg" />
+                    <span>采样温度（Temperature）</span>
+                  </label>
+                  <span className="font-mono text-foreground font-medium text-xs">
+                    {temperature}
+                  </span>
+                </div>
+                <Slider
+                  id="settings-temperature"
+                  value={[Number(temperature) || 0]}
+                  min={0}
+                  max={2}
+                  step={0.1}
+                  onValueChange={([v]) => onTemperatureChange(String(v))}
+                  className="w-full"
+                />
+                <p className="text-[11px] text-foreground-faint leading-normal">
+                  控制生成下一个词的随机度。数值越低回答越严谨确定（数据分析与写 SQL 推荐 0.2），数值越高越富想象力。上下文容量与最大输出可在上方「模型目录」针对各个模型独立配置。
+                </p>
+              </div>
+            )}
           </TabsContent>
 
           <TabsContent

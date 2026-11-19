@@ -84,6 +84,8 @@ export {
   CONTEXT_WINDOW_MIN,
   CONTEXT_WINDOW_MAX,
   DEFAULT_CONTEXT_WINDOW,
+  isReasoningModel,
+  type ReasoningEffort,
   type ModelCatalog,
 } from "./providers/registry";
 

@@ -124,6 +124,8 @@ export default function ChatDashboard() {
     setAccessToken,
     temperature,
     setTemperature,
+    reasoningEffort,
+    setReasoningEffort,
     maxTokens,
     setMaxTokens,
     maxSteps,
@@ -1171,6 +1173,8 @@ export default function ChatDashboard() {
           model={model}
           accessToken={accessToken}
           temperature={temperature}
+          reasoningEffort={reasoningEffort}
+          onReasoningEffortChange={setReasoningEffort}
           maxTokens={maxTokens}
           maxSteps={maxSteps}
           contextWindow={contextWindow}

@@ -70,6 +70,7 @@ import {
   type QuotaPolicy,
   createConsoleSink,
   newRunId,
+  isReasoningModel,
   getCoreToolsFromMcp,
   type MCPClientManager,
   type MCPServerConfig,
@@ -295,6 +296,7 @@ export interface AnalyzeRequestBody {
   baseURL?: string;
   model?: string;
   temperature?: number | string;
+  reasoningEffort?: "low" | "medium" | "high";
   /**
    * 输出 token 上限（每个生成步）：
    * - Anthropic 协议端点强制要求 max_tokens，provider 缺省仅 4096，推理型模型思考阶段即烧尽，
@@ -428,6 +430,7 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
         baseURL: clientBaseURL,
         model: clientModel,
         temperature: clientTemperature,
+        reasoningEffort: clientReasoningEffort,
         maxTokens: clientMaxTokens,
         sources: clientSources,
         protocol: clientProtocol,
@@ -513,12 +516,19 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
         (allowEnvCredentials ? process.env.OPENAI_BASE_URL || process.env.LLM_BASE_URL : undefined) ||
         "https://api.openai.com/v1";
       const model = clientModel || process.env.OPENAI_MODEL || process.env.LLM_MODEL || "gpt-4o-mini";
-      // 温度由客户端设置页透传，钳制在 0–2，默认 0.2（数据分析场景）
+      const isReasoning = isReasoningModel(model);
+      // 温度由客户端设置页透传，钳制在 0–2，默认 0.2（数据分析场景）；思考模型（o1, o3, R1）锁定温度
       const parsedTemp = Number(clientTemperature);
-      const temperature =
-        Number.isFinite(parsedTemp) && clientTemperature !== undefined && clientTemperature !== ""
-          ? Math.min(Math.max(parsedTemp, 0), 2)
-          : 0.2;
+      const temperature = isReasoning
+        ? undefined
+        : Number.isFinite(parsedTemp) && clientTemperature !== undefined && clientTemperature !== ""
+        ? Math.min(Math.max(parsedTemp, 0), 2)
+        : 0.2;
+      const reasoningEffort = isReasoning
+        ? ["low", "medium", "high"].includes(String(clientReasoningEffort))
+          ? (clientReasoningEffort as "low" | "medium" | "high")
+          : "medium"
+        : undefined;
 
       // 输出 token 上限：请求体 maxTokens 优先，其次 LLM_MAX_OUTPUT_TOKENS，缺省 16384；钳制 1024–65536
       const envMaxTokens = Number(process.env.LLM_MAX_OUTPUT_TOKENS);
@@ -1122,7 +1132,8 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
                 system: attemptSystem,
                 // 投影后的消息（存储层历史不动；无治理需求时与入参一致）
                 messages: attemptMessages,
-                temperature,
+                ...(temperature !== undefined ? { temperature } : {}),
+                ...(reasoningEffort ? { providerOptions: { openai: { reasoningEffort } } } : {}),
                 // AI SDK v1 参数名为 maxTokens（透传 max_tokens；Anthropic 端点必填）
                 maxTokens: maxOutputTokens,
                 // 任务中止信号:任一来源(硬停止/预算熔断)取消 provider 生成
