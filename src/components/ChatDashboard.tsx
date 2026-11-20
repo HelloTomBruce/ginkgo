@@ -207,8 +207,24 @@ export default function ChatDashboard() {
   });
 
   const handleChatError = useCallback((err: Error) => {
-    console.error("Chat error:", err);
-    // 用户主动暂停/终止请求不弹报错提示
+    if (process.env.NODE_ENV !== "test") {
+      console.warn("[ChatDashboard] 会话流异常:", err);
+    }
+
+    // 1. 容错落盘：确保当前提问及已有生成内容不会丢失，会话不中断
+    const targetId = streamingSessionIdRef.current;
+    if (targetId) {
+      try {
+        const msgs = getMessages();
+        if (msgs && msgs.length > 0) {
+          saveCurrentSessionMessages(msgs, targetId, { silent: true });
+        }
+      } catch (saveErr) {
+        console.error("[ChatDashboard] 错误态紧急保存会话失败:", saveErr);
+      }
+    }
+
+    // 2. 用户主动暂停/终止请求不弹报错提示
     if (err.name === "AbortError" || err.message?.includes("aborted")) {
       return;
     }
@@ -218,11 +234,11 @@ export default function ChatDashboard() {
       err.message.includes("Failed to fetch");
 
     const message = isGeneric
-      ? "网络连接不稳定或模型响应中断，请尝试重试或重新提问"
-      : `会话异常：${err.message}`;
+      ? "网络响应中断，已自动保存当前进度，您可以继续提问或点击重试"
+      : `响应异常：${err.message}`;
 
     toast(message, "error");
-  }, []);
+  }, [getMessages, saveCurrentSessionMessages]);
 
   // 看板收藏库：列表/收藏/重命名/删除（列表同时驱动侧栏看板库）
   const {
@@ -527,8 +543,16 @@ export default function ChatDashboard() {
         // running：在途任务无缝续接；hasTask（终态 30s 保留窗）：脱钩期间后台
         // 跑完的任务重放收尾并落盘，否则尾巴内容随清理丢失
         if (!data.running && !data.hasTask) return;
+
         streamingSessionIdRef.current = currentSessionId;
-        void reload({ body: { ...nextModeBody(), reconnect: true } });
+        const reloadPromise = reload({ body: { ...nextModeBody(), reconnect: true } });
+        if (reloadPromise && typeof (reloadPromise as Promise<unknown>).catch === "function") {
+          (reloadPromise as Promise<unknown>).catch((err: unknown) => {
+            if (process.env.NODE_ENV !== "test") {
+              console.warn("[ChatDashboard] 重连流完成或结束:", err);
+            }
+          });
+        }
       } catch {
         // ignore
       }

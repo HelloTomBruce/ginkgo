@@ -65,11 +65,20 @@ export const POST = createAnalyzeHandler({
           if (ws?.path) customRootDir = ws.path;
         }
       }
-      const workspace = await resolveWorkspaceContext({
-        appId,
-        sessionId: ctx.sessionId,
-        customRootDir,
-      });
+      let workspace;
+      try {
+        workspace = await resolveWorkspaceContext({
+          appId,
+          sessionId: ctx.sessionId,
+          customRootDir,
+        });
+      } catch (wsErr) {
+        console.warn("[AnalyzeRoute] 解析工作区异常，回退至默认沙箱:", wsErr);
+        workspace = await resolveWorkspaceContext({
+          appId,
+          sessionId: ctx.sessionId,
+        });
+      }
       return app.server.buildSystemPrompt({
         appId,
         sessionId: ctx.sessionId,
@@ -89,11 +98,20 @@ export const POST = createAnalyzeHandler({
         if (ws?.path) customRootDir = ws.path;
       }
     }
-    const workspace = await resolveWorkspaceContext({
-      appId,
-      sessionId: ctx.sessionId,
-      customRootDir,
-    });
+    let workspace;
+    try {
+      workspace = await resolveWorkspaceContext({
+        appId,
+        sessionId: ctx.sessionId,
+        customRootDir,
+      });
+    } catch (wsErr) {
+      console.warn("[AnalyzeRoute] 解析工作区异常，回退至默认沙箱:", wsErr);
+      workspace = await resolveWorkspaceContext({
+        appId,
+        sessionId: ctx.sessionId,
+      });
+    }
     if (appId === "general") {
       return getGeneralTools({
         appId,

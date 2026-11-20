@@ -804,7 +804,18 @@ export function MessageList({
   const [atTop, setAtTop] = useState(true);
   const [atBottom, setAtBottom] = useState(true);
   const [showNavigator, setShowNavigator] = useState(false);
+  const [dismissedError, setDismissedError] = useState<Error | null>(null);
+  const isErrorDismissed = error ? dismissedError === error : false;
   const navigatorMenuRef = useRef<HTMLDivElement>(null);
+
+  const friendlyErrorMsg = useMemo(() => {
+    if (!error) return "";
+    const msg = error.message || String(error);
+    if (!msg || msg === "An error occurred." || msg.includes("Failed to fetch")) {
+      return "本次模型响应中断，当前会话进度已为您安全保存。您可以点击重试，或直接在下方继续提问。";
+    }
+    return msg;
+  }, [error]);
 
   const updateScrollState = useCallback(() => {
     const el = scrollRef.current;
@@ -1096,16 +1107,26 @@ export function MessageList({
         </div>
       )}
 
-      {error && (
-        <div className="p-4 bg-danger-soft border border-danger-border rounded-xl text-xs text-danger-fg-strong flex items-start gap-3">
-          <span className="font-bold">⚠️ 请求异常:</span>
-          <span className="flex-1 font-mono">{error.message || String(error)}</span>
-          <button
-            onClick={onReload}
-            className="px-2.5 py-1 bg-danger-soft-strong hover:bg-danger-soft-hover rounded text-danger-fg-strong font-medium transition-colors"
-          >
-            重试
-          </button>
+      {error && !isErrorDismissed && (
+        <div className="p-3.5 bg-danger-soft border border-danger-border rounded-xl text-xs text-danger-fg-strong flex items-start gap-3 shadow-xs">
+          <span className="font-semibold shrink-0">⚠️ 响应提示:</span>
+          <span className="flex-1 leading-relaxed">{friendlyErrorMsg}</span>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              onClick={onReload}
+              className="px-2.5 py-1 bg-danger-soft-strong hover:bg-danger-soft-hover rounded text-danger-fg-strong font-medium transition-colors cursor-pointer"
+            >
+              重试
+            </button>
+            <button
+              onClick={() => setDismissedError(error)}
+              className="p-1 hover:bg-danger-soft-hover rounded text-danger-fg-strong transition-colors cursor-pointer"
+              title="忽略提示继续对话"
+              aria-label="关闭提示"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
         </div>
       )}
       </div>
