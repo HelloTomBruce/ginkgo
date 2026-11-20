@@ -142,9 +142,44 @@ export interface AppClientContract {
 
   /** 侧边栏底部操作列表 */
   sidebarQuickActions?: AppSidebarQuickActionSpec[];
+
+  /** 获取当前工作区产物列表（由应用自理实现，可选） */
+  listArtifacts?: (ctx: AppWorkspaceContext) => Promise<AppArtifactItem[]>;
+}
+
+/**
+ * 通用工作区运行时上下文，宿主为每次会话/操作注入
+ */
+export interface AppWorkspaceContext {
+  /** 当前应用 ID */
+  appId: string;
+  /** 会话 ID */
+  sessionId?: string;
+  /** 物理沙箱绝对路径（如 data/workspaces/{appId}/{sessionId}） */
+  sandboxDir: string;
+  /** 用户绑定的外部工程路径（可选） */
+  customRootDir?: string;
+}
+
+/**
+ * 产物元数据抽象（不限格式，由应用自治解释与展示）
+ */
+export interface AppArtifactItem {
+  id: string;
+  name: string;
+  type: string; // 如 "dashboard" | "file" | "document" | "script"
+  path?: string;
+  sizeBytes?: number;
+  updatedAt: number;
 }
 
 export interface AppServerContext {
+  /** 当前应用 ID */
+  appId?: string;
+  /** 会话 ID */
+  sessionId?: string;
+  /** 工作区运行时上下文（物理沙箱目录与权限边界） */
+  workspace?: AppWorkspaceContext;
   /** 交互模式：普通直接回复 direct / 规划模式 plan / 执行确认模式 execute */
   mode?: "direct" | "plan" | "execute";
   /** 数据源信息摘要文本（可选） */

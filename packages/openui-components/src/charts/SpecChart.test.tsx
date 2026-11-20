@@ -68,6 +68,24 @@ describe("SpecChart", () => {
     expect(container.querySelector(".recharts-surface")).toBeInTheDocument();
   });
 
+  it("spec 为截断的未闭合 JSON 字符串时自动抢救并渲染", () => {
+    // 模拟大模型生成到一半由于中断或 token 截断未闭合
+    const truncated = '{"chartType":"bar","dims":[{"field":"province"}],"meas":[{"field":"capacity","agg":"sum"}],"data":[{"province":"广东","capacity":10';
+    const { container } = render(<SpecChart spec={truncated} />);
+    expect(container.querySelector(".recharts-surface")).toBeInTheDocument();
+  });
+
+  it("spec 字段为宽松格式（别名 chartType、字符串数组 dims/meas）时宽松解析", () => {
+    const looseSpec = {
+      chartType: "column", // 别名
+      dims: ["province"], // 字符串数组
+      meas: [{ field: "capacity" }], // 缺省 agg
+      data: rows,
+    };
+    const { container } = render(<SpecChart spec={looseSpec as never} />);
+    expect(container.querySelector(".recharts-surface")).toBeInTheDocument();
+  });
+
   it("父组件重渲染时，未传 data 或传字面量 data 不会触发 Too many re-renders 死循环", () => {
     function Parent() {
       const [, setTick] = React.useState(0);

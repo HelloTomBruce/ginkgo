@@ -9,6 +9,7 @@ import { parseArrayProp } from "../internal/parseProp";
 import { ComponentSafeWrapper } from "../internal/ComponentSafeWrapper";
 import { onFilterChange, useDashboardScope } from "./filterBus";
 import { getChartRenderer } from "./registry";
+import { tryRepairTruncatedJson, normalizeLooseSpec } from "./specTolerance";
 
 /**
  * SpecChart —— 语义声明图表：LLM 输出「维度×指标×过滤」的 ChartSpec 而非渲染数据，
@@ -49,9 +50,16 @@ export const SpecChart: React.FC<SpecChartProps> = ({
     let parsed: ChartSpec | null = null;
     let raw: Record<string, unknown> | null = null;
     try {
-      raw = typeof spec === "string" ? JSON.parse(spec) : (spec as Record<string, unknown>);
+      if (typeof spec === "string") {
+        const repaired = tryRepairTruncatedJson(spec) ?? spec;
+        raw = JSON.parse(repaired);
+      } else {
+        raw = spec as Record<string, unknown>;
+      }
       if (raw && typeof raw === "object") {
-        parsed = parseChartSpec(raw);
+        const normalized = normalizeLooseSpec(raw);
+        parsed = parseChartSpec(normalized);
+        raw = normalized;
       } else {
         raw = null;
       }

@@ -315,12 +315,32 @@ export interface AnalyzeHandlerOptions {
    */
   resolveAppPrompt?: (
     appId: string,
-    ctx: { mode: "direct" | "plan" | "execute"; messages: unknown[] }
+    ctx: {
+      mode: "direct" | "plan" | "execute";
+      sessionId?: string;
+      messages: unknown[];
+    }
   ) => Promise<string | undefined> | string | undefined;
   /**
    * 判断应用是否需要挂载数据库探查工具（可选注入；缺省仅 appId === "analytics" 时挂载）
    */
   isDataApp?: (appId: string) => boolean;
+  /**
+   * 应用级自主工具解析器（可选注入，支持多应用生态）：
+   * 允许应用包自治装配专属工具集（如通用助手的文件/命令行工具）；
+   * 解析出的工具会动态合并至 loadedTools 挂载给模型
+   */
+  resolveAppTools?: (
+    appId: string,
+    ctx: {
+      mode: "direct" | "plan" | "execute";
+      sessionId?: string;
+      messages: unknown[];
+    }
+  ) =>
+    | Promise<Record<string, CoreTool> | undefined>
+    | Record<string, CoreTool>
+    | undefined;
 }
 
 export interface AnalyzeRequestBody {
@@ -879,6 +899,39 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
         }
       }
 
+      // 装配应用自治工具集（如通用智能助手的工作区文件/Bash操作工具）
+      if (opts.resolveAppTools) {
+        try {
+          const appTools = await opts.resolveAppTools(clientAppId, {
+            mode,
+            sessionId: clientSessionId,
+            messages,
+          });
+          if (appTools && Object.keys(appTools).length > 0) {
+            mergeToolSets(
+              loadedTools,
+              instrumentTools(appTools, {
+                runId,
+                sessionId: sessionIdForEvents,
+                sourceId: `app:${clientAppId}`,
+                telemetry,
+              }),
+              `app:${clientAppId}`
+            );
+          }
+        } catch (appToolErr) {
+          telemetry.emit({
+            type: "warn",
+            runId,
+            sessionId: sessionIdForEvents,
+            code: "APP_TOOLS_LOAD_FAILED",
+            detail: `应用 [${clientAppId}] 自治工具装配失败，降级跳过: ${
+              appToolErr instanceof Error ? appToolErr.message : String(appToolErr)
+            }`,
+          });
+        }
+      }
+
       // 按阶段分派系统提示词：plan → 规划变体（探查边界 + PlanReviewCard 契约 + 选法指令）；
       // execute → base + 按已确认思路执行的增量约束 + 命中方法卡详情（按需注入）；
       // direct → base 直出看板 + 方法索引（常驻）
@@ -934,7 +987,11 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
       }
       // 应用包自治提示词优先：若应用包定义了专属 System Prompt，优先采用应用包 Prompt
       const appCustomPrompt = opts.resolveAppPrompt
-        ? await opts.resolveAppPrompt(clientAppId, { mode, messages })
+        ? await opts.resolveAppPrompt(clientAppId, {
+            mode,
+            sessionId: clientSessionId,
+            messages,
+          })
         : undefined;
 
       const baseSystem =

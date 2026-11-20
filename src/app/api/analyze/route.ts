@@ -9,6 +9,7 @@ import { getMcpManager, loadMcpServers } from "@/lib/mcpStore";
 import { createAppMethodology } from "@/lib/methodologyLoader";
 import { sessionStore } from "@/lib/sessionStore";
 import { appRegistry } from "@/lib/apps/registry";
+import { resolveWorkspaceContext } from "@/lib/workspaceResolver";
 
 /**
  * WS-10 鉴权接缝桩：当前应用无成熟认证体系，开发模式全部放行并归入匿名租户
@@ -54,9 +55,35 @@ export const POST = createAnalyzeHandler({
     if (appId === "analytics") return undefined;
     const app = appRegistry.get(appId);
     if (app?.server?.buildSystemPrompt) {
-      return app.server.buildSystemPrompt({ mode: ctx.mode, messages: ctx.messages });
+      const workspace = await resolveWorkspaceContext({
+        appId,
+        sessionId: ctx.sessionId,
+      });
+      return app.server.buildSystemPrompt({
+        appId,
+        sessionId: ctx.sessionId,
+        workspace,
+        mode: ctx.mode,
+        messages: ctx.messages,
+      });
     }
     return undefined;
+  },
+  resolveAppTools: async (appId, ctx) => {
+    const app = appRegistry.get(appId);
+    if (!app?.server?.getTools) return undefined;
+    const workspace = await resolveWorkspaceContext({
+      appId,
+      sessionId: ctx.sessionId,
+    });
+    const tools = await app.server.getTools({
+      appId,
+      sessionId: ctx.sessionId,
+      workspace,
+      mode: ctx.mode,
+      messages: ctx.messages,
+    });
+    return tools as Record<string, never>;
   },
   isDataApp: (appId) => {
     const app = appRegistry.get(appId);

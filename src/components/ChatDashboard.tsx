@@ -208,6 +208,20 @@ export default function ChatDashboard() {
 
   const handleChatError = useCallback((err: Error) => {
     console.error("Chat error:", err);
+    // 用户主动暂停/终止请求不弹报错提示
+    if (err.name === "AbortError" || err.message?.includes("aborted")) {
+      return;
+    }
+    const isGeneric =
+      !err.message ||
+      err.message === "An error occurred." ||
+      err.message.includes("Failed to fetch");
+
+    const message = isGeneric
+      ? "网络连接不稳定或模型响应中断，请尝试重试或重新提问"
+      : `会话异常：${err.message}`;
+
+    toast(message, "error");
   }, []);
 
   // 看板收藏库：列表/收藏/重命名/删除（列表同时驱动侧栏看板库）
