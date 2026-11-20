@@ -18,3 +18,4 @@ export default generalAppPackage;
 export * from "./manifest";
 export * from "./prompt";
 export * from "./server/tools";
+export * from "./client/ArtifactViewer";

@@ -13,7 +13,8 @@ describe("AppRegistry 应用注册表", () => {
     const general = getApp("general");
     expect(general).toBeDefined();
     expect(general?.manifest.name).toBe("通用智能助手");
-    expect(general?.client.hasWorkspace).toBe(false);
+    expect(general?.client.hasWorkspace).toBe(true);
+    expect(general?.client.workspaceTitle).toBe("工作区产物");
   });
 
   it("支持通过 get 和 getOrDefault 查询应用", () => {

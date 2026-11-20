@@ -1027,15 +1027,15 @@ export default function ChatDashboard() {
                 <button
                   type="button"
                   onClick={() => setViewMode("canvas-only")}
-                  disabled={!canvasData}
+                  disabled={activeAppId === "analytics" && !canvasData}
                   className={`px-2 py-1 rounded-md transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
                     viewMode === "canvas-only"
                       ? "bg-card text-foreground font-medium shadow-xs"
                       : "text-muted-foreground hover:text-foreground"
                   }`}
-                  title="全屏画布视图"
+                  title={activeAppId === "analytics" ? "全屏画布视图" : "全屏工作台"}
                 >
-                  画布
+                  {activeAppId === "analytics" ? "画布" : "全屏"}
                 </button>
               </div>
             )}
@@ -1166,6 +1166,8 @@ export default function ChatDashboard() {
             >
               <WorkspaceComponent
                 data={canvasData}
+                sessionId={currentSessionId}
+                appId={activeAppId}
                 onClose={() => setViewMode("chat-only")}
                 onAction={handleRendererAction}
                 onRefresh={handleCanvasRefresh}

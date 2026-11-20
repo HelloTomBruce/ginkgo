@@ -12,6 +12,7 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    "data/**",
   ]),
   // 主题护栏：业务代码禁止硬编码 Tailwind 色板类（如 bg-slate-50、
   // dark:text-blue-400）。颜色一律使用 globals.css 中的语义 token，

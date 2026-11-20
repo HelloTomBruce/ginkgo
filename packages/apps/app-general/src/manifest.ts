@@ -1,4 +1,5 @@
 import type { AppManifest, AppClientContract } from "@openui-analytics/app-sdk";
+import { ArtifactViewer } from "./client/ArtifactViewer";
 
 export const generalManifest: AppManifest = {
   id: "general",
@@ -19,8 +20,10 @@ export const generalClient: AppClientContract = {
     { text: "撰写一份软件系统架构设计方案提纲", category: "方案写作" },
     { text: "解释分布式事务中 2PC 与 TCC 的核心差异", category: "技术问答" },
   ],
-  // 通用助手无需外部工作区插槽，侧栏可配置推荐 Tab
-  hasWorkspace: false,
+  // 声明通用助手的工作区插槽与产物组件
+  hasWorkspace: true,
+  workspaceTitle: "工作区产物",
+  WorkspaceComponent: ArtifactViewer,
   hasInputAccessory: false,
   defaultInteractionMode: "plan",
   sidebarTabs: [
