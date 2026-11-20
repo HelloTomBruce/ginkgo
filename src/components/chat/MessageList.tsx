@@ -1074,7 +1074,7 @@ export function MessageList({
                     ? `AI 正在分析意图并连接 ${activeSources
                         .map((s) => s.name)
                         .join(" / ")} 数据源...`
-                    : "AI 正在分析意图并连接已启用的数据源..."}
+                    : "AI 正在分析意图并连接..."}
                 </span>
               </div>
               {onStop && (

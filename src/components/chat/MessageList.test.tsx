@@ -84,7 +84,7 @@ describe("MessageList 流式重渲染治理", () => {
     expect(screen.getByText(/正在分析意图并连接.*招标平台数据\//)).toBeInTheDocument();
 
     rerender(<MessageList {...base} activeSources={undefined} />);
-    expect(screen.getByText(/正在分析意图并连接已启用的数据源/)).toBeInTheDocument();
+    expect(screen.getByText(/正在分析意图并连接/)).toBeInTheDocument();
   });
 
   it("流式状态变化时，历史消息不重复执行内容提取（memo 生效）", () => {

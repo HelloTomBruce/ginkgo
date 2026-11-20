@@ -95,7 +95,7 @@ export function ChatInput({
             onKeyDown={handleKeyDown}
             placeholder={
               isLoading
-                ? "AI 正在流式推理并执行操作..."
+                ? "AI 正在分析意图并连接..."
                 : isPlan
                   ? "Plan 模式（先出思路模式）：AI 将先梳理方案与关键确认点，确认后再执行构建...（Enter 发送，Shift+Enter 换行）"
                   : "Build 模式：直接执行任务并输出最终交付产物...（Enter 发送，Shift+Enter 换行）"
