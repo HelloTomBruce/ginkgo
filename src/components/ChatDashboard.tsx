@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useChat } from "@ai-sdk/react";
-import { TrendingUp, Code2, Settings, RefreshCw } from "lucide-react";
+import { TrendingUp, Bot, Code2, Settings, RefreshCw } from "lucide-react";
 import { resolveContextWindow, estimateMessagesTokens } from "@openui-analytics/llm/context";
 import { Hint } from "@/components/ui/hint";
 import { DEFAULT_SANDBOX_CODE } from "@/lib/presetQueries";
@@ -21,7 +21,6 @@ import {
 import { ChatSidebar } from "@/components/chat/ChatSidebar";
 import { MessageList } from "@/components/chat/MessageList";
 import { ChatInput } from "@/components/chat/ChatInput";
-import { SourcePicker } from "@/components/chat/SourcePicker";
 import { useDatasourceList } from "@/components/chat/datasources/useDatasources";
 import { useMethodologyPresets } from "@/components/chat/useMethodologyPresets";
 import { SettingsModal } from "@/components/chat/SettingsModal";
@@ -31,8 +30,9 @@ import { ContextUsageIndicator } from "@/components/chat/ContextUsageIndicator";
 import { DevToolsPanel } from "@/components/chat/DevToolsPanel";
 import { MethodologyModal } from "@/components/chat/MethodologyModal";
 import { ComponentCatalogModal } from "@/components/chat/ComponentCatalogModal";
-import { AnalysisCanvas, type CanvasDashboardData } from "@/components/chat/AnalysisCanvas";
+import type { CanvasDashboardData } from "@openui-apps/analytics";
 import { extractOpenUI } from "@/lib/extractOpenUI";
+import { appRegistry } from "@/lib/apps/registry";
 import { Toaster } from "@/components/Toaster";
 import { toast } from "@/lib/toast";
 
@@ -87,6 +87,11 @@ function deriveContextUsage(
 }
 
 export default function ChatDashboard() {
+  const [activeAppId, setActiveAppId] = useState<string>("analytics");
+  const activeApp = useMemo(
+    () => appRegistry.getOrDefault(activeAppId),
+    [activeAppId]
+  );
   const [showRawLang, setShowRawLang] = useState(false);
   const [showDevTools, setShowDevTools] = useState(false);
   // 分析方法论查看入口（侧边栏底部按钮打开，弹窗内自取数）
@@ -101,8 +106,15 @@ export default function ChatDashboard() {
   } | null>(null);
 
   // 工作台双栏与分析画布状态（M3 协同工作台）
-  const [viewMode, setViewMode] = useState<"chat-only" | "split" | "canvas-only">("chat-only");
+  const [rawViewMode, setViewMode] = useState<"chat-only" | "split" | "canvas-only">("chat-only");
   const [canvasData, setCanvasData] = useState<CanvasDashboardData | null>(null);
+
+  // 插槽能力：由当前应用声明的工作台与辅助插槽组件
+  const hasWorkspace = Boolean(activeApp.client.hasWorkspace);
+  const WorkspaceComponent = activeApp.client.WorkspaceComponent;
+  const InputAccessoryComponent = activeApp.client.InputAccessoryComponent;
+  // 当当前应用未开启工作台插槽时，界面纯天然保持单栏对话
+  const viewMode = hasWorkspace ? rawViewMode : "chat-only";
 
   const {
     showSettings,
@@ -181,7 +193,11 @@ export default function ChatDashboard() {
     rewindSession,
     planMode,
     setPlanMode,
+    interactionMode,
+    setInteractionMode,
   } = useSessionManager({
+    appId: activeAppId,
+    welcomeMessage: activeApp.client.welcomeMessage,
     getWelcomeContext: () => ({
       sources: welcomeSourcesRef.current
         .filter((s) => s.enabled !== false)
@@ -244,20 +260,24 @@ export default function ChatDashboard() {
   const chatBodyWithSources = useMemo(
     () => ({
       ...chatBody,
-      sources: activeSession?.enabledSources,
+      appId: activeAppId,
+      sources: activeApp.client.hasInputAccessory
+        ? activeSession?.enabledSources
+        : [],
       // 上下文治理：服务端按会话读写 token 锚点与摘要缓存
       sessionId: currentSessionId || undefined,
     }),
-    [chatBody, activeSession?.enabledSources, currentSessionId]
+    [chatBody, activeAppId, activeApp.client.hasInputAccessory, activeSession?.enabledSources, currentSessionId]
   );
   // 当前会话实际启用的源（名称+id）：驱动加载提示与工具归因展示；useMemo 保 MessageItem memo 生效
   const sessionSources = useMemo(() => {
+    if (!activeApp.client.hasInputAccessory) return [];
     const sel = activeSession?.enabledSources;
     const list = sel
       ? enabledPickerSources.filter((s) => sel.includes(s.id))
       : enabledPickerSources;
     return list.map((s) => ({ id: s.id, name: s.name }));
-  }, [enabledPickerSources, activeSession?.enabledSources]);
+  }, [activeApp.client.hasInputAccessory, enabledPickerSources, activeSession?.enabledSources]);
 
   // 使用 Next.js 官方 Vercel AI SDK 的 useChat Hook
   const {
@@ -901,6 +921,8 @@ export default function ChatDashboard() {
   return (
     <div className="flex h-screen bg-surface-sunken text-foreground font-sans overflow-hidden">
       <ChatSidebar
+        activeAppId={activeAppId}
+        onSwitchApp={setActiveAppId}
         sessions={sessions}
         currentSessionId={currentSessionId}
         editingSessionId={editingSessionId}
@@ -934,69 +956,75 @@ export default function ChatDashboard() {
         {/* 顶部标题栏 */}
         <header className="h-14 border-b border-border bg-card px-6 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3 text-sm font-medium min-w-0">
-            <TrendingUp className="w-4 h-4 text-info-fg shrink-0" />
+            {activeApp.manifest.icon === "Bot" ? (
+              <Bot className="w-4 h-4 text-info-fg shrink-0" />
+            ) : (
+              <TrendingUp className="w-4 h-4 text-info-fg shrink-0" />
+            )}
             <span className="font-semibold truncate max-w-md">
-              {activeSession?.title || "OpenUI 对话式数据分析看板"}
+              {activeSession?.title || activeApp.manifest.name}
             </span>
           </div>
           <div className="flex items-center gap-2">
-            {/* 视图模式切换（仅在桌面端显示） */}
-            <div className="hidden md:flex items-center bg-surface-sunken p-0.5 rounded-lg border border-border text-xs mr-1">
-              <button
-                type="button"
-                onClick={() => setViewMode("chat-only")}
-                className={`px-2 py-1 rounded-md transition-colors ${
-                  viewMode === "chat-only"
-                    ? "bg-card text-foreground font-medium shadow-xs"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-                title="纯对话视图"
-              >
-                对话
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setViewMode("split");
-                  if (!canvasData) {
-                    const lastBoard = [...messages]
-                      .reverse()
-                      .find((m) => m.role === "assistant" && /```openui/i.test(m.content || ""));
-                    if (lastBoard) {
-                      const extracted = extractOpenUI(lastBoard.content);
-                      if (extracted.openuiPart) {
-                        setCanvasData({
-                          id: lastBoard.id,
-                          title: "最新分析看板",
-                          dsl: extracted.openuiPart,
-                        });
+            {/* 视图模式调节：仅当当前应用声明需要工作台插槽时暴露 */}
+            {hasWorkspace && (
+              <div className="hidden md:flex items-center bg-surface-sunken p-0.5 rounded-lg border border-border text-xs mr-1">
+                <button
+                  type="button"
+                  onClick={() => setViewMode("chat-only")}
+                  className={`px-2 py-1 rounded-md transition-colors ${
+                    viewMode === "chat-only"
+                      ? "bg-card text-foreground font-medium shadow-xs"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                  title="纯对话视图"
+                >
+                  对话
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setViewMode("split");
+                    if (!canvasData) {
+                      const lastBoard = [...messages]
+                        .reverse()
+                        .find((m) => m.role === "assistant" && /```openui/i.test(m.content || ""));
+                      if (lastBoard) {
+                        const extracted = extractOpenUI(lastBoard.content);
+                        if (extracted.openuiPart) {
+                          setCanvasData({
+                            id: lastBoard.id,
+                            title: "最新分析看板",
+                            dsl: extracted.openuiPart,
+                          });
+                        }
                       }
                     }
-                  }
-                }}
-                className={`px-2 py-1 rounded-md transition-colors ${
-                  viewMode === "split"
-                    ? "bg-card text-foreground font-medium shadow-xs"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-                title="双栏协同工作台"
-              >
-                工作台
-              </button>
-              <button
-                type="button"
-                onClick={() => setViewMode("canvas-only")}
-                disabled={!canvasData}
-                className={`px-2 py-1 rounded-md transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
-                  viewMode === "canvas-only"
-                    ? "bg-card text-foreground font-medium shadow-xs"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-                title="全屏画布视图"
-              >
-                画布
-              </button>
-            </div>
+                  }}
+                  className={`px-2 py-1 rounded-md transition-colors ${
+                    viewMode === "split"
+                      ? "bg-card text-foreground font-medium shadow-xs"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                  title="双栏协同工作台"
+                >
+                  工作台
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode("canvas-only")}
+                  disabled={!canvasData}
+                  className={`px-2 py-1 rounded-md transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                    viewMode === "canvas-only"
+                      ? "bg-card text-foreground font-medium shadow-xs"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                  title="全屏画布视图"
+                >
+                  画布
+                </button>
+              </div>
+            )}
 
             {IS_DEV && (
               <button
@@ -1065,6 +1093,8 @@ export default function ChatDashboard() {
               <ChatInput
                 input={input}
                 isLoading={isLoading || !sessionsLoaded}
+                mode={interactionMode}
+                onModeChange={setInteractionMode}
                 planMode={planMode}
                 // AI SDK 的 handleInputChange 只读 e.target.value，事件源类型安全收敛到 textarea
                 onChange={(e) =>
@@ -1092,12 +1122,14 @@ export default function ChatDashboard() {
                   />
                 }
                 sourcePickerNode={
-                  <SourcePicker
-                    sources={enabledPickerSources}
-                    selected={activeSession?.enabledSources}
-                    onChange={handleSourcesChange}
-                    disabled={sourcesLocked}
-                  />
+                  InputAccessoryComponent ? (
+                    <InputAccessoryComponent
+                      sources={enabledPickerSources}
+                      selected={activeSession?.enabledSources}
+                      onChange={handleSourcesChange}
+                      disabled={sourcesLocked}
+                    />
+                  ) : null
                 }
                 contextUsageNode={
                   <ContextUsageIndicator
@@ -1111,14 +1143,14 @@ export default function ChatDashboard() {
             </div>
           )}
 
-          {/* 右侧分析画布：在 split 或 canvas-only 模式下展示 */}
-          {viewMode !== "chat-only" && (
+          {/* 右侧扩展工作台插槽：仅当当前应用声明需要工作台插槽且有插槽组件、处于展开态时渲染 */}
+          {hasWorkspace && viewMode !== "chat-only" && WorkspaceComponent && (
             <div
               className={`flex flex-col h-full min-w-0 transition-all duration-300 ${
                 viewMode === "canvas-only" ? "w-full" : "hidden md:flex flex-1"
               }`}
             >
-              <AnalysisCanvas
+              <WorkspaceComponent
                 data={canvasData}
                 onClose={() => setViewMode("chat-only")}
                 onAction={handleRendererAction}

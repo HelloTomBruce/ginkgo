@@ -3,7 +3,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Hint } from "@/components/ui/hint";
 import {
-  BarChart3,
   Plus,
   History,
   Compass,
@@ -29,8 +28,14 @@ import type { SessionSummary } from "@/lib/sessionStore";
 import type { DashboardSummary } from "@/lib/dashboardStore";
 import type { PresetQuery } from "./useMethodologyPresets";
 import { SessionListItem, formatSessionTime } from "./SessionListItem";
+import { AppSwitcher } from "./AppSwitcher";
+import { appRegistry } from "@/lib/apps/registry";
 
 interface ChatSidebarProps {
+  /** 当前应用 ID（缺省为 "analytics"） */
+  activeAppId?: string;
+  /** 切换应用回调 */
+  onSwitchApp?: (appId: string) => void;
   sessions: SessionSummary[];
   currentSessionId: string;
   editingSessionId: string | null;
@@ -69,6 +74,8 @@ interface ChatSidebarProps {
 }
 
 export function ChatSidebar({
+  activeAppId = "analytics",
+  onSwitchApp,
   sessions,
   currentSessionId,
   editingSessionId,
@@ -96,9 +103,40 @@ export function ChatSidebar({
   onOpenMethodology,
   onOpenComponentCatalog,
 }: ChatSidebarProps) {
-  const [sidebarTab, setSidebarTab] = useState<
-    "history" | "dashboards" | "presets"
-  >("history");
+  const currentApp = useMemo(
+    () => appRegistry.getOrDefault(activeAppId),
+    [activeAppId]
+  );
+  const appTabs = useMemo(
+    () => currentApp.client.sidebarTabs ?? [],
+    [currentApp.client.sidebarTabs]
+  );
+
+  const [rawSidebarTab, setSidebarTab] = useState<string>("history");
+  // 派生有效 tab：若当前选中 tab 不在有效列表中，自动平滑 fallback 到 "history"
+  const effectiveTab =
+    rawSidebarTab === "history" || appTabs.some((t) => t.key === rawSidebarTab)
+      ? rawSidebarTab
+      : "history";
+
+  const activeTabSpec = appTabs.find((t) => t.key === effectiveTab);
+
+  // 解析当前应用可用的推荐项（数据分析走方法卡，通用应用走自治 presetQueries）
+  const appPresets = useMemo(() => {
+    if (activeAppId === "analytics" && presetQueries.length > 0) {
+      return presetQueries.map((p) => ({
+        id: p.id,
+        title: p.name,
+        query: p.query,
+      }));
+    }
+    return (currentApp.client.presetQueries ?? []).map((p, idx) => ({
+      id: p.id ?? `preset-${idx}`,
+      title: p.category ?? "推荐",
+      query: p.text,
+    }));
+  }, [activeAppId, presetQueries, currentApp.client.presetQueries]);
+
   const [sessionSearch, setSessionSearch] = useState("");
   // 快照导入：隐藏 file input（选择后清空 value，允许重复导入同一文件）
   const importFileRef = useRef<HTMLInputElement>(null);
@@ -112,15 +150,12 @@ export function ChatSidebar({
 
   return (
     <aside className="w-72 border-r border-border bg-card flex flex-col shrink-0">
-      {/* Logo 区域 */}
-      <div className="flex items-center gap-2.5 p-4 border-b border-border-subtle">
-        <div className="w-8 h-8 rounded-lg bg-foreground text-background flex items-center justify-center shadow-2xs">
-          <BarChart3 className="w-4.5 h-4.5" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <h1 className="font-bold text-sm leading-tight truncate text-foreground">OpenUI Analytics</h1>
-          <p className="text-[11px] text-foreground-faint">Generative UI & MCP</p>
-        </div>
+      {/* 顶部应用切换器 */}
+      <div className="p-3 border-b border-border-subtle">
+        <AppSwitcher
+          activeAppId={activeAppId}
+          onSwitchApp={onSwitchApp ?? (() => {})}
+        />
       </div>
 
       {/* 顶部操作：新建会话按钮 */}
@@ -136,11 +171,11 @@ export function ChatSidebar({
 
       {/* 侧边栏导航 Tab 切换 */}
       <div className="px-3 pt-2">
-        <div className="flex bg-muted p-1 rounded-lg text-xs font-medium">
+        <div className="flex bg-muted p-1 rounded-lg text-xs font-medium gap-0.5">
           <button
             onClick={() => setSidebarTab("history")}
             className={`flex-1 flex items-center justify-center gap-1 py-1.5 rounded-md transition-all ${
-              sidebarTab === "history"
+              effectiveTab === "history"
                 ? "bg-card text-info-fg shadow-xs font-semibold"
                 : "text-muted-foreground hover:text-foreground"
             }`}
@@ -148,33 +183,46 @@ export function ChatSidebar({
             <History className="w-3.5 h-3.5" />
             <span>历史 ({sessions.length})</span>
           </button>
-          <button
-            onClick={() => setSidebarTab("dashboards")}
-            className={`flex-1 flex items-center justify-center gap-1 py-1.5 rounded-md transition-all ${
-              sidebarTab === "dashboards"
-                ? "bg-card text-info-fg shadow-xs font-semibold"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            <LayoutGrid className="w-3.5 h-3.5" />
-            <span>看板 ({dashboards.length})</span>
-          </button>
-          <button
-            onClick={() => setSidebarTab("presets")}
-            className={`flex-1 flex items-center justify-center gap-1 py-1.5 rounded-md transition-all ${
-              sidebarTab === "presets"
-                ? "bg-card text-info-fg shadow-xs font-semibold"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            <Compass className="w-3.5 h-3.5" />
-            <span>推荐</span>
-          </button>
+          {appTabs.map((tab) => {
+            const countBadge =
+              tab.key === "dashboards" ? ` (${dashboards.length})` : "";
+
+            const IconComp =
+              tab.icon === "LayoutGrid" || tab.key === "dashboards"
+                ? LayoutGrid
+                : tab.icon === "Compass" || tab.key === "presets"
+                ? Compass
+                : tab.icon === "Sparkles"
+                ? Sparkles
+                : tab.icon === "Star"
+                ? Star
+                : tab.icon === "BookOpen"
+                ? BookOpen
+                : Compass;
+
+            return (
+              <button
+                key={tab.key}
+                onClick={() => setSidebarTab(tab.key)}
+                className={`flex-1 flex items-center justify-center gap-1 py-1.5 rounded-md transition-all ${
+                  effectiveTab === tab.key
+                    ? "bg-card text-info-fg shadow-xs font-semibold"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <IconComp className="w-3.5 h-3.5" />
+                <span>
+                  {tab.label}
+                  {countBadge}
+                </span>
+              </button>
+            );
+          })}
         </div>
       </div>
 
       {/* 历史会话列表视图 */}
-      {sidebarTab === "history" && (
+      {effectiveTab === "history" && (
         <div className="flex-1 flex flex-col min-h-0 px-3 py-2 space-y-2">
           {/* 搜索框 */}
           <div className="relative">
@@ -215,8 +263,18 @@ export function ChatSidebar({
         </div>
       )}
 
-      {/* 看板收藏库视图 */}
-      {sidebarTab === "dashboards" && (
+      {/* 应用自治自定义组件 Tab */}
+      {effectiveTab !== "history" && activeTabSpec?.Component && (
+        <div className="flex-1 overflow-y-auto px-3 py-2">
+          <activeTabSpec.Component
+            appId={activeAppId}
+            onSelectPrompt={onPresetSelect}
+          />
+        </div>
+      )}
+
+      {/* 内置看板收藏库视图 */}
+      {effectiveTab === "dashboards" && !activeTabSpec?.Component && (
         <div className="flex-1 overflow-y-auto px-3 py-2 space-y-1">
           <div className="flex items-center justify-between gap-2 px-1 pb-1">
             <div className="text-[11px] font-semibold text-foreground-faint uppercase tracking-wider truncate">
@@ -271,24 +329,30 @@ export function ChatSidebar({
       )}
 
       {/* 预设推荐场景视图 */}
-      {sidebarTab === "presets" && (
+      {effectiveTab === "presets" && !activeTabSpec?.Component && (
         <div className="flex-1 overflow-y-auto px-3 py-2 space-y-1.5">
           <div className="text-[11px] font-semibold text-foreground-faint uppercase tracking-wider px-1 pb-1">
-            一键带入分析模板（按方法卡生成）
+            {activeTabSpec?.description || "推荐场景与指令"}
           </div>
-          {presetQueries.map((preset) => (
-            <button
-              key={preset.id}
-              onClick={() => onPresetSelect(preset.query)}
-              className="w-full text-left text-xs p-2.5 rounded-lg hover:bg-muted text-foreground-subtle transition-colors flex items-start gap-2"
-            >
-              <Sparkles className="w-3.5 h-3.5 text-info-fg shrink-0 mt-0.5" />
-              <span className="line-clamp-2 leading-relaxed">
-                <span className="text-foreground-faint">[{preset.name}]</span>{" "}
-                {preset.query}
-              </span>
-            </button>
-          ))}
+          {appPresets.length === 0 ? (
+            <div className="text-center py-8 text-xs text-foreground-faint">
+              当前应用暂无推荐场景
+            </div>
+          ) : (
+            appPresets.map((preset) => (
+              <button
+                key={preset.id}
+                onClick={() => onPresetSelect(preset.query)}
+                className="w-full text-left text-xs p-2.5 rounded-lg hover:bg-muted text-foreground-subtle transition-colors flex items-start gap-2"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-info-fg shrink-0 mt-0.5" />
+                <span className="line-clamp-2 leading-relaxed">
+                  <span className="text-foreground-faint">[{preset.title}]</span>{" "}
+                  {preset.query}
+                </span>
+              </button>
+            ))
+          )}
         </div>
       )}
 
@@ -305,13 +369,15 @@ export function ChatSidebar({
           <FileCode className="w-3.5 h-3.5" />
           <span>{showRawLang ? "隐藏 OpenUI 源码" : "查看 OpenUI Lang 源码"}</span>
         </button>
-        <button
-          onClick={onOpenMethodology}
-          className="w-full text-xs p-2 rounded-lg border border-border text-foreground-subtle hover:bg-muted transition-colors flex items-center gap-2"
-        >
-          <BookOpen className="w-3.5 h-3.5" />
-          <span>分析方法论</span>
-        </button>
+        {currentApp.client.sidebarQuickActions?.some((a) => a.key === "methodology") && (
+          <button
+            onClick={onOpenMethodology}
+            className="w-full text-xs p-2 rounded-lg border border-border text-foreground-subtle hover:bg-muted transition-colors flex items-center gap-2"
+          >
+            <BookOpen className="w-3.5 h-3.5" />
+            <span>分析方法论</span>
+          </button>
+        )}
         <button
           onClick={onOpenComponentCatalog}
           className="w-full text-xs p-2 rounded-lg border border-border text-foreground-subtle hover:bg-muted transition-colors flex items-center gap-2"

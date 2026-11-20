@@ -306,6 +306,19 @@ describe("先出思路（planMode）", () => {
     });
     expect(result.current.planMode).toBe(false); // A 显式关闭
   });
+
+  it("interactionMode 与 setInteractionMode 支持通用 plan/build 模式切换与持久化", async () => {
+    const { result } = await renderLoaded();
+    expect(result.current.interactionMode).toBe("plan");
+
+    act(() => result.current.setInteractionMode("build"));
+    expect(result.current.interactionMode).toBe("build");
+    expect(result.current.planMode).toBe(false);
+
+    act(() => result.current.setInteractionMode("plan"));
+    expect(result.current.interactionMode).toBe("plan");
+    expect(result.current.planMode).toBe(true);
+  });
 });
 
 describe("fork / rewind", () => {
@@ -464,5 +477,23 @@ describe("会话切换与消息快照", () => {
     ];
     act(() => result.current.syncMessages(msgs));
     expect(result.current.getMessages()).toEqual(msgs);
+  });
+
+  it("切换 appId 时自动重新拉取目标应用会话，空库时自动初始化专属会话", async () => {
+    const { result, rerender } = renderHook(
+      ({ appId }: { appId: string }) =>
+        useSessionManager({ appId, welcomeMessage: `欢迎来到 ${appId}` }),
+      { initialProps: { appId: "analytics" } }
+    );
+    await waitFor(() => expect(result.current.loaded).toBe(true));
+    expect(result.current.sessions.length).toBe(1);
+
+    // 切换到 general 应用
+    rerender({ appId: "general" });
+    await waitFor(() => expect(result.current.loaded).toBe(true));
+
+    // general 应用初始化出属于自己的初始会话
+    expect(result.current.sessions.length).toBe(1);
+    expect(result.current.sessions[0].appId).toBe("general");
   });
 });

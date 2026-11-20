@@ -5,10 +5,15 @@ import { sessionStore } from "@/lib/sessionStore";
  * 附活跃会话指针 activeId（可能指向已删除会话，客户端负责回落到列表首条）。
  * 鉴权由 middleware 统一拦截 /api/*，本层不再重复校验。
  */
-export async function GET() {
+export async function GET(request?: Request) {
   try {
+    let appId: string | undefined;
+    if (request?.url) {
+      const url = new URL(request.url);
+      appId = url.searchParams.get("appId") || undefined;
+    }
     const [sessions, activeId] = await Promise.all([
-      sessionStore.list(),
+      sessionStore.list(appId ? { appId } : undefined),
       sessionStore.getActiveId(),
     ]);
     return Response.json({ sessions, activeId });

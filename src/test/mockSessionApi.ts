@@ -22,6 +22,7 @@ let idCounter = 0;
 function toSummary(record: SessionRecord): SessionSummary {
   return {
     id: record.id,
+    appId: record.appId ?? "analytics",
     title: record.title,
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
@@ -56,6 +57,7 @@ export function makeSessionRecord(
   const now = Date.now();
   return {
     id: nextSessionId(),
+    appId: overrides.appId ?? "analytics",
     title: "测试会话",
     createdAt: now,
     updatedAt: now,
@@ -83,12 +85,15 @@ export function installSessionServer(
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = typeof input === "string" ? input : input.toString();
+      const rawUrl = typeof input === "string" ? input : input.toString();
+      const parsedUrl = new URL(rawUrl, "http://localhost");
+      const pathname = parsedUrl.pathname;
+      const appIdQuery = parsedUrl.searchParams.get("appId");
       const method = (init?.method ?? "GET").toUpperCase();
-      const match = url.match(/^\/api\/sessions(?:\/([^/?]+?))?(?:\/(fork))?$/);
+      const match = pathname.match(/^\/api\/sessions(?:\/([^/?]+?))?(?:\/(fork))?$/);
       if (!match) {
         return fallback
-          ? fallback(url, init)
+          ? fallback(rawUrl, init)
           : jsonResponse({ error: "not mocked" }, 404);
       }
 
@@ -127,7 +132,11 @@ export function installSessionServer(
       // 集合路由
       if (!id) {
         if (method === "GET") {
-          const sessions = [...records.values()]
+          let list = [...records.values()];
+          if (appIdQuery) {
+            list = list.filter((r) => (r.appId ?? "analytics") === appIdQuery);
+          }
+          const sessions = list
             .sort((a, b) => b.updatedAt - a.updatedAt || b.createdAt - a.createdAt)
             .map(toSummary);
           return jsonResponse({ sessions, activeId: server.activeId });
@@ -136,6 +145,7 @@ export function installSessionServer(
           const now = Date.now();
           const record: SessionRecord = {
             id: nextSessionId(),
+            appId: body?.appId ?? "analytics",
             title: body?.title ?? "新建分析会话",
             createdAt: body?.createdAt ?? now,
             updatedAt: body?.updatedAt ?? now,

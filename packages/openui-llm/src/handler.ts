@@ -309,10 +309,24 @@ export interface AnalyzeHandlerOptions {
   crossSourceRegistry?: CrossSourceRegistry;
   /** 模型元数据注册表（可选注入；缺省全局单例 defaultModelCatalog） */
   modelCatalog?: ModelCatalog;
+  /**
+   * 应用级系统提示词解析器（可选注入，支持多应用生态）：
+   * 允许应用包自治生成对应的 System Prompt；未注入或返回 undefined 时回退到内置的分析提示词
+   */
+  resolveAppPrompt?: (
+    appId: string,
+    ctx: { mode: "direct" | "plan" | "execute"; messages: unknown[] }
+  ) => Promise<string | undefined> | string | undefined;
+  /**
+   * 判断应用是否需要挂载数据库探查工具（可选注入；缺省仅 appId === "analytics" 时挂载）
+   */
+  isDataApp?: (appId: string) => boolean;
 }
 
 export interface AnalyzeRequestBody {
   action?: string;
+  /** 所属应用 ID，缺省为 "analytics" */
+  appId?: string;
   reconnect?: boolean;
   messages?: unknown[];
   apiKey?: string;
@@ -465,7 +479,13 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
         contextWindow: clientContextWindow,
         maxSteps: clientMaxSteps,
         budgetTokens: clientBudgetTokens,
+        appId: rawClientAppId,
       } = rawBody;
+
+      const clientAppId =
+        typeof rawClientAppId === "string" && rawClientAppId.trim()
+          ? rawClientAppId.trim()
+          : "analytics";
 
       // 遥测用的会话 id(缺省 undefined,贯穿全事件)
       const sessionIdForEvents =
@@ -721,10 +741,16 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
 
       const languageModel = buildLanguageModel(modelChain[0]);
 
-      // 会话级数据源：请求 id ∩ 全局启用 ∩ 实际存在；未知 id 忽略并告警
-      const activeSources = datasources.resolveActive(
-        Array.isArray(clientSources) ? (clientSources as string[]) : undefined
-      );
+      // 会话级数据源：检查当前应用是否需要装配数据库工具，防止通用助手等产生幻觉去探查不存在的数据库
+      const isDataApp =
+        typeof opts.isDataApp === "function"
+          ? opts.isDataApp(clientAppId)
+          : clientAppId === "analytics";
+      const activeSources = isDataApp
+        ? datasources.resolveActive(
+            Array.isArray(clientSources) ? (clientSources as string[]) : undefined
+          )
+        : [];
 
       // 按激活源装配工具（http-mcp / db / stdio-cli）；
       // 单一数据源失败时降级为空工具集而非拖垮整个请求
@@ -906,12 +932,18 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
           }
         }
       }
+      // 应用包自治提示词优先：若应用包定义了专属 System Prompt，优先采用应用包 Prompt
+      const appCustomPrompt = opts.resolveAppPrompt
+        ? await opts.resolveAppPrompt(clientAppId, { mode, messages })
+        : undefined;
+
       const baseSystem =
-        mode === "plan"
+        appCustomPrompt ||
+        (mode === "plan"
           ? getOpenUIPlanPrompt(summaries, schemaDigest.text, methodIndexText, certifiedMatches)
           : mode === "execute"
             ? getExecuteSystemPrompt(summaries, schemaDigest.text, methodDetails, certifiedMatches)
-            : getOpenUISystemPrompt(summaries, schemaDigest.text, methodIndexText, certifiedMatches);
+            : getOpenUISystemPrompt(summaries, schemaDigest.text, methodIndexText, certifiedMatches));
 
       // ========== 上下文治理（投影式压缩，设计见 context.ts） ==========
       // sessionCtx 已在上方提前读取(execute 消费 pendingPlan 与此处投影共用)

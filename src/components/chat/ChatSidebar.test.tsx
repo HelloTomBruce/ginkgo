@@ -220,4 +220,22 @@ describe("ChatSidebar 底部功能栏", () => {
     fireEvent.click(screen.getByRole("button", { name: "可视化组件" }));
     expect(props.onOpenComponentCatalog).toHaveBeenCalledTimes(1);
   });
+
+  it("当 activeAppId 为通用助手 general 时，隐藏数据分析特有的看板 Tab 与方法论入口", () => {
+    const props = { ...baseProps, activeAppId: "general" };
+    render(<ChatSidebar {...props} />);
+
+    expect(screen.queryByText(/看板 \(/)).toBeNull();
+    expect(screen.queryByText("分析方法论")).toBeNull();
+    expect(screen.getByText("通用智能助手")).toBeDefined();
+  });
+
+  it("通用智能助手展示自治的推荐预设指令与描述", () => {
+    const props = { ...baseProps, activeAppId: "general" };
+    render(<ChatSidebar {...props} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /推荐/ }));
+    expect(screen.getByText("常用指令与探索场景")).toBeInTheDocument();
+    expect(screen.getByText(/帮我审查并重构一段代码/)).toBeInTheDocument();
+  });
 });

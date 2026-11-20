@@ -52,6 +52,15 @@ describe("GET /api/sessions", () => {
     expect(Object.keys(body.sessions[0])).not.toContain("messages");
     expect(body.activeId).toBe(RECORD.id);
   });
+
+  it("支持传入 appId 查询参数过滤列表", async () => {
+    vi.mocked(sessionStore.list).mockResolvedValueOnce([]);
+    vi.mocked(sessionStore.getActiveId).mockResolvedValueOnce(null);
+    const req = new Request("http://localhost:3006/api/sessions?appId=devops");
+    const res = await GET(req);
+    expect(res.status).toBe(200);
+    expect(sessionStore.list).toHaveBeenCalledWith({ appId: "devops" });
+  });
 });
 
 describe("POST /api/sessions", () => {

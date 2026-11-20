@@ -8,6 +8,7 @@ import type {
 } from "@/lib/sessionStore";
 import {
   fetchSession,
+  fetchSessionList,
   createSessionApi,
   updateSessionApi,
   deleteSessionApi,
@@ -26,6 +27,14 @@ export type SetMessagesFn = (messages: Message[]) => void;
 
 export interface UseSessionManagerOptions {
   /**
+   * 所属应用 ID（缺省为 "analytics"）
+   */
+  appId?: string;
+  /**
+   * 自定义欢迎语文本（优先于通用能力欢迎语）
+   */
+  welcomeMessage?: string;
+  /**
    * 生成新会话欢迎语时读取能力上下文（数据源 + 服务端特性开关，
    * 见 src/lib/capabilities.ts）。缺省只保留无条件能力（保守宣称）。
    */
@@ -43,6 +52,7 @@ const DEFAULT_TITLES = new Set([
 function toSummaryLocal(record: SessionRecord): SessionSummary {
   return {
     id: record.id,
+    appId: record.appId ?? "analytics",
     title: record.title,
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
@@ -72,6 +82,7 @@ function sortSummaries(list: SessionSummary[]): SessionSummary[] {
  *   bootstrap/切换会话拿到完整消息后经它同步进消息流
  */
 export function useSessionManager(options?: UseSessionManagerOptions) {
+  const currentAppId = options?.appId ?? "analytics";
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [currentSessionId, setCurrentSessionIdState] = useState<string>("");
   // bootstrap 完成前 ChatDashboard 显示加载态（会话数据未到，禁止输入）
@@ -110,13 +121,21 @@ export function useSessionManager(options?: UseSessionManagerOptions) {
 
   // 欢迎语上下文读取器收进 ref：四个创建点共用稳定回调，避免 options 依赖扩散
   const getWelcomeContextRef = useRef(options?.getWelcomeContext);
+  const welcomeMessageRef = useRef(options?.welcomeMessage);
   useEffect(() => {
     getWelcomeContextRef.current = options?.getWelcomeContext;
+    welcomeMessageRef.current = options?.welcomeMessage;
   });
-  const buildWelcome = useCallback(
-    () => buildWelcomeMessage(getWelcomeContextRef.current?.() ?? {}),
-    []
-  );
+  const buildWelcome = useCallback(() => {
+    if (welcomeMessageRef.current) {
+      return {
+        id: "welcome-msg",
+        role: "assistant",
+        content: welcomeMessageRef.current,
+      };
+    }
+    return buildWelcomeMessage(getWelcomeContextRef.current?.() ?? {});
+  }, []);
 
   // sessions 的最新快照（异步回调内读取，避免闭包过期）
   const sessionsRef = useRef(sessions);
@@ -189,6 +208,67 @@ export function useSessionManager(options?: UseSessionManagerOptions) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // ========== 应用切换：当 appId 改变时，重新加载该应用下的专属会话列表 ==========
+  const prevAppIdRef = useRef(currentAppId);
+  useEffect(() => {
+    // 首次挂载已由上面的 bootstrap 覆盖，这里仅处理应用变化
+    if (prevAppIdRef.current === currentAppId) return;
+    prevAppIdRef.current = currentAppId;
+
+    let cancelled = false;
+    (async () => {
+      setLoaded(false);
+      try {
+        const result = await fetchSessionList({ appId: currentAppId });
+        if (cancelled) return;
+        if (!result) {
+          toast("获取应用会话列表失败", "error");
+          return;
+        }
+
+        if (result.sessions.length > 0) {
+          const targetId =
+            result.activeId && result.sessions.some((s) => s.id === result.activeId)
+              ? result.activeId
+              : result.sessions[0].id;
+          setSessions(result.sessions);
+          setCurrentSessionIdState(targetId);
+          currentSessionIdRef.current = targetId;
+          switchSeqRef.current++;
+
+          const record = await loadSessionRecord(targetId);
+          if (cancelled) return;
+          if (record) {
+            setMessages(record.messages as unknown as Message[]);
+          }
+        } else {
+          // 当前应用尚无会话，新建一个初始会话
+          const created = await createSessionApi({
+            appId: currentAppId,
+            title: "新建会话",
+            messages: [buildWelcome()] as unknown as SessionRecord["messages"],
+          });
+          if (cancelled) return;
+          if (created) {
+            messagesCacheRef.current.set(created.id, created.messages);
+            setSessions([toSummaryLocal(created)]);
+            setCurrentSessionIdState(created.id);
+            currentSessionIdRef.current = created.id;
+            switchSeqRef.current++;
+            setMessages(created.messages as unknown as Message[]);
+            void setActiveSessionApi(created.id);
+          }
+        }
+      } finally {
+        if (!cancelled) setLoaded(true);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentAppId, buildWelcome, loadSessionRecord, setMessages]);
+
   // ========== 写操作（乐观更新 + 后台同步服务端） ==========
 
   /**
@@ -254,6 +334,7 @@ export function useSessionManager(options?: UseSessionManagerOptions) {
   // 新建会话
   const handleCreateNewChat = useCallback(async () => {
     const created = await createSessionApi({
+      appId: currentAppId,
       title: "新建分析会话",
       messages: [
         buildWelcome(),
@@ -269,7 +350,7 @@ export function useSessionManager(options?: UseSessionManagerOptions) {
     switchSeqRef.current++;
     setMessages(created.messages as unknown as Message[]);
     void setActiveSessionApi(created.id);
-  }, [setMessages, buildWelcome]);
+  }, [setMessages, buildWelcome, currentAppId]);
 
   // 切换会话（竞态守卫：快速连点只应用最后一次）
   const handleSelectSession = useCallback(
@@ -307,6 +388,7 @@ export function useSessionManager(options?: UseSessionManagerOptions) {
         }
         messagesCacheRef.current.delete(sessionId);
         const created = await createSessionApi({
+          appId: currentAppId,
           title: "新分析会话",
           messages: [
             buildWelcome(),
@@ -343,7 +425,7 @@ export function useSessionManager(options?: UseSessionManagerOptions) {
         if (record) setMessages(record.messages as unknown as Message[]);
       }
     },
-    [loadSessionRecord, setMessages, buildWelcome]
+    [loadSessionRecord, setMessages, buildWelcome, currentAppId]
   );
 
   // 开始重命名会话
@@ -383,6 +465,7 @@ export function useSessionManager(options?: UseSessionManagerOptions) {
     }
     messagesCacheRef.current.clear();
     const created = await createSessionApi({
+      appId: currentAppId,
       title: "新分析会话",
       messages: [
         buildWelcome(),
@@ -399,15 +482,17 @@ export function useSessionManager(options?: UseSessionManagerOptions) {
     switchSeqRef.current++;
     setMessages(created.messages as unknown as Message[]);
     void setActiveSessionApi(created.id);
-  }, [setMessages, buildWelcome]);
+  }, [setMessages, buildWelcome, currentAppId]);
 
   const activeSession = useMemo(
     () => sessions.find((s) => s.id === currentSessionId),
     [sessions, currentSessionId]
   );
 
-  // 先出思路（Plan-first）：随会话持久化在服务端，undefined = 默认开
+  // 通用交互模式（Plan 规划方案 / Build 直接构建）：随会话持久化在服务端，undefined = 默认 plan
   const planMode = activeSession?.planMode ?? true;
+  const interactionMode: "plan" | "build" = planMode ? "plan" : "build";
+
   const setPlanMode = useCallback(
     (value: boolean) => {
       const id = currentSessionIdRef.current;
@@ -416,10 +501,17 @@ export function useSessionManager(options?: UseSessionManagerOptions) {
         prev.map((s) => (s.id === id ? { ...s, planMode: value } : s))
       );
       void updateSessionApi(id, { planMode: value }).then((ok) => {
-        if (!ok) toast("「先出思路」设置保存失败", "error");
+        if (!ok) toast("模式设置保存失败", "error");
       });
     },
     []
+  );
+
+  const setInteractionMode = useCallback(
+    (mode: "plan" | "build") => {
+      setPlanMode(mode === "plan");
+    },
+    [setPlanMode]
   );
 
   // 分叉：从某条消息复制前缀历史生成新会话并切换过去
@@ -528,5 +620,7 @@ export function useSessionManager(options?: UseSessionManagerOptions) {
     rewindSession,
     planMode,
     setPlanMode,
+    interactionMode,
+    setInteractionMode,
   };
 }

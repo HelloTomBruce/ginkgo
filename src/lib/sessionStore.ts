@@ -26,6 +26,10 @@ export const SESSION_MESSAGES_PAYLOAD_MAX = 8 * 1024 * 1024;
 export const SESSION_MESSAGE_ID_MAX = 200;
 /** 上下文摘要上限（64KB，TASK-033 摘要缓存） */
 export const SESSION_CONTEXT_SUMMARY_MAX = 64 * 1024;
+/** 默认主应用 ID（向后兼容存量会话） */
+export const DEFAULT_APP_ID = "analytics";
+/** 应用 ID 命名规则：1~64 位字母、数字、下划线、中划线 */
+export const APP_ID_RE = /^[a-z0-9_-]{1,64}$/i;
 /** 源 id 规则与数据源配置层一致（packages/openui-datasources SOURCE_ID_PATTERN） */
 const SOURCE_ID_RE = /^[a-z][a-z0-9-]{0,31}$/;
 
@@ -55,6 +59,8 @@ export interface SessionContextMeta {
 
 export interface SessionRecord {
   id: string;
+  /** 所属应用 ID；缺省回落至 DEFAULT_APP_ID ("analytics") */
+  appId?: string;
   title: string;
   createdAt: number;
   updatedAt: number;
@@ -69,12 +75,14 @@ export interface SessionRecord {
 
 /** 列表摘要：不含 messages 全文 */
 export type SessionSummary = Omit<SessionRecord, "messages"> & {
+  appId: string;
   messageCount: number;
 };
 
 export function toSummary(record: SessionRecord): SessionSummary {
   return {
     id: record.id,
+    appId: record.appId ?? DEFAULT_APP_ID,
     title: record.title,
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
@@ -89,6 +97,7 @@ export function toSummary(record: SessionRecord): SessionSummary {
 
 /** 入参宽容（未经校验的 JSON body）；校验统一收敛在 validateSessionFields */
 export interface SessionWriteInput {
+  appId?: unknown;
   title?: unknown;
   messages?: unknown;
   /** 数组 = 设置；null = 清除（恢复全选语义）；undefined = 不改动 */
@@ -102,6 +111,7 @@ export interface SessionWriteInput {
 }
 
 interface ValidFields {
+  appId?: string;
   title?: string;
   messages?: SessionMessage[];
   /** undefined = 未提供；null = 显式清除；数组 = 设置 */
@@ -233,6 +243,20 @@ export function validateSessionFields(
     return { ok: false, status: 400, errors: ["请求体必须是 JSON 对象"] };
   }
 
+  let appId: string | undefined;
+  if (body.appId !== undefined && body.appId !== null && body.appId !== "") {
+    if (typeof body.appId !== "string") {
+      errors.push("appId 必须是字符串");
+    } else {
+      const trimmed = body.appId.trim();
+      if (!APP_ID_RE.test(trimmed)) {
+        errors.push("appId 格式不合法（只允许 1~64 位字母、数字、下划线与中划线）");
+      } else {
+        appId = trimmed;
+      }
+    }
+  }
+
   let title: string | undefined;
   if (body.title !== undefined && body.title !== null && body.title !== "") {
     if (typeof body.title !== "string") {
@@ -315,6 +339,7 @@ export function validateSessionFields(
   return {
     ok: true,
     value: {
+      ...(appId !== undefined ? { appId } : {}),
       ...(title !== undefined ? { title } : {}),
       ...(messages !== undefined ? { messages } : {}),
       ...(enabledSources !== undefined ? { enabledSources } : {}),
@@ -327,8 +352,8 @@ export function validateSessionFields(
 }
 
 export interface SessionStore {
-  /** 摘要列表（updatedAt 降序；坏文件静默跳过） */
-  list(): Promise<SessionSummary[]>;
+  /** 摘要列表（updatedAt 降序；坏文件静默跳过；支持按 appId 过滤） */
+  list(options?: { appId?: string }): Promise<SessionSummary[]>;
   /** 详情（含 messages）；未知/坏文件返回 null */
   get(id: string): Promise<SessionRecord | null>;
   /** 新建会话：生成 id；createdAt/updatedAt 可选（迁移场景保留原时间戳） */
@@ -375,7 +400,11 @@ export function createSessionStore(opts: { dir: string }): SessionStore {
     ) {
       return null;
     }
-    return raw as unknown as SessionRecord;
+    const rec = raw as Record<string, unknown>;
+    return {
+      ...(rec as unknown as SessionRecord),
+      appId: typeof rec.appId === "string" ? rec.appId : DEFAULT_APP_ID,
+    };
   }
 
   async function readRecord(fileName: string): Promise<SessionRecord | null> {
@@ -435,6 +464,7 @@ export function createSessionStore(opts: { dir: string }): SessionStore {
   ): SessionRecord {
     const record: SessionRecord = {
       ...base,
+      ...(fields.appId !== undefined ? { appId: fields.appId } : {}),
       ...(fields.title !== undefined ? { title: fields.title } : {}),
       ...(fields.messages !== undefined ? { messages: fields.messages } : {}),
     };
@@ -454,12 +484,18 @@ export function createSessionStore(opts: { dir: string }): SessionStore {
   }
 
   return {
-    async list() {
+    async list(options?: { appId?: string }) {
       const records = await readAll();
-      records.sort(
+      let filtered = records;
+      if (options?.appId) {
+        filtered = filtered.filter(
+          (r) => (r.appId ?? DEFAULT_APP_ID) === options.appId
+        );
+      }
+      filtered.sort(
         (a, b) => b.updatedAt - a.updatedAt || b.createdAt - a.createdAt
       );
-      return records.map(toSummary);
+      return filtered.map(toSummary);
     },
 
     async get(id) {
@@ -476,6 +512,7 @@ export function createSessionStore(opts: { dir: string }): SessionStore {
       const record = applyOptionalFields(
         {
           id: `sess_${crypto.randomBytes(4).toString("hex")}`,
+          appId: fields.appId ?? DEFAULT_APP_ID,
           title: fields.title ?? "新建分析会话",
           createdAt: fields.createdAt ?? now,
           updatedAt: fields.updatedAt ?? now,
@@ -499,6 +536,7 @@ export function createSessionStore(opts: { dir: string }): SessionStore {
       if (!verdict.ok) return verdict;
       const fields = verdict.value;
       if (
+        fields.appId === undefined &&
         fields.title === undefined &&
         fields.messages === undefined &&
         fields.enabledSources === undefined &&

@@ -1494,6 +1494,40 @@ describe("finish_task 服务端不变量（WS-5）", () => {
   });
 });
 
+describe("多应用生态：Prompt 与工具隔离", () => {
+  it("当 appId 为通用助手 general 时，采用 resolveAppPrompt 提示词且不装配数据库工具", async () => {
+    vi.mocked(streamText).mockImplementation(() => streamResult({}) as never);
+    const manager = await makeFakeManager();
+    const resolveAppPrompt = vi.fn().mockImplementation((appId) => {
+      if (appId === "general") return "你是一位通用智能助手，专注于编程与写作。";
+      return undefined;
+    });
+
+    const POST = createAnalyzeHandler({
+      datasources: manager,
+      resolveAppPrompt,
+    });
+
+    await POST(
+      makeRequest({
+        appId: "general",
+        messages: [{ role: "user", content: "帮我重构这段代码" }],
+        apiKey: "test-key",
+      })
+    );
+
+    expect(resolveAppPrompt).toHaveBeenCalledWith("general", expect.any(Object));
+    const arg = vi.mocked(streamText).mock.calls[0][0];
+    expect(arg.system).toContain("你是一位通用智能助手，专注于编程与写作。");
+    // 不应含有默认数据分析的 SQL / 表结构要求
+    expect(arg.system).not.toContain("## 认证口径（Certified Queries）");
+    // 数据库工具不被装配
+    expect(arg.tools?.execute_sql).toBeUndefined();
+    expect(arg.tools?.query_rows).toBeUndefined();
+  });
+});
+
+
 describe("Provider 韧性层 fallback 链（WS-9）", () => {
   const savedEnv: Record<string, string | undefined> = {};
   const ENV_KEYS = [

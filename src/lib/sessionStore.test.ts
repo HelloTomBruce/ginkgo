@@ -302,3 +302,52 @@ describe("validateSessionFields 校验边界", () => {
     expect(got?.messages[0]).toEqual(withParts);
   });
 });
+
+describe("appId 应用归属与隔离", () => {
+  it("缺省创建时自动打上 analytics 应用标记", async () => {
+    const res = await store.create({ title: "普通分析会话" });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.record.appId).toBe("analytics");
+
+    const read = await store.get(res.record.id);
+    expect(read?.appId).toBe("analytics");
+  });
+
+  it("支持指定 appId 创建并持久化", async () => {
+    const res = await store.create({ title: "研发效能会话", appId: "devops" });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.record.appId).toBe("devops");
+
+    const read = await store.get(res.record.id);
+    expect(read?.appId).toBe("devops");
+  });
+
+  it("非法格式 appId 校验拦截", async () => {
+    const bad1 = await store.create({ appId: "bad space app" });
+    expect(bad1.ok).toBe(false);
+
+    const bad2 = await store.create({ appId: "a".repeat(70) });
+    expect(bad2.ok).toBe(false);
+  });
+
+  it("list 支持按 appId 隔离过滤", async () => {
+    await store.create({ title: "分析 1", appId: "analytics" });
+    await store.create({ title: "分析 2", appId: "analytics" });
+    await store.create({ title: "研发 1", appId: "devops" });
+
+    const all = await store.list();
+    expect(all.length).toBe(3);
+
+    const analyticsList = await store.list({ appId: "analytics" });
+    expect(analyticsList.length).toBe(2);
+    expect(analyticsList.every((s) => s.appId === "analytics")).toBe(true);
+
+    const devopsList = await store.list({ appId: "devops" });
+    expect(devopsList.length).toBe(1);
+    expect(devopsList[0].appId).toBe("devops");
+    expect(devopsList[0].title).toBe("研发 1");
+  });
+});
+

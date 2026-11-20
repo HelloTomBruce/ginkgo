@@ -25,10 +25,15 @@ export interface SessionListResult {
   activeId: string | null;
 }
 
-/** 拉取会话摘要列表 + 活跃指针；失败返回 null */
-export async function fetchSessionList(): Promise<SessionListResult | null> {
+/** 拉取会话摘要列表 + 活跃指针；失败返回 null（支持按 appId 过滤） */
+export async function fetchSessionList(options?: {
+  appId?: string;
+}): Promise<SessionListResult | null> {
   try {
-    const res = await fetch("/api/sessions", {
+    const url = options?.appId
+      ? `/api/sessions?appId=${encodeURIComponent(options.appId)}`
+      : "/api/sessions";
+    const res = await fetch(url, {
       headers: { ...authHeaders() },
       cache: "no-store",
     });
@@ -63,6 +68,7 @@ export async function fetchSession(id: string): Promise<SessionRecord | null> {
 }
 
 export interface CreateSessionInput {
+  appId?: string;
   title?: string;
   messages?: SessionRecord["messages"];
   enabledSources?: string[];
@@ -288,6 +294,7 @@ export function ensureSessionsReady(
           sessions: [
             {
               id: created.id,
+              appId: created.appId ?? "analytics",
               title: created.title,
               createdAt: created.createdAt,
               updatedAt: created.updatedAt,

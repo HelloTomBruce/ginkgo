@@ -8,6 +8,7 @@ import { datasources } from "@/lib/datasources";
 import { getMcpManager, loadMcpServers } from "@/lib/mcpStore";
 import { createAppMethodology } from "@/lib/methodologyLoader";
 import { sessionStore } from "@/lib/sessionStore";
+import { appRegistry } from "@/lib/apps/registry";
 
 /**
  * WS-10 鉴权接缝桩：当前应用无成熟认证体系，开发模式全部放行并归入匿名租户
@@ -47,6 +48,19 @@ export const POST = createAnalyzeHandler({
     async updateContext(sessionId, patch) {
       await sessionStore.update(sessionId, { context: patch });
     },
+  },
+  resolveAppPrompt: async (appId, ctx) => {
+    // 数据分析保持原有深度编排（SQL探查、指标计算与认证口径）
+    if (appId === "analytics") return undefined;
+    const app = appRegistry.get(appId);
+    if (app?.server?.buildSystemPrompt) {
+      return app.server.buildSystemPrompt({ mode: ctx.mode, messages: ctx.messages });
+    }
+    return undefined;
+  },
+  isDataApp: (appId) => {
+    const app = appRegistry.get(appId);
+    return app?.server?.requiresDataTools ?? (appId === "analytics");
   },
   telemetry: compositeSink(createConsoleSink(), metrics.sink),
 });

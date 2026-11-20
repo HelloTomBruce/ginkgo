@@ -1,0 +1,26 @@
+{
+  "name": "@openui-apps/analytics",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./client": "./src/client/index.ts"
+  },
+  "dependencies": {
+    "@openui-analytics/app-sdk": "workspace:*",
+    "@openui-analytics/chart-spec": "workspace:*",
+    "@openui-analytics/components": "workspace:*",
+    "@openui-analytics/datasources": "workspace:*",
+    "@openui-analytics/methodology": "workspace:*",
+    "lucide-react": "^1.73.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "typescript": "^5",
+    "vitest": "^5.1.0"
+  }
+}
