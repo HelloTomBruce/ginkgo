@@ -195,6 +195,16 @@ export function ChatSidebar({
       if (res.ok) {
         toast(`已删除工作区: ${ws.name}`, "success");
         await fetchWorkspaces();
+        // 如果当前会话属于被删除的工作区，平滑切换到其他会话或新建默认会话
+        const curSession = sessions.find((s) => s.id === currentSessionId);
+        if (curSession?.workspaceId === ws.id) {
+          const fallbackSession = sessions.find((s) => s.workspaceId !== ws.id);
+          if (fallbackSession) {
+            onSelectSession(fallbackSession.id);
+          } else {
+            onCreateNewChat({ workspaceId: "ws_default" });
+          }
+        }
       } else {
         const data = await res.json().catch(() => ({}));
         toast(data.error || "删除工作区失败", "error");
@@ -239,7 +249,7 @@ export function ChatSidebar({
     return sessions.filter((s) => s.title.toLowerCase().includes(q));
   }, [sessions, sessionSearch]);
 
-  // 会话按工作区归类分组
+  // 会话按工作区归类分组（若会话绑定的工作区已被删除，自动安全归入默认工作区，防止历史孤儿不可见）
   const sessionsByWorkspace = useMemo(() => {
     const map = new Map<string, SessionSummary[]>();
     for (const ws of workspaces) {
@@ -249,8 +259,9 @@ export function ChatSidebar({
     if (!map.has("ws_default")) {
       map.set("ws_default", []);
     }
+    const validWsIds = new Set(workspaces.map((w) => w.id));
     for (const s of filteredSessions) {
-      const wsId = s.workspaceId || "ws_default";
+      const wsId = s.workspaceId && validWsIds.has(s.workspaceId) ? s.workspaceId : "ws_default";
       if (!map.has(wsId)) {
         map.set(wsId, []);
       }
@@ -258,6 +269,12 @@ export function ChatSidebar({
     }
     return map;
   }, [workspaces, filteredSessions]);
+
+  // 当前活跃会话所属的工作区 ID，供顶部「新建会话」时自然继承
+  const currentSessionWorkspaceId = useMemo(() => {
+    const active = sessions.find((s) => s.id === currentSessionId);
+    return active?.workspaceId;
+  }, [sessions, currentSessionId]);
 
   return (
     <aside className="w-72 border-r border-border bg-card flex flex-col shrink-0">
@@ -272,7 +289,7 @@ export function ChatSidebar({
       {/* 顶部操作：新建会话与新建工作区 */}
       <div className="p-3 border-b border-border-subtle flex items-center gap-2">
         <button
-          onClick={() => onCreateNewChat()}
+          onClick={() => onCreateNewChat({ workspaceId: currentSessionWorkspaceId })}
           className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-foreground hover:bg-foreground-strong text-background text-xs font-medium shadow-2xs active:scale-[0.99] transition-all"
         >
           <Plus className="w-4 h-4" />

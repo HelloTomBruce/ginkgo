@@ -53,6 +53,15 @@ export const DEFAULT_WORKSPACE_IGNORE_PATTERNS = new Set([
   "Thumbs.db",
 ]);
 
+const BINARY_EXTENSIONS = new Set([
+  ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".bmp",
+  ".pdf", ".zip", ".tar", ".gz", ".7z", ".rar",
+  ".woff", ".woff2", ".ttf", ".eot",
+  ".mp3", ".mp4", ".mov", ".wasm", ".exe", ".bin",
+]);
+
+const MAX_SCAN_ITEMS = 1000;
+
 interface WorkspaceFileItem {
   name: string;
   path: string;
@@ -89,11 +98,32 @@ export async function GET(req: Request) {
 
     // 1. 若指定了 filePath，读取文件内容
     if (filePath) {
+      const ext = path.extname(filePath).toLowerCase();
+      if (BINARY_EXTENSIONS.has(ext)) {
+        return NextResponse.json({
+          path: filePath,
+          size: 0,
+          updatedAt: Date.now(),
+          content: "[二进制文件，暂不支持纯文本预览]",
+          isBinary: true,
+        });
+      }
+
       const safeFile = resolveSafeWorkspacePath(ws.sandboxDir, filePath);
       try {
         const stat = await fs.stat(safeFile);
         if (!stat.isFile()) {
           return NextResponse.json({ error: "目标路径不是普通文件" }, { status: 400 });
+        }
+        // 文件大小超过 2MB 时避免直接加载到内存
+        if (stat.size > 2 * 1024 * 1024) {
+          return NextResponse.json({
+            path: filePath,
+            size: stat.size,
+            updatedAt: stat.mtimeMs,
+            content: `[文件过大 (${Math.round(stat.size / 1024)} KB)，超出工作台在线预览限制 (2MB)]`,
+            isBinary: false,
+          });
         }
         const content = await fs.readFile(safeFile, "utf-8");
         return NextResponse.json({
@@ -107,18 +137,21 @@ export async function GET(req: Request) {
       }
     }
 
-    // 2. 未指定 filePath，扫描工作区文件树
+    // 2. 未指定 filePath，扫描工作区文件树（带条目熔断保护）
+    let totalItems = 0;
     async function scan(currentDir: string, depth = 1): Promise<WorkspaceFileItem[]> {
-      if (depth > 8) return [];
+      if (depth > 8 || totalItems >= MAX_SCAN_ITEMS) return [];
       const dirEntries = await fs.readdir(currentDir, { withFileTypes: true }).catch(() => []);
       const items: WorkspaceFileItem[] = [];
 
       for (const entry of dirEntries) {
+        if (totalItems >= MAX_SCAN_ITEMS) break;
         if (DEFAULT_WORKSPACE_IGNORE_PATTERNS.has(entry.name)) continue;
         const full = path.join(currentDir, entry.name);
         const rel = path.relative(ws.sandboxDir, full);
 
         if (entry.isDirectory()) {
+          totalItems++;
           items.push({
             name: entry.name,
             path: rel,
@@ -128,6 +161,7 @@ export async function GET(req: Request) {
           const sub = await scan(full, depth + 1);
           items.push(...sub);
         } else if (entry.isFile()) {
+          totalItems++;
           const stat = await fs.stat(full).catch(() => null);
           items.push({
             name: entry.name,
@@ -147,6 +181,7 @@ export async function GET(req: Request) {
       sessionId,
       sandboxDir: ws.sandboxDir,
       count: files.length,
+      truncated: totalItems >= MAX_SCAN_ITEMS,
       files,
     });
   } catch (err) {

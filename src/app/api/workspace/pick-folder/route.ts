@@ -19,8 +19,8 @@ export async function POST(req: Request) {
     let folderPath: string | null = null;
 
     if (os.platform() === "darwin") {
-      // macOS: 调用 AppleScript 唤起系统 Finder 文件夹选择对话框
-      const script = `osascript -e 'POSIX path of (choose folder with prompt "选择工作区工程目录")'`;
+      // macOS: 强制激活置顶系统选择器窗口，防止被浏览器窗口遮挡
+      const script = `osascript -e 'tell application "System Events" to activate' -e 'POSIX path of (choose folder with prompt "选择工作区工程目录")'`;
       try {
         const { stdout } = await execAsync(script);
         const picked = stdout.trim();

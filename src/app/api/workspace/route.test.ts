@@ -77,4 +77,15 @@ describe("GET /api/workspace", () => {
     expect(filePaths.some((p: string) => p.includes("node_modules"))).toBe(false);
     expect(filePaths.some((p: string) => p.includes("dist"))).toBe(false);
   });
+
+  it("对二进制文件返回预览占位，避免 utf-8 乱码", async () => {
+    const req = new Request(
+      "http://localhost/api/workspace?appId=general&sessionId=test_ws_api&filePath=icon.png"
+    );
+    const res = await GET(req);
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.isBinary).toBe(true);
+    expect(data.content).toContain("二进制文件");
+  });
 });
