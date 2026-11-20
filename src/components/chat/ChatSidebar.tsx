@@ -26,6 +26,7 @@ import {
   FolderPlus,
   Box,
   ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 import type { SessionSummary } from "@/lib/sessionStore";
 import type { WorkspaceRecord } from "@/lib/workspaceStore";
@@ -149,6 +150,7 @@ export function ChatSidebar({
 
   // 工作区状态与折叠管理
   const [workspaces, setWorkspaces] = useState<WorkspaceRecord[]>([]);
+  const [collapsedWorkspaces, setCollapsedWorkspaces] = useState<Record<string, boolean>>({});
   const [expandedWorkspaces, setExpandedWorkspaces] = useState<Record<string, boolean>>({});
   const [isPickingFolder, setIsPickingFolder] = useState(false);
 
@@ -179,6 +181,28 @@ export function ChatSidebar({
       isCancelled = true;
     };
   }, [fetchWorkspaces]);
+
+  // 删除自定义工作区
+  const handleDeleteWorkspace = async (e: React.MouseEvent, ws: WorkspaceRecord) => {
+    e.stopPropagation();
+    if (typeof window !== "undefined" && !window.confirm(`确定删除工作区「${ws.name}」吗？`)) {
+      return;
+    }
+    try {
+      const res = await fetch(`/api/workspaces?id=${encodeURIComponent(ws.id)}`, {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        toast(`已删除工作区: ${ws.name}`, "success");
+        await fetchWorkspaces();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        toast(data.error || "删除工作区失败", "error");
+      }
+    } catch {
+      toast("删除工作区请求失败", "error");
+    }
+  };
 
   // 点击新建工作区：调用系统原生 Finder 文件夹选择对话框
   const handlePickFolder = async () => {
@@ -349,19 +373,33 @@ export function ChatSidebar({
                 // 如果搜索中且该工作区无匹配会话，跳过展示
                 if (sessionSearch.trim() && groupSessions.length === 0) return null;
 
+                const isCollapsed = Boolean(collapsedWorkspaces[ws.id]);
                 const isExpanded = Boolean(expandedWorkspaces[ws.id]);
                 const visibleSessions = isExpanded
                   ? groupSessions
                   : groupSessions.slice(0, 5);
 
                 return (
-                  <div key={ws.id} className="space-y-1">
-                    {/* 工作区分组头 */}
-                    <div className="flex items-center justify-between px-2 py-1 text-xs text-foreground-subtle group rounded-md hover:bg-muted/40 transition-colors">
+                  <div key={ws.id} className="space-y-0.5">
+                    {/* 工作区分组头：点击整行可折叠展开 */}
+                    <div
+                      onClick={() =>
+                        setCollapsedWorkspaces((prev) => ({
+                          ...prev,
+                          [ws.id]: !prev[ws.id],
+                        }))
+                      }
+                      className="flex items-center justify-between px-1.5 py-1 text-xs text-foreground-subtle group rounded-md hover:bg-muted/60 cursor-pointer select-none transition-colors"
+                    >
                       <div
                         className="flex items-center gap-1.5 min-w-0 flex-1 truncate"
                         title={ws.path ? `本地物理工程目录: ${ws.path}` : "默认沙箱环境"}
                       >
+                        <ChevronRight
+                          className={`w-3.5 h-3.5 text-foreground-faint shrink-0 transition-transform ${
+                            isCollapsed ? "" : "rotate-90"
+                          }`}
+                        />
                         {ws.path ? (
                           <Folder className="w-3.5 h-3.5 text-brand-fg shrink-0" />
                         ) : (
@@ -375,65 +413,83 @@ export function ChatSidebar({
                         </span>
                       </div>
 
-                      <button
-                        type="button"
-                        onClick={() => onCreateNewChat({ workspaceId: ws.id })}
-                        className="opacity-0 group-hover:opacity-100 p-1 hover:bg-muted rounded text-foreground-subtle hover:text-foreground transition-all shrink-0"
-                        title={`在「${ws.name}」下新建会话`}
+                      <div
+                        className="flex items-center gap-0.5 shrink-0"
+                        onClick={(e) => e.stopPropagation()}
                       >
-                        <Plus className="w-3 h-3" />
-                      </button>
-                    </div>
-
-                    {/* 所属会话列表 */}
-                    <div className="space-y-0.5 pl-1.5">
-                      {groupSessions.length === 0 ? (
-                        <div className="px-3 py-1 text-[11px] text-foreground-faint">
-                          暂无会话
-                        </div>
-                      ) : (
-                        visibleSessions.map((session) => (
-                          <SessionListItem
-                            key={session.id}
-                            session={session}
-                            isActive={session.id === currentSessionId}
-                            isEditing={editingSessionId === session.id}
-                            editingTitleText={editingTitleText}
-                            onSelect={onSelectSession}
-                            onStartRename={onStartRename}
-                            onSaveRename={onSaveRename}
-                            onDelete={onDeleteSession}
-                            onEditTitleChange={onEditTitleChange}
-                            onCancelEdit={onCancelEdit}
-                          />
-                        ))
-                      )}
-
-                      {/* 超过 5 条自动折叠，展示全部操作 */}
-                      {groupSessions.length > 5 && (
                         <button
                           type="button"
-                          onClick={() =>
-                            setExpandedWorkspaces((prev) => ({
-                              ...prev,
-                              [ws.id]: !prev[ws.id],
-                            }))
-                          }
-                          className="w-full text-center py-1 text-[11px] text-foreground-subtle hover:text-foreground hover:bg-muted/60 rounded transition-colors flex items-center justify-center gap-1"
+                          onClick={() => onCreateNewChat({ workspaceId: ws.id })}
+                          className="opacity-0 group-hover:opacity-100 p-1 hover:bg-muted rounded text-foreground-subtle hover:text-foreground transition-all"
+                          title={`在「${ws.name}」下新建会话`}
                         >
-                          <span>
-                            {isExpanded
-                              ? "收起部分会话"
-                              : `展示全部 (共 ${groupSessions.length} 条)`}
-                          </span>
-                          <ChevronDown
-                            className={`w-3 h-3 transition-transform ${
-                              isExpanded ? "rotate-180" : ""
-                            }`}
-                          />
+                          <Plus className="w-3 h-3" />
                         </button>
-                      )}
+
+                        {ws.id !== "ws_default" && (
+                          <button
+                            type="button"
+                            onClick={(e) => handleDeleteWorkspace(e, ws)}
+                            className="opacity-0 group-hover:opacity-100 p-1 hover:bg-danger-soft rounded text-foreground-faint hover:text-danger-fg transition-all"
+                            title={`删除工作区「${ws.name}」`}
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        )}
+                      </div>
                     </div>
+
+                    {/* 所属会话列表（未折叠时展示） */}
+                    {!isCollapsed && (
+                      <div className="space-y-0.5 pl-2">
+                        {groupSessions.length === 0 ? (
+                          <div className="px-3 py-1 text-[11px] text-foreground-faint">
+                            暂无会话
+                          </div>
+                        ) : (
+                          visibleSessions.map((session) => (
+                            <SessionListItem
+                              key={session.id}
+                              session={session}
+                              isActive={session.id === currentSessionId}
+                              isEditing={editingSessionId === session.id}
+                              editingTitleText={editingTitleText}
+                              onSelect={onSelectSession}
+                              onStartRename={onStartRename}
+                              onSaveRename={onSaveRename}
+                              onDelete={onDeleteSession}
+                              onEditTitleChange={onEditTitleChange}
+                              onCancelEdit={onCancelEdit}
+                            />
+                          ))
+                        )}
+
+                        {/* 超过 5 条自动折叠，展示全部操作 */}
+                        {groupSessions.length > 5 && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setExpandedWorkspaces((prev) => ({
+                                ...prev,
+                                [ws.id]: !prev[ws.id],
+                              }))
+                            }
+                            className="w-full text-center py-1 text-[11px] text-foreground-subtle hover:text-foreground hover:bg-muted/60 rounded transition-colors flex items-center justify-center gap-1"
+                          >
+                            <span>
+                              {isExpanded
+                                ? "收起部分会话"
+                                : `展示全部 (共 ${groupSessions.length} 条)`}
+                            </span>
+                            <ChevronDown
+                              className={`w-3 h-3 transition-transform ${
+                                isExpanded ? "rotate-180" : ""
+                              }`}
+                            />
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
                 );
               })

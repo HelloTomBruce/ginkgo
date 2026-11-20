@@ -27,3 +27,26 @@ export async function POST(req: Request) {
     );
   }
 }
+
+export async function DELETE(req: Request) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get("id");
+    if (!id) {
+      return NextResponse.json({ error: "缺少工作区 id" }, { status: 400 });
+    }
+    if (id === "ws_default") {
+      return NextResponse.json({ error: "默认工作区不可删除" }, { status: 400 });
+    }
+    const removed = await workspaceStore.remove(id);
+    if (!removed) {
+      return NextResponse.json({ error: "工作区不存在" }, { status: 404 });
+    }
+    return NextResponse.json({ success: true });
+  } catch (err) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "删除工作区失败" },
+      { status: 500 }
+    );
+  }
+}

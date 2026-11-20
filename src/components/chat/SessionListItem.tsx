@@ -49,13 +49,13 @@ export function SessionListItem({
   return (
     <div
       onClick={() => onSelect(session.id)}
-      className={`group relative flex items-center justify-between p-2.5 rounded-xl text-xs cursor-pointer transition-all border ${
+      className={`group relative flex items-center justify-between py-1.5 px-2 rounded-lg text-xs cursor-pointer transition-all border ${
         isActive
           ? "bg-info-soft/90 border-info-border text-info-fg-strong font-medium"
           : "border-transparent hover:bg-muted/80 text-foreground-subtle"
       }`}
     >
-      <div className="flex items-center gap-2 min-w-0 flex-1 pr-1">
+      <div className="flex items-center gap-1.5 min-w-0 flex-1 pr-1">
         <MessageSquare
           className={`w-3.5 h-3.5 shrink-0 ${
             isActive ? "text-info-fg" : "text-foreground-faint"
@@ -76,10 +76,10 @@ export function SessionListItem({
           />
         ) : (
           <div className="min-w-0 flex-1">
-            <div className="truncate text-xs">{session.title}</div>
-            <div className="text-[10px] text-foreground-faint mt-0.5 flex items-center gap-1.5">
+            <div className="truncate text-xs leading-snug">{session.title}</div>
+            <div className="text-[10px] text-foreground-faint leading-none mt-0.5 flex items-center gap-1">
               <span>{formatSessionTime(session.updatedAt)}</span>
-              <span>•</span>
+              <span>·</span>
               <span>{session.messageCount ?? 1} 条消息</span>
             </div>
           </div>
@@ -87,7 +87,7 @@ export function SessionListItem({
       </div>
 
       {/* 悬浮操作按钮 */}
-      <div className="flex items-center gap-1 shrink-0">
+      <div className="flex items-center gap-0.5 shrink-0">
         {isEditing ? (
           <Hint label="保存">
             <button
@@ -107,7 +107,7 @@ export function SessionListItem({
               <button
                 onClick={(e) => onStartRename(e, session)}
                 aria-label="重命名会话"
-                className="p-1 opacity-0 group-hover:opacity-100 hover:bg-surface-raised rounded text-foreground-faint hover:text-foreground-subtle transition-opacity"
+                className="p-0.5 opacity-0 group-hover:opacity-100 hover:bg-surface-raised rounded text-foreground-faint hover:text-foreground-subtle transition-opacity"
               >
                 <Edit3 className="w-3 h-3" />
               </button>
@@ -116,7 +116,7 @@ export function SessionListItem({
               <button
                 onClick={(e) => onDelete(e, session.id)}
                 aria-label="删除会话"
-                className="p-1 opacity-0 group-hover:opacity-100 hover:bg-danger-soft rounded text-foreground-faint hover:text-danger-fg transition-opacity"
+                className="p-0.5 opacity-0 group-hover:opacity-100 hover:bg-danger-soft rounded text-foreground-faint hover:text-danger-fg transition-opacity"
               >
                 <Trash2 className="w-3 h-3" />
               </button>
