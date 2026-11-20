@@ -5,7 +5,7 @@ import React from "react";
 import "@testing-library/jest-dom/vitest";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor, fireEvent, cleanup } from "@testing-library/react";
-import { ArtifactViewer } from "./ArtifactViewer";
+import { ArtifactViewer, buildFileTree } from "./ArtifactViewer";
 
 describe("ArtifactViewer", () => {
   beforeEach(() => {
@@ -14,6 +14,29 @@ describe("ArtifactViewer", () => {
 
   afterEach(() => {
     cleanup();
+  });
+
+  it("buildFileTree: 组装层级树且目录在前按字母排序", () => {
+    const rawItems = [
+      { name: "b.ts", path: "src/b.ts", type: "file" as const, updatedAt: 1 },
+      { name: "a.ts", path: "src/a.ts", type: "file" as const, updatedAt: 1 },
+      { name: "components", path: "src/components", type: "directory" as const, updatedAt: 1 },
+      { name: "Button.tsx", path: "src/components/Button.tsx", type: "file" as const, updatedAt: 1 },
+      { name: "README.md", path: "README.md", type: "file" as const, updatedAt: 1 },
+    ];
+
+    const tree = buildFileTree(rawItems);
+    expect(tree.length).toBe(2); // src 目录与 README.md
+    expect(tree[0].name).toBe("src");
+    expect(tree[0].type).toBe("directory");
+    expect(tree[1].name).toBe("README.md");
+
+    // src 内部：components 目录在前，然后是 a.ts, b.ts
+    const srcChildren = tree[0].children;
+    expect(srcChildren[0].name).toBe("components");
+    expect(srcChildren[0].type).toBe("directory");
+    expect(srcChildren[1].name).toBe("a.ts");
+    expect(srcChildren[2].name).toBe("b.ts");
   });
 
   it("初始渲染展示产物标题与空态", async () => {
@@ -93,5 +116,41 @@ describe("ArtifactViewer", () => {
     const expandBtn = screen.getByTitle("全屏最大化");
     fireEvent.click(expandBtn);
     expect(handleToggleExpand).toHaveBeenCalledTimes(1);
+  });
+
+  it("点击文件夹节点可折叠与展开其子项", async () => {
+    vi.spyOn(global, "fetch").mockImplementation(async (url) => {
+      const u = String(url);
+      if (u.includes("/api/workspace")) {
+        return new Response(
+          JSON.stringify({
+            files: [
+              { name: "src", path: "src", type: "directory", updatedAt: 1 },
+              { name: "index.ts", path: "src/index.ts", type: "file", updatedAt: 1 },
+            ],
+          }),
+          { status: 200 }
+        );
+      }
+      return new Response(null, { status: 404 });
+    });
+
+    render(<ArtifactViewer data={null} sessionId="sess_tree" onClose={vi.fn()} />);
+
+    await waitFor(() => {
+      expect(screen.getByText("src")).toBeInTheDocument();
+      expect(screen.getByText("index.ts")).toBeInTheDocument();
+    });
+
+    // 点击 src 文件夹折叠
+    const folderEl = screen.getByText("src");
+    fireEvent.click(folderEl);
+
+    // 子节点 index.ts 被隐藏
+    expect(screen.queryByText("index.ts")).toBeNull();
+
+    // 再次点击展开
+    fireEvent.click(folderEl);
+    expect(screen.getByText("index.ts")).toBeInTheDocument();
   });
 });

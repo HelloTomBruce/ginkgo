@@ -5,7 +5,53 @@ import { resolveWorkspaceContext, resolveSafeWorkspacePath } from "@/lib/workspa
 import { sessionStore } from "@/lib/sessionStore";
 import { workspaceStore } from "@/lib/workspaceStore";
 
-const IGNORE_DIRS = new Set([".git", "node_modules", ".next", "dist", "build", ".cache", ".DS_Store"]);
+export const DEFAULT_WORKSPACE_IGNORE_PATTERNS = new Set([
+  // 1. 依赖与包管理 (Node / Python / Go / PHP / iOS)
+  "node_modules",
+  ".pnpm-store",
+  ".yarn",
+  "vendor",
+  "Pods",
+  ".venv",
+  "venv",
+  "env",
+  "virtualenv",
+  "__pycache__",
+  ".pytest_cache",
+  ".mypy_cache",
+  ".ruff_cache",
+
+  // 2. 构建产物与打包输出 (Next.js / Vite / Webpack / Rust / Java / .NET)
+  ".next",
+  ".nuxt",
+  ".output",
+  ".astro",
+  "dist",
+  "build",
+  "out",
+  "target",
+  "bin",
+  "obj",
+  ".turbo",
+  ".parcel-cache",
+
+  // 3. 版本控制与代码仓库元数据
+  ".git",
+  ".svn",
+  ".hg",
+
+  // 4. 测试与代码覆盖率报告
+  "coverage",
+  ".nyc_output",
+
+  // 5. IDE、系统杂项与本地临时缓存
+  ".idea",
+  ".cache",
+  "temp",
+  "tmp",
+  ".DS_Store",
+  "Thumbs.db",
+]);
 
 interface WorkspaceFileItem {
   name: string;
@@ -63,12 +109,12 @@ export async function GET(req: Request) {
 
     // 2. 未指定 filePath，扫描工作区文件树
     async function scan(currentDir: string, depth = 1): Promise<WorkspaceFileItem[]> {
-      if (depth > 4) return [];
+      if (depth > 8) return [];
       const dirEntries = await fs.readdir(currentDir, { withFileTypes: true }).catch(() => []);
       const items: WorkspaceFileItem[] = [];
 
       for (const entry of dirEntries) {
-        if (IGNORE_DIRS.has(entry.name)) continue;
+        if (DEFAULT_WORKSPACE_IGNORE_PATTERNS.has(entry.name)) continue;
         const full = path.join(currentDir, entry.name);
         const rel = path.relative(ws.sandboxDir, full);
 
