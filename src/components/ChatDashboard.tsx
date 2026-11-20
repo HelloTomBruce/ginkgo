@@ -518,9 +518,9 @@ export default function ChatDashboard() {
   // 探测所需的最新回调快照：reload/nextModeBody/authHeaders 的 identity 在流式期间
   // 随 messages 高频变化，若直接放进下方 effect 的 deps，每次重渲染都会重跑探测
   // → GET /api/analyze 刷屏。探测只需在「会话装载完成」时执行一次，回调经 ref 取最新。
-  const probeDepsRef = useRef({ reload, nextModeBody, authHeaders });
+  const probeDepsRef = useRef({ reload, nextModeBody, authHeaders, getMessages });
   useEffect(() => {
-    probeDepsRef.current = { reload, nextModeBody, authHeaders };
+    probeDepsRef.current = { reload, nextModeBody, authHeaders, getMessages };
   });
 
   useEffect(() => {
@@ -528,7 +528,7 @@ export default function ChatDashboard() {
     let cancelled = false;
     (async () => {
       try {
-        const { reload, nextModeBody, authHeaders } = probeDepsRef.current;
+        const { reload, nextModeBody, authHeaders, getMessages } = probeDepsRef.current;
         const res = await fetch(
           `/api/analyze?sessionId=${encodeURIComponent(currentSessionId)}`,
           { headers: { ...authHeaders() } }
@@ -543,6 +543,14 @@ export default function ChatDashboard() {
         // running：在途任务无缝续接；hasTask（终态 30s 保留窗）：脱钩期间后台
         // 跑完的任务重放收尾并落盘，否则尾巴内容随清理丢失
         if (!data.running && !data.hasTask) return;
+
+        // 若任务非 running 且本地最新一条已是助手完整回复，无需二次拉取重连
+        const currentMsgs = getMessages();
+        const lastMsg = currentMsgs[currentMsgs.length - 1];
+        const hasUser = currentMsgs.some((m) => m.role === "user");
+        if (!data.running && hasUser && lastMsg?.role === "assistant" && lastMsg.content) {
+          return;
+        }
 
         streamingSessionIdRef.current = currentSessionId;
         const reloadPromise = reload({ body: { ...nextModeBody(), reconnect: true } });

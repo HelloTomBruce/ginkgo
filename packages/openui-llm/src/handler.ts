@@ -1499,8 +1499,20 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
                       err instanceof Error ? err.message : String(err)
                     }`,
                   });
+                  throw err;
                 }
-                throw err;
+                const rawErrMsg = err instanceof Error ? err.message : String(err);
+                telemetry.emit({
+                  type: "error",
+                  runId,
+                  sessionId: sessionIdForEvents,
+                  code: "PROVIDER_CALL_FAILED",
+                  detail: `模型 [${spec.model}] 调用失败: ${rawErrMsg}`,
+                });
+                const friendlyMsg = `⚠️ **大模型服务响应异常**\n\n- **所用模型**：\`${spec.model}\`\n- **异常详情**：\`${rawErrMsg}\`\n\n> **排查建议**：\n> 1. 请点击右上角「设置」进入「模型配置」，检查所填写的 **模型名称**（如 \`${spec.model}\` 是否支持）、**API Key** 和 **Base URL**；\n> 2. 若使用 DeepSeek 官方服务，常用模型名为 \`deepseek-chat\` 或 \`deepseek-reasoner\`；\n> 3. 检查网络、代理或中转平台额度是否充足。修改配置后，您可以直接在下方继续提问。`;
+                dataStream.write(`0:${JSON.stringify(friendlyMsg)}\n`);
+                dataStream.write(`d:{"finishReason":"stop","usage":{"promptTokens":0,"completionTokens":0}}\n`);
+                return;
               }
               const next = modelChain[chainIndex + 1];
               telemetry.emit({
