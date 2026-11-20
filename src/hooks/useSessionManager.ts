@@ -53,6 +53,7 @@ function toSummaryLocal(record: SessionRecord): SessionSummary {
   return {
     id: record.id,
     appId: record.appId ?? "analytics",
+    ...(record.workspaceId !== undefined ? { workspaceId: record.workspaceId } : {}),
     title: record.title,
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
@@ -331,11 +332,12 @@ export function useSessionManager(options?: UseSessionManagerOptions) {
     []
   );
 
-  // 新建会话
-  const handleCreateNewChat = useCallback(async () => {
+  // 新建会话（可选绑定特定 workspaceId）
+  const handleCreateNewChat = useCallback(async (opts?: { workspaceId?: string }) => {
     const created = await createSessionApi({
       appId: currentAppId,
-      title: "新建分析会话",
+      ...(opts?.workspaceId ? { workspaceId: opts.workspaceId } : {}),
+      title: "新建会话",
       messages: [
         buildWelcome(),
       ] as unknown as SessionRecord["messages"],

@@ -10,6 +10,7 @@ import { createAppMethodology } from "@/lib/methodologyLoader";
 import { sessionStore } from "@/lib/sessionStore";
 import { appRegistry } from "@/lib/apps/registry";
 import { resolveWorkspaceContext } from "@/lib/workspaceResolver";
+import { workspaceStore } from "@/lib/workspaceStore";
 import { getGeneralTools } from "@openui-apps/general/server";
 
 /**
@@ -56,9 +57,18 @@ export const POST = createAnalyzeHandler({
     if (appId === "analytics") return undefined;
     const app = appRegistry.get(appId);
     if (app?.server?.buildSystemPrompt) {
+      let customRootDir: string | undefined;
+      if (ctx.sessionId) {
+        const sRecord = await sessionStore.get(ctx.sessionId);
+        if (sRecord?.workspaceId) {
+          const ws = await workspaceStore.get(sRecord.workspaceId);
+          if (ws?.path) customRootDir = ws.path;
+        }
+      }
       const workspace = await resolveWorkspaceContext({
         appId,
         sessionId: ctx.sessionId,
+        customRootDir,
       });
       return app.server.buildSystemPrompt({
         appId,
@@ -71,11 +81,20 @@ export const POST = createAnalyzeHandler({
     return undefined;
   },
   resolveAppTools: async (appId, ctx) => {
+    let customRootDir: string | undefined;
+    if (ctx.sessionId) {
+      const sRecord = await sessionStore.get(ctx.sessionId);
+      if (sRecord?.workspaceId) {
+        const ws = await workspaceStore.get(sRecord.workspaceId);
+        if (ws?.path) customRootDir = ws.path;
+      }
+    }
+    const workspace = await resolveWorkspaceContext({
+      appId,
+      sessionId: ctx.sessionId,
+      customRootDir,
+    });
     if (appId === "general") {
-      const workspace = await resolveWorkspaceContext({
-        appId,
-        sessionId: ctx.sessionId,
-      });
       return getGeneralTools({
         appId,
         sessionId: ctx.sessionId,
@@ -86,10 +105,6 @@ export const POST = createAnalyzeHandler({
     }
     const app = appRegistry.get(appId);
     if (!app?.server?.getTools) return undefined;
-    const workspace = await resolveWorkspaceContext({
-      appId,
-      sessionId: ctx.sessionId,
-    });
     const tools = await app.server.getTools({
       appId,
       sessionId: ctx.sessionId,

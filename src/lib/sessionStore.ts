@@ -71,12 +71,15 @@ export interface SessionRecord {
   context?: SessionContextMeta;
   /** 先出思路开关（Plan-first）；undefined = 默认开（true） */
   planMode?: boolean;
+  /** 所属工作区 ID；未指定时归入默认工作区 */
+  workspaceId?: string;
 }
 
 /** 列表摘要：不含 messages 全文 */
 export type SessionSummary = Omit<SessionRecord, "messages"> & {
   appId: string;
   messageCount: number;
+  workspaceId?: string;
 };
 
 export function toSummary(record: SessionRecord): SessionSummary {
@@ -86,6 +89,7 @@ export function toSummary(record: SessionRecord): SessionSummary {
     title: record.title,
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
+    ...(record.workspaceId !== undefined ? { workspaceId: record.workspaceId } : {}),
     ...(record.enabledSources !== undefined
       ? { enabledSources: record.enabledSources }
       : {}),
@@ -98,6 +102,7 @@ export function toSummary(record: SessionRecord): SessionSummary {
 /** 入参宽容（未经校验的 JSON body）；校验统一收敛在 validateSessionFields */
 export interface SessionWriteInput {
   appId?: unknown;
+  workspaceId?: unknown;
   title?: unknown;
   messages?: unknown;
   /** 数组 = 设置；null = 清除（恢复全选语义）；undefined = 不改动 */
@@ -112,6 +117,7 @@ export interface SessionWriteInput {
 
 interface ValidFields {
   appId?: string;
+  workspaceId?: string | null;
   title?: string;
   messages?: SessionMessage[];
   /** undefined = 未提供；null = 显式清除；数组 = 设置 */
@@ -257,6 +263,17 @@ export function validateSessionFields(
     }
   }
 
+  let workspaceId: string | null | undefined;
+  if (body.workspaceId === null) {
+    workspaceId = null;
+  } else if (body.workspaceId !== undefined && body.workspaceId !== "") {
+    if (typeof body.workspaceId !== "string") {
+      errors.push("workspaceId 必须是字符串或 null");
+    } else {
+      workspaceId = body.workspaceId.trim();
+    }
+  }
+
   let title: string | undefined;
   if (body.title !== undefined && body.title !== null && body.title !== "") {
     if (typeof body.title !== "string") {
@@ -340,6 +357,7 @@ export function validateSessionFields(
     ok: true,
     value: {
       ...(appId !== undefined ? { appId } : {}),
+      ...(workspaceId !== undefined ? { workspaceId } : {}),
       ...(title !== undefined ? { title } : {}),
       ...(messages !== undefined ? { messages } : {}),
       ...(enabledSources !== undefined ? { enabledSources } : {}),
@@ -471,6 +489,10 @@ export function createSessionStore(opts: { dir: string }): SessionStore {
     if (fields.enabledSources !== undefined) {
       if (fields.enabledSources === null) delete record.enabledSources;
       else record.enabledSources = fields.enabledSources;
+    }
+    if (fields.workspaceId !== undefined) {
+      if (fields.workspaceId === null) delete record.workspaceId;
+      else record.workspaceId = fields.workspaceId;
     }
     if (fields.context !== undefined) {
       if (fields.context === null) delete record.context;

@@ -349,5 +349,20 @@ describe("appId 应用归属与隔离", () => {
     expect(devopsList[0].appId).toBe("devops");
     expect(devopsList[0].title).toBe("研发 1");
   });
+
+  it("支持指定 workspaceId 创建并持久化", async () => {
+    const created = await store.create({
+      title: "工作区关联会话",
+      appId: "general",
+      workspaceId: "ws_custom_123",
+    });
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+    expect(created.record.workspaceId).toBe("ws_custom_123");
+
+    const list = await store.list();
+    const found = list.find((s) => s.id === created.record.id);
+    expect(found?.workspaceId).toBe("ws_custom_123");
+  });
 });
 

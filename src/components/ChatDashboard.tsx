@@ -600,11 +600,11 @@ export default function ChatDashboard() {
     [stopActiveStream, handleSelectSession, setData]
   );
 
-  const handleCreateNewChatSafe = useCallback(() => {
+  const handleCreateNewChatSafe = useCallback((opts?: { workspaceId?: string }) => {
     stopActiveStream({ silent: true });
     streamingSessionIdRef.current = null;
     setData(undefined);
-    void handleCreateNewChat();
+    void handleCreateNewChat(opts);
   }, [stopActiveStream, handleCreateNewChat, setData]);
 
   // 删除会话：删除【当前】会话时 hook 内部会切换到下一条会话（绕开 *Safe 包装），

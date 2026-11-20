@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { resolveWorkspaceContext, resolveSafeWorkspacePath } from "@/lib/workspaceResolver";
+import { sessionStore } from "@/lib/sessionStore";
+import { workspaceStore } from "@/lib/workspaceStore";
 
 const IGNORE_DIRS = new Set([".git", "node_modules", ".next", "dist", "build", ".cache", ".DS_Store"]);
 
@@ -26,7 +28,18 @@ export async function GET(req: Request) {
     const sessionId = searchParams.get("sessionId") || "default";
     const filePath = searchParams.get("filePath");
 
-    const ws = await resolveWorkspaceContext({ appId, sessionId });
+    let customRootDir: string | undefined;
+    if (sessionId && sessionId !== "default") {
+      const sessionRecord = await sessionStore.get(sessionId);
+      if (sessionRecord?.workspaceId) {
+        const wsRecord = await workspaceStore.get(sessionRecord.workspaceId);
+        if (wsRecord?.path) {
+          customRootDir = wsRecord.path;
+        }
+      }
+    }
+
+    const ws = await resolveWorkspaceContext({ appId, sessionId, customRootDir });
 
     // 1. 若指定了 filePath，读取文件内容
     if (filePath) {
