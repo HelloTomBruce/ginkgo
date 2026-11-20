@@ -10,6 +10,7 @@ import { createAppMethodology } from "@/lib/methodologyLoader";
 import { sessionStore } from "@/lib/sessionStore";
 import { appRegistry } from "@/lib/apps/registry";
 import { resolveWorkspaceContext } from "@/lib/workspaceResolver";
+import { getGeneralTools } from "@openui-apps/general/server";
 
 /**
  * WS-10 鉴权接缝桩：当前应用无成熟认证体系，开发模式全部放行并归入匿名租户
@@ -70,6 +71,19 @@ export const POST = createAnalyzeHandler({
     return undefined;
   },
   resolveAppTools: async (appId, ctx) => {
+    if (appId === "general") {
+      const workspace = await resolveWorkspaceContext({
+        appId,
+        sessionId: ctx.sessionId,
+      });
+      return getGeneralTools({
+        appId,
+        sessionId: ctx.sessionId,
+        workspace,
+        mode: ctx.mode,
+        messages: ctx.messages,
+      });
+    }
     const app = appRegistry.get(appId);
     if (!app?.server?.getTools) return undefined;
     const workspace = await resolveWorkspaceContext({
