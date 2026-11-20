@@ -26,7 +26,7 @@ function isSchemaCard(value: unknown): value is SchemaCard {
   return (
     typeof v.sourceId === "string" &&
     typeof v.generatedAt === "number" &&
-    (v.kind === "db-like" || v.kind === "mcp") &&
+    (v.kind === "db-like" || v.kind === "tools-only" || v.kind === "mcp") &&
     Array.isArray(v.tables) &&
     typeof v.truncated === "boolean"
   );

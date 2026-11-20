@@ -46,6 +46,12 @@ export {
   type AutoHealingMiddlewareOptions,
 } from "./pipeline/middlewares";
 
+export {
+  ExecutionBudgetController,
+  ExecutionBudgetExceededError,
+  type ExecutionBudgetConfig,
+} from "./pipeline/budgetController";
+
 // Graph & Human-in-the-Loop
 export {
   StateGraph,
@@ -190,3 +196,60 @@ export {
   type MCPToolCallResult,
   type MCPClientStatus,
 } from "./mcp";
+
+// Tokenizer & Estimators
+export {
+  HeuristicTokenizer,
+  estimateTextTokensHeuristic,
+  createTiktokenEstimator,
+  resolveEncodingForModel,
+  DEFAULT_TIKTOKEN_ENCODING,
+  type TokenizerEstimator,
+  type TiktokenEstimatorOptions,
+} from "./tokenizer";
+
+// Context Governance & Compaction Engine
+export {
+  ContextEngine,
+  computeContextBudget,
+  resolveContextWindow,
+  estimateMessageTokens,
+  estimateMessagesTokens,
+  projectMessagesWithPruning,
+  trimOrphanToolMessages,
+  serializeMessagesForSummary,
+  buildGenericSummaryPrompt,
+  DEFAULT_PRUNED_PLACEHOLDER,
+  DEFAULT_SUMMARY_MAX_TOKENS,
+  type ContextBudget,
+  type ProjectionResult,
+  type ContextEngineOptions,
+  type ProjectMessagesOptions,
+  type SummaryPromptOptions,
+} from "./context";
+
+// Tool Interceptors & Execution Aspects
+export {
+  composeToolInterceptors,
+  createTelemetryInterceptor,
+  createTimeoutInterceptor,
+  ToolTimeoutError,
+  type ToolExecutionContext,
+  type ToolInterceptor,
+  type TelemetryInterceptorOptions,
+} from "./tools";
+
+// Task Lifecycle & Dual-Termination Guardrails
+export {
+  createTerminationTool,
+  TaskLifecycleMachine,
+  type TerminationStatus,
+  type TerminationSignal,
+  type DeliverableAssertionContext,
+  type DeliverableAssertionResult,
+  type DeliverableAssertion,
+  type TerminationResolutionType,
+  type TaskTerminationResolution,
+  type TerminationToolOptions,
+  type TaskLifecycleMachineOptions,
+} from "./lifecycle";

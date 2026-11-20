@@ -343,9 +343,6 @@ importers:
       '@duckdb/node-api':
         specifier: 2.0.0-r.1
         version: 2.0.0-r.1
-      '@modelcontextprotocol/sdk':
-        specifier: ^1.32.1
-        version: 1.32.1(supports-color@7.2.0)(zod@4.6.7)
       ai:
         specifier: '*'
         version: 4.3.19(react@19.3.1)(zod@4.6.7)
@@ -402,6 +399,9 @@ importers:
       ioredis-mock:
         specifier: ^8.13.1
         version: 8.13.1(@types/ioredis-mock@8.2.8(ioredis@5.11.1(supports-color@7.2.0)))(ioredis@5.11.1(supports-color@7.2.0))
+      js-tiktoken:
+        specifier: ^1.0.21
+        version: 1.0.21
       typescript:
         specifier: ^5
         version: 5.9.3
@@ -451,9 +451,6 @@ importers:
       ioredis-mock:
         specifier: ^8.13.1
         version: 8.13.1(@types/ioredis-mock@8.2.8(ioredis@5.11.1(supports-color@7.2.0)))(ioredis@5.11.1(supports-color@7.2.0))
-      js-tiktoken:
-        specifier: ^1.0.21
-        version: 1.0.21
       typescript:
         specifier: ^5
         version: 5.9.3

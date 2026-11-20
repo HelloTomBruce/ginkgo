@@ -1,9 +1,9 @@
+import { createAnalyzeHandler } from "@openui-analytics/llm";
 import {
-  createAnalyzeHandler,
   compositeSink,
   createConsoleSink,
   createMetricsSink,
-} from "@openui-analytics/llm";
+} from "@openui-analytics/harness-core";
 import { datasources } from "@/lib/datasources";
 import { getMcpManager, loadMcpServers } from "@/lib/mcpStore";
 import { createAppMethodology } from "@/lib/methodologyLoader";

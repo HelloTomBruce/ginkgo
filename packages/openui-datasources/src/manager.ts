@@ -5,7 +5,7 @@ import { duckdbDialect } from "./connectors/db/duckdbDialect";
 import { createDbToolsConnection, type DbToolsConnection } from "./connectors/db/dbTools";
 import { QueryCacheManager } from "./gateway/queryCache";
 import { executeSqlWithGuards } from "./gateway/queryPipeline";
-import { McpGateway } from "./gateway/mcpGateway";
+import { QueryGateway } from "./gateway/queryGateway";
 import type { ExplainOptions } from "./gateway/types";
 import {
   readManifest,
@@ -15,7 +15,7 @@ import {
   type FileSourceManifest,
   type FileSourceUpload,
 } from "./connectors/file/fileStore";
-import { parseMcpToolResult } from "./parseToolResult";
+import { parseToolResult } from "./parseToolResult";
 import {
   collectSchemaCard,
   type SchemaCard,
@@ -61,13 +61,16 @@ export interface ActiveSourceSummary {
 
 export type McpConnection = DbToolsConnection;
 
-export interface McpToolBinding {
+export interface DatasourceToolBinding {
   name: string;
   originalName: string;
   description?: string;
   inputSchema?: unknown;
   call(args: Record<string, unknown>): Promise<unknown>;
 }
+
+/** 向后兼容别名 */
+export type McpToolBinding = DatasourceToolBinding;
 
 export interface DatasourceManager {
   readConfig(): DatasourcesConfig;
@@ -77,8 +80,8 @@ export interface DatasourceManager {
   delete(id: string): DatasourcesConfig;
   get(id: string): DynamicSourceConfig | undefined;
   list(): DataSourceDescriptor[];
-  connect(s: DynamicSourceConfig): Promise<McpConnection>;
-  tools(s: DynamicSourceConfig): Promise<McpToolBinding[]>;
+  connect(s: DynamicSourceConfig): Promise<DbToolsConnection>;
+  tools(s: DynamicSourceConfig): Promise<DatasourceToolBinding[]>;
   close(id: string): Promise<void>;
   health(s: DynamicSourceConfig): Promise<HealthResult>;
   resolveActive(ids: string[] | undefined): ActiveSourceSummary[];
@@ -92,7 +95,7 @@ export interface DatasourceManager {
   refreshSchemaCard(id: string): Promise<void>;
   getDialectClient?(id: string): { client: DbDialectClient; dbType: string } | undefined;
   getQueryCache?(): QueryCacheManager<unknown>;
-  gateway?: McpGateway;
+  gateway?: QueryGateway;
 }
 
 const DB_SOURCE_TOOLS = ["execute_sql", "list_tables", "describe_table"];
@@ -102,8 +105,8 @@ const SCHEMA_MISS_RE =
 
 interface ConnCacheEntry {
   key: string;
-  connection: McpConnection;
-  bindings?: McpToolBinding[];
+  connection: DbToolsConnection;
+  bindings?: DatasourceToolBinding[];
   dialectClient?: {
     client: DbDialectClient;
     dbType: string;
@@ -175,7 +178,7 @@ export function createDatasourceManager(
     args: Record<string, unknown>
   ): Promise<unknown> => {
     const res = await connection.callTool(tool, args);
-    return parseMcpToolResult(res, `schema-card ${tool}`);
+    return parseToolResult(res, `schema-card ${tool}`);
   };
 
   const buildCardForSource = async (
@@ -335,7 +338,7 @@ export function createDatasourceManager(
     return connection;
   }
 
-  async function tools(s: DynamicSourceConfig): Promise<McpToolBinding[]> {
+  async function tools(s: DynamicSourceConfig): Promise<DatasourceToolBinding[]> {
     const key = configKey(s);
     const cached = connCache.get(s.id);
     if (cached && cached.key === key && cached.bindings) {
@@ -345,7 +348,7 @@ export function createDatasourceManager(
     const conn = await connect(s);
     const rawTools = await conn.listTools();
 
-    const bindings: McpToolBinding[] = rawTools.map((t) => ({
+    const bindings: DatasourceToolBinding[] = rawTools.map((t) => ({
       name: `${s.id}_${t.name}`,
       originalName: t.name,
       description: t.description,
@@ -374,7 +377,7 @@ export function createDatasourceManager(
             execute: async () => {
               const res = await conn.callTool(t.name, args);
               try {
-                return parseMcpToolResult(res, `tool ${t.name}`);
+                return parseToolResult(res, `tool ${t.name}`);
               } catch (err) {
                 const message =
                   err instanceof Error ? err.message : String(err);
@@ -390,7 +393,7 @@ export function createDatasourceManager(
 
         const res = await conn.callTool(t.name, args);
         try {
-          return parseMcpToolResult(res, `tool ${t.name}`);
+          return parseToolResult(res, `tool ${t.name}`);
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           if (SCHEMA_MISS_RE.test(message)) {
@@ -542,7 +545,7 @@ export function createDatasourceManager(
     getQueryCache: () => queryCache,
   };
 
-  managerInstance.gateway = new McpGateway(
+  managerInstance.gateway = new QueryGateway(
     managerInstance,
     { explainOptions: opts.explainOptions },
     queryCache

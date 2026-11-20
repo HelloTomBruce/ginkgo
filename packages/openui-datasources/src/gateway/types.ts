@@ -80,7 +80,7 @@ export interface TableDetailResource {
   sampleRows: Record<string, unknown>[];
 }
 
-export interface McpGatewayConfig {
+export interface QueryGatewayConfig {
   /** 默认缓存 TTL，默认 15 分钟 (900,000 ms) */
   defaultCacheTtlMs?: number;
   /** 缓存容量最大条目数，默认 500 */
@@ -88,3 +88,5 @@ export interface McpGatewayConfig {
   /** 成本门禁默认配置 */
   explainOptions?: ExplainOptions;
 }
+
+export type McpGatewayConfig = QueryGatewayConfig;

@@ -30,11 +30,12 @@ export {
   type RenderCardOptions,
 } from "./schema/card";
 
-// MCP 连接器网关 (Gateway)
+// 数据源查询网关 (Gateway)
 export * from "./gateway/types";
 export * from "./gateway/explainGuard";
 export * from "./gateway/queryCache";
 export * from "./gateway/queryPipeline";
+export * from "./gateway/queryGateway";
 export * from "./gateway/mcpGateway";
 
 // Certified Queries 语义层与口径治理 (Certified)

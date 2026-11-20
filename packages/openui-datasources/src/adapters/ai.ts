@@ -1,5 +1,5 @@
 import { tool, jsonSchema, type CoreTool } from "ai";
-import type { McpToolBinding } from "../manager";
+import type { DatasourceToolBinding } from "../manager";
 
 /**
  * WS-5 工具输出截断上限:结果序列化字节数超限时以信封形式头尾保留,
@@ -56,7 +56,7 @@ function envelopeOversizeResult(
  * WS-5:结果超限时信封化截断(头尾保留 + 来源标注 + untrusted 标记)。
  */
 export function toAiTools(
-  bindings: McpToolBinding[],
+  bindings: DatasourceToolBinding[],
   opts?: { sourceId?: string; maxOutputBytes?: number }
 ): Record<string, CoreTool> {
   const aiTools: Record<string, CoreTool> = {};

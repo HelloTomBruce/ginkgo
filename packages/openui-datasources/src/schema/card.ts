@@ -34,8 +34,8 @@ export interface SchemaCardToolSummary {
 export interface SchemaCard {
   sourceId: string;
   generatedAt: number;
-  /** db-like：真实表结构；mcp：http/stdio 源仅记工具摘要（不主动探查数据） */
-  kind: "db-like" | "mcp";
+  /** db-like：真实表结构；tools-only / mcp：非表源仅记工具摘要（不主动探查数据） */
+  kind: "db-like" | "tools-only" | "mcp";
   tables: SchemaCardTable[];
   /** L1 全量表名目录（超出 CARD_MAX_TABLES 或供大库全库目录索引） */
   allTables?: string[];
@@ -180,16 +180,17 @@ export function buildSchemaCard(input: {
   return { ...card, truncated };
 }
 
-/** MCP 源（http/stdio）结构卡：仅工具摘要，不探查数据 */
-export function buildMcpToolCard(input: {
+/** 纯工具型源结构卡：仅工具摘要，不探查数据 */
+export function buildToolsOnlyCard(input: {
   sourceId: string;
   tools: SchemaCardToolSummary[];
   generatedAt?: number;
+  kind?: "tools-only" | "mcp";
 }): SchemaCard {
   return {
     sourceId: input.sourceId,
     generatedAt: input.generatedAt ?? Date.now(),
-    kind: "mcp",
+    kind: input.kind ?? "mcp",
     tables: [],
     toolSummaries: input.tools.slice(0, 30).map((t) => ({
       name: t.name,
@@ -198,6 +199,9 @@ export function buildMcpToolCard(input: {
     truncated: input.tools.length > 30,
   };
 }
+
+/** 向后兼容别名 */
+export const buildMcpToolCard = buildToolsOnlyCard;
 
 export interface RenderCardOptions {
   budgetBytes?: number;
@@ -308,13 +312,13 @@ export function renderCardForPrompt(
 
   const generatedAt = new Date(card.generatedAt).toISOString().slice(0, 16).replace("T", " ");
   const lines: string[] = [];
-  const header =
-    card.kind === "mcp"
-      ? `### 数据源 ${card.sourceId} 工具卡（生成于 ${generatedAt}）`
-      : `### 数据源 ${card.sourceId} 结构卡（生成于 ${generatedAt}）`;
+  const isToolsCard = card.kind === "tools-only" || card.kind === "mcp";
+  const header = isToolsCard
+    ? `### 数据源 ${card.sourceId} 工具卡（生成于 ${generatedAt}）`
+    : `### 数据源 ${card.sourceId} 结构卡（生成于 ${generatedAt}）`;
   lines.push(header);
 
-  if (card.kind === "mcp") {
+  if (isToolsCard) {
     for (const t of card.toolSummaries ?? []) {
       lines.push(`- ${t.name}${t.description ? `：${t.description}` : ""}`);
     }

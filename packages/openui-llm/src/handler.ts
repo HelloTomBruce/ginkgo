@@ -34,7 +34,6 @@ import {
   type MethodLibrary,
 } from "@openui-analytics/methodology";
 import { getOpenUISystemPrompt, getOpenUIPlanPrompt, getExecuteSystemPrompt } from "./prompt";
-import { instrumentTools } from "./pipeline/instrumentTools";
 import {
   buildMethodDetailsFromMessages,
   renderMethodDetailsByIds,
@@ -72,6 +71,10 @@ import {
   newRunId,
   isReasoningModel,
   getCoreToolsFromMcp,
+  createTerminationTool,
+  composeToolInterceptors,
+  createTelemetryInterceptor,
+  type RunId,
   type MCPClientManager,
   type MCPServerConfig,
 } from "@openui-analytics/harness-core";
@@ -107,10 +110,24 @@ function envPositiveNumber(name: string): number | undefined {
   return Number.isFinite(n) && n > 0 ? n : undefined;
 }
 
+/** 工具执行遥测切面包装 */
+function instrumentTools(
+  tools: Record<string, CoreTool>,
+  ctx: {
+    runId: RunId;
+    sessionId?: string;
+    sourceId?: string;
+    telemetry: TelemetrySink;
+  }
+): Record<string, CoreTool> {
+  const telemetryAspect = createTelemetryInterceptor(ctx);
+  return composeToolInterceptors(tools, [telemetryAspect]);
+}
+
 /**
  * WS-12 请求级 tokenizer 解析：注入优先；env LLM_TOKENIZER=tiktoken 时
  * 按 config/model-tokenizer.json 映射动态加载（每请求解析 encoding，
- * 实例在 tokenizer.ts 内按 encoding 缓存）。未安装/未启用回退启发式。
+ * 实例在 @openui-analytics/harness-core 内按 encoding 缓存）。未安装/未启用回退启发式。
  */
 async function resolveRequestTokenizer(
   injected: { encode(text: string): number } | undefined,
@@ -118,8 +135,14 @@ async function resolveRequestTokenizer(
 ): Promise<{ encode(text: string): number } | undefined> {
   if (injected) return injected;
   if (process.env.LLM_TOKENIZER !== "tiktoken") return undefined;
-  const { createTiktokenEstimator, resolveEncodingForModel } = await import("./tokenizer");
-  return createTiktokenEstimator(resolveEncodingForModel(model));
+  const { createTiktokenEstimator, resolveEncodingForModel } = await import(
+    "@openui-analytics/harness-core"
+  );
+  const encoding = resolveEncodingForModel(
+    model,
+    `${process.cwd()}/config/model-tokenizer.json`
+  );
+  return createTiktokenEstimator(encoding);
 }
 
 /**
@@ -1055,67 +1078,49 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
 
       const rawResponse = createDataStreamResponse({
         execute: async (dataStream) => {
-          // 双重终态机制：显式终态工具 finish_task
-          const finishTaskTool = tool({
+          // 双重终态机制：显式终态工具 finish_task（基于 @openui-analytics/harness-core 终态契约）
+          const finishTaskTool = createTerminationTool({
+            toolName: "finish_task",
             description:
               "显式宣告分析/规划任务已达成终态并闭环。当数据获取完毕、分析结论和可视化看板或规划卡已就绪时调用。调用此工具表示本轮取数全部结束，无需再发起其他数据查询。",
-            parameters: jsonSchema<{
-              status: "completed" | "insufficient_data" | "blocked";
-              summary?: string;
-            }>({
-              type: "object",
-              properties: {
-                status: {
-                  type: "string",
-                  enum: ["completed", "insufficient_data", "blocked"],
-                  description:
-                    "任务终态状态：completed（分析完成并已输出结论/看板）、insufficient_data（必要数据缺失或查询无果）、blocked（遇到阻塞错误）",
-                },
-                summary: {
-                  type: "string",
-                  description: "分析结果或终态说明的一句话简要总结",
-                },
-              },
-              required: ["status"],
-            }),
-            execute: async ({ status, summary }) => {
+            assertion: () => {
               // WS-5 服务端不变量: 校验任务是否有实质性产出证据
               // 产出形式包含：可视化看板代码块、规划卡代码块、或实质性文本内容（如纯文本分析结论、问答解答、交互闭环等）。
               // 唯有当三者皆无（模型未输出任何实质内容却宣告完成）时，才予以拒绝，避免空跑兜底。
               const hasVisualArtifact = hasDashboardOutput || hasPlanCardOutput;
               const hasOutputEvidence = hasVisualArtifact || totalTextChars > 0;
-
-              if (status === "completed" && !hasOutputEvidence) {
-                telemetry.emit({
-                  type: "warn",
-                  runId,
-                  sessionId: sessionIdForEvents,
-                  code: "FINV_GATE_REJECTED",
-                  detail: `finish_task(completed) 被拒:无任何实质性产出证据`,
-                });
-                return {
-                  terminated: false,
-                  status: "rejected",
-                  summary: summary ?? "",
-                  message:
-                    "尚未输出分析结论、报告或看板，不能宣告 completed。请先完成正式输出；若确属数据缺失或遇到阻塞，请改用 status=insufficient_data 或 status=blocked。",
-                };
-              }
-              explicitFinishDetails = { status, summary };
+              return {
+                passed: hasOutputEvidence,
+                rejectReason:
+                  "尚未输出分析结论、报告或看板，不能宣告 completed。请先完成正式输出；若确属数据缺失或遇到阻塞，请改用 status=insufficient_data 或 status=blocked。",
+              };
+            },
+            onSignalRejected: () => {
+              telemetry.emit({
+                type: "warn",
+                runId,
+                sessionId: sessionIdForEvents,
+                code: "FINV_GATE_REJECTED",
+                detail: `finish_task(completed) 被拒:无任何实质性产出证据`,
+              });
+            },
+            onSignalAccepted: (sig) => {
+              explicitFinishDetails = {
+                status: sig.status,
+                summary: sig.deliverableSummary,
+              };
               dataStream.writeData({
                 type: "task_finish",
                 termination: "explicit",
-                status,
-                summary: summary ?? "",
+                status: sig.status,
+                summary: sig.deliverableSummary ?? "",
               });
-              return {
-                terminated: true,
-                status,
-                summary: summary ?? "",
-                message: hasVisualArtifact
-                  ? "数据取数与任务终态已确认闭环。若你在上一步或当前步骤已输出了完整的 Markdown 分析报告与 ```openui 看板代码块，严禁重复输出，直接输出一句简要闭环致辞即可自然结束；若尚未输出报告与看板，请在此处基于已获取的数据输出一份完整的 Markdown 深度分析报告及 ```openui ... ``` 可视化动态看板代码块。每轮回复严格只能有一份报告和一个看板，绝对不可重复输出两遍！"
-                  : "任务已确认闭环。请直接自然结束当前回复，无需重复输出。",
-              };
+            },
+            resolveMessage: () => {
+              const hasVisualArtifact = hasDashboardOutput || hasPlanCardOutput;
+              return hasVisualArtifact
+                ? "数据取数与任务终态已确认闭环。若你在上一步或当前步骤已输出了完整的 Markdown 分析报告与 ```openui 看板代码块，严禁重复输出，直接输出一句简要闭环致辞即可自然结束；若尚未输出报告与看板，请在此处基于已获取的数据输出一份完整的 Markdown 深度分析报告及 ```openui ... ``` 可视化动态看板代码块。每轮回复严格只能有一份报告和一个看板，绝对不可重复输出两遍！"
+                : "任务已确认闭环。请直接自然结束当前回复，无需重复输出。";
             },
           });
 
@@ -1165,7 +1170,7 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
                     chunk.type === "tool-call" ||
                     chunk.type === "tool-call-streaming-start" ||
                     chunk.type === "tool-call-delta" ||
-                    chunk.type === "tool-result"
+                    (chunk.type as string) === "tool-result"
                   ) {
                     emittedContent = true;
                   }

@@ -10,7 +10,7 @@
     "./schema/store": "./src/schema/store.ts",
     "./sqlGuard": "./src/connectors/db/sqlGuard.ts",
     "./parseToolResult": "./src/parseToolResult.ts",
-    "./gateway": "./src/gateway/mcpGateway.ts",
+    "./gateway": "./src/gateway/queryGateway.ts",
     "./certified": "./src/certified/certifiedStore.ts"
   },
   "scripts": {
@@ -19,7 +19,6 @@
   "dependencies": {
     "@clickhouse/client": "^1.12.1",
     "@duckdb/node-api": "2.0.0-r.1",
-    "@modelcontextprotocol/sdk": "^1.32.1",
     "exceljs": "^4.4.0",
     "mysql2": "^3.24.5",
     "pg": "^8.23.1"

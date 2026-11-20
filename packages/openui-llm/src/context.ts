@@ -1,114 +1,51 @@
 import type { CoreMessage } from "ai";
 import {
-  defaultModelCatalog,
   CONTEXT_WINDOW_MIN,
   CONTEXT_WINDOW_MAX,
   DEFAULT_CONTEXT_WINDOW,
-  type ModelCatalog,
-} from "@openui-analytics/harness-core/registry";
+  resolveContextWindow,
+  computeContextBudget,
+  estimateTextTokensHeuristic,
+  estimateMessageTokens,
+  estimateMessagesTokens,
+  projectMessagesWithPruning,
+  trimOrphanToolMessages,
+  DEFAULT_PRUNED_PLACEHOLDER,
+  DEFAULT_SUMMARY_MAX_TOKENS,
+  type ContextBudget,
+  type ProjectionResult,
+} from "@openui-analytics/harness-core";
 
 export {
   CONTEXT_WINDOW_MIN,
   CONTEXT_WINDOW_MAX,
   DEFAULT_CONTEXT_WINDOW,
+  resolveContextWindow,
+  estimateMessageTokens,
+  estimateMessagesTokens,
+  type ContextBudget,
+  type ProjectionResult,
 };
 
 /**
- * 解析本次请求的上下文窗口：客户端 hint（provider catalog 提供）优先，
- * 其次从 ModelCatalog 注册表最长前缀查表，兜底 128k；结果钳制在 8k–2M。
+ * 计算上下文水位预算
  */
-export function resolveContextWindow(
-  model: string,
-  clientHint?: unknown,
-  catalog: ModelCatalog = defaultModelCatalog
-): number {
-  return catalog.resolveContextWindow(model, clientHint);
-}
-
-export interface ContextBudget {
-  window: number;
-  /** 估算 prompt 超过此值启动第一道（pruning） */
-  triggerAt: number;
-  /** 保留窗口：最近消息逐字保留的 token 预算（窗口 × 25%） */
-  retainTokens: number;
-}
-
 export function computeBudget(
   window: number,
   maxOutputTokens: number
 ): ContextBudget {
-  return {
-    window,
-    triggerAt: Math.min(Math.floor(window * 0.7), window - maxOutputTokens - 8192),
-    retainTokens: Math.floor(window * 0.25),
-  };
+  return computeContextBudget(window, maxOutputTokens);
 }
 
-// ========== token 估算（启发式） ==========
-
-const CJK_RE =
-  /[一-鿿㐀-䶿䶿豈-﫿぀-ヿ가-힯]/g;
-
-/** 文本 token 估算：CJK ~1.5 字符/token，其余 ~4 字符/token */
+/** 文本 token 估算（启发式） */
 export function estimateTextTokens(text: string): number {
-  if (!text) return 0;
-  const cjk = (text.match(CJK_RE) ?? []).length;
-  return Math.ceil((cjk / 1.5 + (text.length - cjk) / 4) * 1.1); // 10% 余量
+  return estimateTextTokensHeuristic(text);
 }
 
-/** 单条消息估算：文本内容 + 结构化 parts 的序列化开销 + 固定结构开销。
- *  countText 可注入真实 tokenizer（WS-12）；缺省 CJK 启发式，行为不变。 */
-export function estimateMessageTokens(
-  message: unknown,
-  countText: (text: string) => number = estimateTextTokens
-): number {
-  const m = message as { role?: string; content?: unknown } | null;
-  if (!m || typeof m !== "object") return 0;
-  let tokens = 8; // role/分隔等结构开销
-  const rest = m as Record<string, unknown>;
-
-  // AI SDK 的 UI Message 同时存在 content、parts、toolInvocations 三份镜像。
-  // 若 parts 存在且为非空数组，parts 已完整覆盖 text 和 tool-invocation，只估算 parts；
-  // 否则再估算 content 与 toolInvocations，避免同一份文本/工具结果被重复翻倍统计。
-  if (Array.isArray(rest.parts) && rest.parts.length > 0) {
-    tokens += countText(safeSerialize(rest.parts));
-  } else {
-    if (typeof m.content === "string") {
-      tokens += countText(m.content);
-    } else if (m.content !== undefined && m.content !== null) {
-      tokens += countText(safeSerialize(m.content));
-    }
-    if (rest.toolInvocations !== undefined) {
-      tokens += countText(safeSerialize(rest.toolInvocations));
-    }
-  }
-  if (rest.annotations !== undefined) {
-    tokens += countText(safeSerialize(rest.annotations));
-  }
-  return tokens;
-}
-
-export function estimateMessagesTokens(
-  messages: unknown[],
-  countText: (text: string) => number = estimateTextTokens
-): number {
-  let total = 0;
-  for (const m of messages) total += estimateMessageTokens(m, countText);
-  return total;
-}
-
-function safeSerialize(value: unknown): string {
-  try {
-    return JSON.stringify(value) ?? "";
-  } catch {
-    return "";
-  }
-}
-
-// ========== 消息形态判定 ==========
+// ========== 消息形态判定（OpenUI 领域特定） ==========
 
 function roleOf(m: unknown): string {
-  return (m as { role?: unknown } | null)?.role as string ?? "";
+  return ((m as { role?: unknown } | null)?.role as string) ?? "";
 }
 
 function textOf(m: unknown): string {
@@ -117,7 +54,9 @@ function textOf(m: unknown): string {
   if (Array.isArray(content)) {
     return content
       .map((p) =>
-        p && typeof p === "object" && typeof (p as { text?: unknown }).text === "string"
+        p &&
+        typeof p === "object" &&
+        typeof (p as { text?: unknown }).text === "string"
           ? (p as { text: string }).text
           : ""
       )
@@ -136,43 +75,14 @@ export function findLastPlanReviewIndex(messages: unknown[]): number {
   return -1;
 }
 
-/** tool 消息里 tool-result part 的工具名（占位符文案用） */
-function toolNamesOf(m: unknown): string[] {
-  const content = (m as { content?: unknown } | null)?.content;
-  if (!Array.isArray(content)) return [];
-  return content
-    .filter(
-      (p): p is Record<string, unknown> => p !== null && typeof p === "object"
-    )
-    .filter((p) => p.type === "tool-result")
-    .map((p) => (typeof p.toolName === "string" ? p.toolName : "tool"));
-}
-
 /** 裁剪占位符：保留工具名与调用关联（协议完整性），替换原始结果 */
-export const PRUNED_PLACEHOLDER = (toolName: string) =>
-  `[已裁剪: ${toolName}]`;
+export const PRUNED_PLACEHOLDER = DEFAULT_PRUNED_PLACEHOLDER;
 
 // ========== 投影 ==========
 
-export interface ProjectionResult {
-  /** 发往模型的消息（pruning 已应用；摘要裁剪由调用方按 summarizeUpToIndex 执行） */
-  messages: CoreMessage[];
-  /** 是否发生了 pruning */
-  pruned: boolean;
-  /** 被裁剪的 tool 结果数量 */
-  prunedCount: number;
-  /** 投影前的 prompt 估算（含 system 与锚点校准） */
-  estimatedPromptTokens: number;
-  /**
-   * ≥0 时：pruning 后仍超阈值，[0..该下标] 需要摘要覆盖后移除；
-   * -1 = 无需摘要（直发或 pruning 已足够）
-   */
-  summarizeUpToIndex: number;
-}
-
 /**
  * 构造发往模型的投影。
- * messages 为完整会话历史（存储层原样），本函数不修改入参。
+ * 委托 @openui-analytics/harness-core 的通用 projectMessagesWithPruning 引擎。
  */
 export function projectMessages(opts: {
   messages: CoreMessage[];
@@ -184,117 +94,18 @@ export function projectMessages(opts: {
   /** 真实 tokenizer（WS-12 可选注入；缺省 CJK 启发式，行为不变） */
   tokenizer?: { encode(text: string): number };
 }): ProjectionResult {
-  const { messages, budget } = opts;
-  const overhead = opts.systemTokens ?? 0;
-  const countText: (text: string) => number =
-    opts.tokenizer?.encode.bind(opts.tokenizer) ?? estimateTextTokens;
-  const heuristic = estimateMessagesTokens(messages, countText);
-  const estimated =
-    Math.max(heuristic, opts.anchorTokens ?? 0) + overhead;
-
-  // 未超阈值：原样直发（99% 请求路径，零开销）
-  if (estimated <= budget.triggerAt) {
-    return {
-      messages,
-      pruned: false,
-      prunedCount: 0,
-      estimatedPromptTokens: estimated,
-      summarizeUpToIndex: -1,
-    };
-  }
-
-  // 保留窗口：从最新往前累积，直到达到 retainTokens 预算
-  let acc = 0;
-  let retainFrom = messages.length;
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const t = estimateMessageTokens(messages[i], countText);
-    if (acc + t > budget.retainTokens && retainFrom < messages.length) {
-      retainFrom = i + 1;
-      break;
-    }
-    acc += t;
-    retainFrom = i;
-  }
-  // 极小会话（全部消息都在保留窗口内）仍超阈值 = system 太大或窗口太小，
-  // 无可裁剪空间，直接原样发（压无可压，交给模型端报错兜底）
-  if (retainFrom <= 0) {
-    return {
-      messages,
-      pruned: false,
-      prunedCount: 0,
-      estimatedPromptTokens: estimated,
-      summarizeUpToIndex: -1,
-    };
-  }
-
-  // 第一道：pruning（保留窗口以外的 tool 结果替换为占位符）。
-  // 豁免是结构性的：pruning 只针对 role=tool——用户消息与 assistant
-  // （含最近一张 PlanReviewCard）天然不动。
-  const projected = messages.map((m, i) => {
-    if (i >= retainFrom) return m; // 保留窗口逐字
-    if (roleOf(m) !== "tool") return m; // 用户/assistant 不动（PlanReviewCard 天然豁免）
-    const content = (m as { content?: unknown }).content;
-    if (!Array.isArray(content)) return m;
-    return {
-      ...m,
-      content: content.map((p) =>
-        p !== null &&
-        typeof p === "object" &&
-        (p as { type?: unknown }).type === "tool-result"
-          ? {
-              ...(p as Record<string, unknown>),
-              result: PRUNED_PLACEHOLDER(
-                typeof (p as { toolName?: unknown }).toolName === "string"
-                  ? ((p as { toolName: string }).toolName)
-                  : "tool"
-              ),
-            }
-          : p
-      ),
-    } as CoreMessage;
-  });
-  const prunedCount = messages
-    .slice(0, retainFrom)
-    .reduce((n, m) => n + toolNamesOf(m).length, 0);
-
-  // pruning 后重估（锚点已失效——内容变了，回到计数器估算）
-  const afterPrune = estimateMessagesTokens(projected, countText) + overhead;
-  const needSummary = afterPrune > budget.triggerAt;
-
-  return {
-    messages: projected,
-    pruned: prunedCount > 0,
-    prunedCount,
-    estimatedPromptTokens: afterPrune,
-    summarizeUpToIndex: needSummary ? retainFrom - 1 : -1,
-  };
+  return projectMessagesWithPruning(opts);
 }
 
 /**
  * 摘要裁剪后的边界清理：
- * - 丢弃开头的孤儿 tool 消息（其 tool-call 已被裁掉，provider 会报协议错）
- * - 保证首条为 user（部分 provider 强制）
+ * 委托 @openui-analytics/harness-core 的 trimOrphanToolMessages
  */
 export function trimAfterSummaryCut(messages: CoreMessage[]): CoreMessage[] {
-  let start = 0;
-  while (start < messages.length && roleOf(messages[start]) === "tool") {
-    start++;
-  }
-  const trimmed = messages.slice(start);
-  // 裁空或首条非 user（部分 provider 强制首条 user）：补一条衔接消息
-  if (trimmed.length === 0 || roleOf(trimmed[0]) !== "user") {
-    return [
-      {
-        role: "user",
-        content: "（以上是此前会话的摘要，请基于此继续当前任务。）",
-      } as CoreMessage,
-      ...trimmed,
-    ];
-  }
-  return trimmed;
+  return trimOrphanToolMessages(messages);
 }
 
-// ========== LLM 摘要 ==========
+// ========== OpenUI 数据分析摘要提示词生成 ==========
 
 /** 摘要生成输入的序列化：每条消息截断 4000 字符（tool 结果已被裁剪/无需全文） */
 function serializeForSummary(messages: CoreMessage[]): string {
@@ -328,4 +139,4 @@ ${serializeForSummary(covered)}`;
 }
 
 /** 摘要输出上限（设计定稿：2k token） */
-export const SUMMARY_MAX_TOKENS = 2048;
+export const SUMMARY_MAX_TOKENS = DEFAULT_SUMMARY_MAX_TOKENS;

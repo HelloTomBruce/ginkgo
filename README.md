@@ -19,23 +19,24 @@
 │ Route Handler: streamText (Vercel AI SDK)                    │
 │  system prompt: OpenUI 组件规范 + 数据源使用指引             │
 │  tools:                                                      │
-│   ├─ execute_sql / list_tables / describe_table ──► 本地 MCP │──► PostgreSQL (只读守卫)
-│   ├─ gitlab_* ──► 外部 GitLab MCP Server                     │──► GitLab 工程数据
-│   └─ zentao_* ──► 本地 ZenTao CLI MCP                        │──► 禅道项目/Bug/工时
+│   ├─ execute_sql / list_tables / describe_table ──► QueryGateway │──► PostgreSQL (只读守卫)
+│   ├─ gitlab_* ──► 外部 GitLab MCP Server (Harness MCP)       │──► GitLab 工程数据
+│   └─ zentao_* ──► 本地 ZenTao CLI MCP (Harness MCP)          │──► 禅道项目/Bug/工时
 └──────────────────────────────────────────────────────────────┘
                │ 模型输出 ```openui 代码块
                ▼
         OpenUIRenderer 流式渐进渲染为可交互看板
 ```
 
-**Workspace 包结构**：能力抽为五个私有子包，各自带详细 README（架构/业务逻辑/功能/扩展指南）：
+**Workspace 包结构**：核心能力抽为六个私有子包，各自带详细 README（架构/业务逻辑/功能/扩展指南）：
 
 | 包 | 门面 | 职责 |
 | --- | --- | --- |
 | `packages/openui-chart-spec` | `parseDashboardSpec` / `applyJsonPatch` | DashboardSpec 2.0 声明式状态树 + RFC 6902 JSON Patch 引擎（最底层 spec 契约，zod-only） |
-| `packages/openui-datasources` | `createDatasourceManager` | 数据源配置/连接/工具装配 + 只读守卫管线 + 结果集缓存 + Schema Card + Certified Queries 语义层 |
+| `packages/openui-harness-core` | `ContextEngine` / `createTerminationTool` / `MCPClientManager` | 通用 Agent Harness 底座：上下文裁剪压缩引擎、洋葱模型工具切面、任务生命周期断言、三维预算防跑飞、MCP 连接池、FinOps 台账 |
+| `packages/openui-datasources` | `createDatasourceManager` / `QueryGateway` | 原生结构化数据源直连 + QueryGateway 安全网关 + 只读守卫管线 + 结果集缓存 + Schema Card + Certified Queries 语义层 |
 | `packages/openui-components` | `analyticsLibrary` | OpenUI 规范展示组件库（24 组件，layout/metrics/charts/data/insight/timeline/interaction/spec 分类） |
-| `packages/openui-llm` | `createAnalyzeHandler` | LLM 编排、StreamHub 流中继、上下文治理、双层 eval（依赖注入数据源单例） |
+| `packages/openui-llm` | `createAnalyzeHandler` | LLM 领域编排、Prompt 装配、StreamHub 流中继、AST 语法守卫与双层评测体系 |
 | `packages/openui-methodology` | `builtinMethodCards` | 方法论资产：10 张内置方法卡 + 用户卡 JSON 契约 |
 
 应用侧 `src/` 只保留路由薄壳、前端 UI 与共享层。
