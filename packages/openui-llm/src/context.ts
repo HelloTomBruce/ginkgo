@@ -5,6 +5,7 @@ import {
   DEFAULT_CONTEXT_WINDOW,
   resolveContextWindow,
   computeContextBudget,
+  estimateTextTokensHeuristic,
   estimateMessageTokens,
   estimateMessagesTokens,
   projectMessagesWithPruning,
@@ -14,7 +15,6 @@ import {
   type ContextBudget,
   type ProjectionResult,
 } from "@openui-analytics/harness-core/context";
-import { estimateTextTokensHeuristic } from "@openui-analytics/harness-core/tokenizer";
 
 export {
   CONTEXT_WINDOW_MIN,

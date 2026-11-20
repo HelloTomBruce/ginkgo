@@ -1,4 +1,4 @@
-import { estimateTextTokensHeuristic } from "../tokenizer";
+import { estimateTextTokensHeuristic } from "../tokenizer/heuristic";
 
 function safeSerialize(value: unknown): string {
   try {

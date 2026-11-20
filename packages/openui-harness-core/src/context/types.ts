@@ -1,5 +1,5 @@
 import type { CoreMessage } from "ai";
-import type { TokenizerEstimator } from "../tokenizer";
+import type { TokenizerEstimator } from "../tokenizer/types";
 import type { ModelCatalog } from "../providers/registry";
 
 export interface ContextBudget {

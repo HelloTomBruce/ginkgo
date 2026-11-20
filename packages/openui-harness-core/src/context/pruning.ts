@@ -1,7 +1,8 @@
 import type { CoreMessage } from "ai";
 import type { ContextBudget, ProjectionResult } from "./types";
 import { estimateMessageTokens, estimateMessagesTokens } from "./estimator";
-import { estimateTextTokensHeuristic, type TokenizerEstimator } from "../tokenizer";
+import { estimateTextTokensHeuristic } from "../tokenizer/heuristic";
+import type { TokenizerEstimator } from "../tokenizer/types";
 
 export const DEFAULT_PRUNED_PLACEHOLDER = (toolName: string) =>
   `[已裁剪: ${toolName}]`;

@@ -16,6 +16,7 @@ export {
   estimateMessageTokens,
   estimateMessagesTokens,
 } from "./estimator";
+export { estimateTextTokensHeuristic } from "../tokenizer/heuristic";
 
 export {
   projectMessagesWithPruning,
