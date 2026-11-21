@@ -3,7 +3,7 @@
 ## 平台应用架构
 
 - 本项目是 **OpenUI 智能体应用平台**（不是单一定制产品）：`packages/apps/*` 是可插拔应用，宿主 `src/` 是应用无关壳，`packages/openui-llm` 是**领域中立**编排层（禁止加入任何应用领域语义——prompt/工具/交付物文案一律经 `resolveAppPrompt`/`resolveAppTools`/`deliverable`/`onTaskFinish` 四接缝由应用包注入）。
-- 新应用接入（manifest/插槽/服务端契约/产物协议/注册）唯一规范：[docs/app-integration-guide.md](docs/app-integration-guide.md)。
+- 新应用接入（manifest/插槽/服务端契约/产物协议/注册）唯一规范：[docs/app-integration-guide.md](docs/app-integration-guide.md)；平台能力包扩展与第三方应用分发路线：[docs/platform-ecosystem-roadmap.md](docs/platform-ecosystem-roadmap.md)。
 - 应用包**禁止**穿透宿主：tsconfig 不得配置 `@/*` 指向宿主 `src/`；需要的共享渲染/UI 基建从 `@openui-analytics/components` 取或包内自持。
 - 宿主组合根（`src/lib/analyticsRuntime.ts`、`src/lib/apps/runtimeServers.ts`、`src/app/api/analyze/route.ts`）是唯一允许 appId 装配特判的位置。
 

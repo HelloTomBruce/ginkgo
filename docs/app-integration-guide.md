@@ -3,6 +3,8 @@
 > 适用版本：平台化收敛（llm 领域中立化 + 产物协议）之后。
 > 本文是新增/接入一个 OpenUI 平台应用的**唯一规范入口**，以 analytics（深度应用）与
 > general（轻应用）为双实例讲解。协议类型唯一事实来源：`packages/openui-app-sdk/src/types.ts`。
+> 平台侧能力包扩展与第三方应用分发的演进路线见
+> [平台生态路线图](platform-ecosystem-roadmap.md)。
 
 ## 1. 平台架构总览
 
