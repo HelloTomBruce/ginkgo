@@ -18,7 +18,7 @@ import {
   createParser,
   jsonToOpenUI,
   serverLibrary,
-} from "@openui-analytics/llm/serverLibrary";
+} from "@openui-analytics/components/server";
 import { SOURCE_ID_RE } from "@openui-analytics/chart-spec";
 import type { DashboardRecord, DashboardQuery } from "./dashboardStore";
 

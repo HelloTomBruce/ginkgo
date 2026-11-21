@@ -7,56 +7,10 @@ import {
   type ModelPricingTable,
   type MCPClientManager,
 } from "@openui-analytics/harness-core";
-import type {
-  DatasourceManager,
-  McpToolBinding,
-} from "@openui-analytics/datasources";
 import { streamText, generateText } from "ai";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-
-const TEST_DYNAMIC_SOURCE = {
-  id: "jira",
-  name: "Jira DB",
-  kind: "db" as const,
-  dbType: "postgres" as const,
-  connectionString: "postgres://localhost/db",
-  enabled: true,
-};
-
-// 依赖注入接缝：真 manager 读临时配置文件（resolveActive/get 走真实现），
-// 仅 tools（IO）覆写为 mock —— 等价于原 vi.mock("@/lib/datasources") 的语义
-async function makeFakeManager(
-  extraSources: Record<string, unknown>[] = []
-): Promise<DatasourceManager> {
-  const { createDatasourceManager } = await import(
-    "@openui-analytics/datasources"
-  );
-  const file = path.join(
-    fs.mkdtempSync(path.join(os.tmpdir(), "llm-handler-")),
-    "datasources.json"
-  );
-  fs.writeFileSync(
-    file,
-    JSON.stringify({
-      sources: [
-        {
-          id: "jira",
-          name: "Jira DB",
-          kind: "db",
-          dbType: "postgres",
-          connectionString: "postgres://localhost/db",
-          enabled: true,
-        },
-        ...extraSources,
-      ],
-    })
-  );
-  const real = createDatasourceManager({ configPath: file });
-  const tools = vi.fn(async (): Promise<McpToolBinding[]> => []);
-  return { ...real, tools };
-}
 
 vi.mock("@ai-sdk/openai", () => ({
   createOpenAI: vi.fn(() => vi.fn(() => ({}))),
@@ -127,7 +81,7 @@ describe("createAnalyzeHandler", () => {
       delete process.env[key];
     }
     mockStreamOk();
-    POST = createAnalyzeHandler({ datasources: await makeFakeManager() });
+    POST = createAnalyzeHandler({ resolveAppTools: async () => ({}) });
   });
 
   afterEach(() => {
@@ -143,22 +97,21 @@ describe("createAnalyzeHandler", () => {
     expect(res.status).toBe(200);
     expect(res.headers.get("x-vercel-ai-data-stream")).toBe("v1");
     const text = await res.text();
-    expect(text).toContain("未检测到 LLM API Key");
+    expect(text).toContain("API Key");
     expect(text).toContain("「设置」");
   });
 
-  it("动态源工具加载失败时降级为空工具集并正常流式响应", async () => {
-    const manager = await makeFakeManager();
-    vi.mocked(manager.tools).mockRejectedValueOnce(
-      new Error("connection refused")
-    );
-    POST = createAnalyzeHandler({ datasources: manager });
+  it("应用工具装配失败时降级为空工具集并正常流式响应", async () => {
+    POST = createAnalyzeHandler({
+      resolveAppTools: async () => {
+        throw new Error("connection refused");
+      },
+    });
 
     const res = await POST(makeRequest({ messages: [], apiKey: "test-key" }));
     expect(res.status).toBe(200);
     const text = await res.text();
     expect(text.startsWith("3:")).toBe(false);
-    expect(streamText).toHaveBeenCalledTimes(1);
   });
 
   it("客户端提供 baseURL 但未提供 apiKey 时拒绝", async () => {
@@ -196,20 +149,6 @@ describe("createAnalyzeHandler", () => {
     expect(vi.mocked(streamText).mock.calls[2][0]).toMatchObject({ temperature: 0.2 });
   });
 
-  it("sources 未知 id 忽略并告警，请求仍 200 且不装载任何源", async () => {
-    const manager = await makeFakeManager();
-    POST = createAnalyzeHandler({ datasources: manager });
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-
-    const res = await POST(
-      makeRequest({ messages: [], apiKey: "k", sources: ["nope"] })
-    );
-
-    expect(res.status).toBe(200);
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("nope"));
-    expect(manager.tools).not.toHaveBeenCalled();
-    warnSpy.mockRestore();
-  });
 });
 
 describe("createAnalyzeHandler 全动态装配", () => {
@@ -221,82 +160,10 @@ describe("createAnalyzeHandler 全动态装配", () => {
     vi.clearAllMocks();
   });
 
-  it("未指定 sources 时装载全部启用源，gitlab 透传字段被忽略", async () => {
-    const manager = await makeFakeManager();
-    const POST = createAnalyzeHandler({ datasources: manager });
-
-    await POST(
-      makeRequest({
-        messages: [],
-        apiKey: "k",
-        gitlabUrl: "http://legacy.example/mcp",
-        gitlabToken: "glpat-old",
-      })
-    );
-
-    expect(manager.tools).toHaveBeenCalledWith(TEST_DYNAMIC_SOURCE);
-    const arg = vi.mocked(streamText).mock.calls[0][0];
-    // 仅 jira 单源（无禅道×GitLab 对）：跨源映射工具不注册
-    expect(Object.keys(arg.tools ?? {})).not.toContain("cross_source_link");
-  });
-
-  it("跨源 pair 配置且双侧源激活时注册 cross_source_link 工具", async () => {
-    // pair 配置由用户维护（config/cross-source-map.json），测试用临时文件注入
-    const pairFile = path.join(
-      fs.mkdtempSync(path.join(os.tmpdir(), "handler-pair-")),
-      "map.json"
-    );
-    fs.writeFileSync(
-      pairFile,
-      JSON.stringify({
-        mappings: [
-          {
-            projectSource: "zentao-cli",
-            project: "42",
-            repoSource: "gitlab",
-            repo: "backend/trading-platform",
-          },
-        ],
-      })
-    );
-    const { reloadCrossSourceMap } = await import("./crossSourceMap");
-    reloadCrossSourceMap(pairFile);
-    try {
-      const manager = await makeFakeManager([
-        {
-          id: "zentao-cli",
-          name: "禅道",
-          kind: "db",
-          dbType: "postgres",
-          connectionString: "postgres://localhost/zentao",
-          enabled: true,
-        },
-        {
-          id: "gitlab",
-          name: "gitlab",
-          kind: "db",
-          dbType: "postgres",
-          connectionString: "postgres://localhost/gitlab",
-          enabled: true,
-        },
-      ]);
-      const POST = createAnalyzeHandler({ datasources: manager });
-
-      await POST(makeRequest({ messages: [], apiKey: "k" }));
-
-      const arg = vi.mocked(streamText).mock.calls[0][0];
-      expect(Object.keys(arg.tools ?? {})).toContain("cross_source_link");
-      expect(arg.system).toContain("Cross-Source Joint Analysis");
-    } finally {
-      reloadCrossSourceMap("/nonexistent/cross-source-map.json");
-    }
-  });
-
   it("protocol=anthropic 时走 createAnthropic 且 baseURL 规范化补 /v1，不调 createOpenAI", async () => {
     const { createAnthropic } = await import("@ai-sdk/anthropic");
     const { createOpenAI } = await import("@ai-sdk/openai");
-    const manager = await makeFakeManager();
-    const POST = createAnalyzeHandler({ datasources: manager });
+    const POST = createAnalyzeHandler({ resolveAppTools: async () => ({}) });
 
     await POST(
       makeRequest({
@@ -318,8 +185,7 @@ describe("createAnalyzeHandler 全动态装配", () => {
   });
 
   it("maxTokens：请求体优先并钳制 1024–65536；缺省 16384；env LLM_MAX_OUTPUT_TOKENS 兜底", async () => {
-    const manager = await makeFakeManager();
-    const POST = createAnalyzeHandler({ datasources: manager });
+    const POST = createAnalyzeHandler({ resolveAppTools: async () => ({}) });
 
     // 请求体超上限 → 钳到 65536
     await POST(makeRequest({ messages: [], apiKey: "k", maxTokens: 999999 }));
@@ -341,226 +207,6 @@ describe("createAnalyzeHandler 全动态装配", () => {
     } finally {
       delete process.env.LLM_MAX_OUTPUT_TOKENS;
     }
-  });
-
-  it("sources 指定动态源时装载其工具并入 tools，prompt 列出该源", async () => {
-    const manager = await makeFakeManager();
-    vi.mocked(manager.tools).mockResolvedValueOnce([
-      {
-        name: "jira_jira_search",
-        originalName: "jira_search",
-        description: "d",
-        inputSchema: { type: "object" },
-        call: async () => ({}),
-      },
-    ]);
-    const POST = createAnalyzeHandler({ datasources: manager });
-
-    await POST(makeRequest({ messages: [], apiKey: "k", sources: ["jira"] }));
-
-    expect(manager.tools).toHaveBeenCalledWith(TEST_DYNAMIC_SOURCE);
-    const arg = vi.mocked(streamText).mock.calls[0][0];
-    expect(Object.keys(arg.tools ?? {})).toContain("jira_jira_search");
-    expect(arg.system).toContain("Jira DB");
-    // 无内置静态段
-    expect(arg.system).not.toContain("PostgreSQL Analytics Database");
-  });
-
-  it("mode 分派：plan → 规划提示词；execute → 执行提示词；非法/缺省 → direct，默认 maxSteps=25", async () => {
-    const manager = await makeFakeManager();
-    const POST = createAnalyzeHandler({ datasources: manager });
-
-    await POST(makeRequest({ messages: [], apiKey: "k", mode: "plan" }));
-    let arg = vi.mocked(streamText).mock.calls[0][0];
-    expect(arg.system).toContain("Planning Mode");
-    expect(arg.system).toContain("PlanReviewCard");
-    expect(arg.maxSteps).toBe(25);
-    // 规划轮次工具照常装配（探查需要）；跨源映射工具因无禅道×GitLab 对而不注册
-    expect(Object.keys(arg.tools ?? {})).not.toContain("cross_source_link");
-
-    await POST(makeRequest({ messages: [], apiKey: "k", mode: "execute" }));
-    arg = vi.mocked(streamText).mock.calls[1][0];
-    expect(arg.system).toContain("Confirmed Plan Execution Mode");
-    expect(arg.maxSteps).toBe(25);
-
-    // 非法值回落 direct：不含规划/执行增量段
-    await POST(
-      makeRequest({ messages: [], apiKey: "k", mode: "bogus" as unknown as "plan" })
-    );
-    arg = vi.mocked(streamText).mock.calls[2][0];
-    expect(arg.system).not.toContain("Planning Mode");
-    expect(arg.system).not.toContain("Confirmed Plan Execution Mode");
-
-    // 缺省完全向后兼容
-    await POST(makeRequest({ messages: [], apiKey: "k" }));
-    arg = vi.mocked(streamText).mock.calls[3][0];
-    expect(arg.system).not.toContain("Planning Mode");
-    expect(arg.maxSteps).toBe(25);
-  });
-});
-
-describe("createAnalyzeHandler Schema Card 注入", () => {
-  beforeEach(() => {
-    mockStreamOk();
-  });
-
-  afterEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it("启用源有卡时 system 含结构卡段；无卡时不含", async () => {
-    const manager = await makeFakeManager();
-    const card = {
-      sourceId: "jira",
-      generatedAt: 1761811200000,
-      kind: "db-like" as const,
-      truncated: false,
-      tables: [
-        {
-          name: "issues",
-          rowCount: 42,
-          columns: [
-            { name: "status", type: "text", cardinality: 3, topValues: ["open"] },
-          ],
-        },
-      ],
-    };
-    const withCard = vi.fn(async () => ({ card, stale: false }));
-    const POST1 = createAnalyzeHandler({
-      datasources: { ...manager, getSchemaCard: withCard },
-    });
-    await POST1(makeRequest({ messages: [], apiKey: "k" }));
-    const sys1 = vi.mocked(streamText).mock.calls[0][0].system as string;
-    expect(sys1).toContain("Schema Cards");
-    expect(sys1).toContain("issues（约 42 行）");
-
-    // 无卡（null）→ 不注入
-    const without = vi.fn(async () => null);
-    const POST2 = createAnalyzeHandler({
-      datasources: { ...manager, getSchemaCard: without },
-    });
-    await POST2(makeRequest({ messages: [], apiKey: "k" }));
-    const sys2 = vi.mocked(streamText).mock.calls[1][0].system as string;
-    expect(sys2).not.toContain("Schema Cards");
-  });
-
-  it("读卡失败静默降级（不阻塞分析请求）", async () => {
-    const manager = await makeFakeManager();
-    const broken = vi.fn(async () => {
-      throw new Error("disk gone");
-    });
-    const POST = createAnalyzeHandler({
-      datasources: { ...manager, getSchemaCard: broken },
-    });
-    const res = await POST(makeRequest({ messages: [], apiKey: "k" }));
-    expect(res.status).toBe(200);
-    expect(streamText).toHaveBeenCalledTimes(1);
-  });
-});
-
-describe("createAnalyzeHandler 方法论注入", () => {
-  beforeEach(() => {
-    mockStreamOk();
-  });
-
-  afterEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it("direct 模式注入方法索引（含内置卡条目）", async () => {
-    const manager = await makeFakeManager();
-    const POST = createAnalyzeHandler({ datasources: manager });
-    await POST(makeRequest({ messages: [], apiKey: "k" }));
-    const sys = vi.mocked(streamText).mock.calls[0][0].system as string;
-    expect(sys).toContain("Analysis Method Index");
-    expect(sys).toContain("- trend: 趋势与同比环比");
-  });
-
-  it("execute 模式：从最近 assistant 消息（PlanReviewCard）提取方法 id 注入详情", async () => {
-    const manager = await makeFakeManager();
-    const POST = createAnalyzeHandler({ datasources: manager });
-    await POST(
-      makeRequest({
-        messages: [
-          { role: "user", content: "各渠道投放 ROI 怎么样" },
-          {
-            role: "assistant",
-            content:
-              '思路确认（方法：pareto + trend）\n```openui\nroot = Root([plan])\nplan = PlanReviewCard("投放 ROI 思路")\n```',
-          },
-          { role: "user", content: "按此思路开始分析" },
-        ],
-        apiKey: "k",
-        mode: "execute",
-      })
-    );
-    const sys = vi.mocked(streamText).mock.calls[0][0].system as string;
-    expect(sys).toContain("### Method pareto");
-    expect(sys).toContain("### Method trend");
-    expect(sys).toContain("follow their detailed guidance strictly");
-    // 按需详情：不注入全量索引
-    expect(sys).not.toContain("Analysis Method Index");
-  });
-
-  it("execute 未命中方法：回落无详情的执行约束", async () => {
-    const manager = await makeFakeManager();
-    const POST = createAnalyzeHandler({ datasources: manager });
-    await POST(
-      makeRequest({
-        messages: [
-          { role: "assistant", content: "一个没有方法命名的规划" },
-          { role: "user", content: "开始" },
-        ],
-        apiKey: "k",
-        mode: "execute",
-      })
-    );
-    const sys = vi.mocked(streamText).mock.calls[0][0].system as string;
-    expect(sys).toContain("Confirmed Plan Execution Mode");
-    expect(sys).not.toContain("### Method ");
-  });
-
-  it("methodology 注入自定义库：索引与 execute 详情来自注入卡", async () => {
-    const { createMethodLibrary, builtinMethodCards } = await import(
-      "@openui-analytics/methodology"
-    );
-    const custom = createMethodLibrary({
-      builtin: builtinMethodCards,
-      custom: [
-        {
-          id: "dora",
-          name: "DORA 效能分析",
-          when: "研发交付效能四指标",
-          steps: ["计算部署频率/变更前置时间/变更失败率/恢复时间", "对标基准并定位短板"],
-          chartPairing: ["AnalyticsChart", "MetricCard"],
-          executeGuidance: "Compute the four DORA metrics and benchmark them; highlight the weakest dimension.",
-        },
-      ],
-    });
-    const manager = await makeFakeManager();
-    const POST = createAnalyzeHandler({
-      datasources: manager,
-      methodology: custom.library,
-    });
-
-    await POST(makeRequest({ messages: [], apiKey: "k" }));
-    let sys = vi.mocked(streamText).mock.calls[0][0].system as string;
-    // 索引注入生效（11 卡超 1KB 预算截断——断言头部条目而非尾部 dora）
-    expect(sys).toContain("Analysis Method Index");
-    expect(sys).toContain("- trend: 趋势与同比环比");
-
-    await POST(
-      makeRequest({
-        messages: [
-          { role: "assistant", content: "规划（方法 dora）" },
-          { role: "user", content: "开始" },
-        ],
-        apiKey: "k",
-        mode: "execute",
-      })
-    );
-    sys = vi.mocked(streamText).mock.calls[1][0].system as string;
-    expect(sys).toContain("### Method dora · DORA 效能分析");
   });
 });
 
@@ -590,7 +236,6 @@ describe("createAnalyzeHandler 上下文治理", () => {
     getContext = vi.fn(async () => undefined);
     updateContext = vi.fn(async () => {});
     POST = createAnalyzeHandler({
-      datasources: await makeFakeManager(),
       sessions: { getContext, updateContext },
     });
   });
@@ -670,7 +315,8 @@ describe("createAnalyzeHandler 上下文治理", () => {
   });
 
   it("超阈值：窗口外 tool 结果裁剪为占位符，用户消息不动", async () => {
-    // contextWindow=16384 + maxTokens=1024 → triggerAt=7168（夹具总量 ~7300+）
+    // contextWindow=12288 + maxTokens=1024 → triggerAt=3072（夹具 ~5900 tokens；
+    // 中立系统提示词远小于旧组件 kit 文档，窗口相应调小以触发水位）
     const messages = [
       { role: "user", content: "分析 CAC" },
       toolResultMsg("execute_sql", 6000, "c1"),
@@ -685,7 +331,7 @@ describe("createAnalyzeHandler 上下文治理", () => {
         messages,
         apiKey: "k",
         sessionId: "sess_ab12cd34",
-        contextWindow: 16384,
+        contextWindow: 12288,
         maxTokens: 1024,
       })
     );
@@ -721,7 +367,7 @@ describe("createAnalyzeHandler 上下文治理", () => {
         messages,
         apiKey: "k",
         sessionId: "sess_ab12cd34",
-        contextWindow: 16384,
+        contextWindow: 12288,
         maxTokens: 1024,
       })
     );
@@ -754,7 +400,7 @@ describe("createAnalyzeHandler 上下文治理", () => {
         messages,
         apiKey: "k",
         sessionId: "sess_ab12cd34",
-        contextWindow: 16384,
+        contextWindow: 12288,
         maxTokens: 1024,
       })
     );
@@ -777,7 +423,7 @@ describe("createAnalyzeHandler 上下文治理", () => {
         messages,
         apiKey: "k",
         sessionId: "sess_ab12cd34",
-        contextWindow: 16384,
+        contextWindow: 12288,
         maxTokens: 1024,
       })
     );
@@ -793,8 +439,7 @@ describe("双重终态识别与步数预算", () => {
   });
 
   it("tools 始终装配 finish_task 显式终态工具", async () => {
-    const manager = await makeFakeManager();
-    const POST = createAnalyzeHandler({ datasources: manager });
+    const POST = createAnalyzeHandler({ resolveAppTools: async () => ({}) });
     await POST(makeRequest({ messages: [], apiKey: "k" }));
     const arg = vi.mocked(streamText).mock.calls[0][0];
     expect(arg.tools).toBeDefined();
@@ -802,8 +447,7 @@ describe("双重终态识别与步数预算", () => {
   });
 
   it("显式调用 finish_task(insufficient_data,不受产出门禁限制)触发 explicit 终态并返回确认消息", async () => {
-    const manager = await makeFakeManager();
-    const POST = createAnalyzeHandler({ datasources: manager });
+    const POST = createAnalyzeHandler({ resolveAppTools: async () => ({}) });
     const res = await POST(makeRequest({ messages: [], apiKey: "k" }));
     expect(res.status).toBe(200);
 
@@ -842,8 +486,7 @@ describe("双重终态识别与步数预算", () => {
       }) as never
     );
 
-    const manager = await makeFakeManager();
-    const POST = createAnalyzeHandler({ datasources: manager });
+    const POST = createAnalyzeHandler({ resolveAppTools: async () => ({}) });
     const res = await POST(makeRequest({ messages: [], apiKey: "k" }));
     const text = await res.text();
 
@@ -867,8 +510,7 @@ describe("双重终态识别与步数预算", () => {
       }) as never
     );
 
-    const manager = await makeFakeManager();
-    const POST = createAnalyzeHandler({ datasources: manager });
+    const POST = createAnalyzeHandler({ resolveAppTools: async () => ({}) });
     const res = await POST(makeRequest({ messages: [], apiKey: "k" }));
     const text = await res.text();
 
@@ -878,8 +520,7 @@ describe("双重终态识别与步数预算", () => {
   });
 
   it("步数预算：请求体 maxSteps 与环境变量 LLM_MAX_STEPS 优先级", async () => {
-    const manager = await makeFakeManager();
-    const POST = createAnalyzeHandler({ datasources: manager });
+    const POST = createAnalyzeHandler({ resolveAppTools: async () => ({}) });
 
     // 请求体显式传 30
     await POST(makeRequest({ messages: [], apiKey: "k", maxSteps: 30 }));
@@ -915,8 +556,7 @@ describe("双重终态识别与步数预算", () => {
         }),
     } as unknown as ReturnType<typeof streamText>);
 
-    const manager = await makeFakeManager();
-    const POST = createAnalyzeHandler({ datasources: manager });
+    const POST = createAnalyzeHandler({ resolveAppTools: async () => ({}) });
 
     // 第一次请求：启动后台流任务
     const res1 = await POST(
@@ -958,7 +598,6 @@ describe("WS-8 TaskStore 工厂接线", () => {
     mockStreamOk();
     const taskStore = new InMemoryTaskStore();
     const POST = createAnalyzeHandler({
-      datasources: await makeFakeManager(),
       taskStore,
       instanceId: "handler-test:123",
     });
@@ -979,15 +618,14 @@ describe("WS-8 TaskStore 工厂接线", () => {
     process.env.LLM_TASK_STORE_DIR = dir;
     mockStreamOk();
     try {
-      const manager = await makeFakeManager();
-      const firstPOST = createAnalyzeHandler({ datasources: manager });
+      const firstPOST = createAnalyzeHandler({ resolveAppTools: async () => ({}) });
       const first = await firstPOST(
         makeRequest({ messages: [], apiKey: "k", sessionId: "sess_file_factory" })
       );
       const expected = await first.text();
       expect(vi.mocked(streamText)).toHaveBeenCalledTimes(1);
 
-      const restartedPOST = createAnalyzeHandler({ datasources: manager });
+      const restartedPOST = createAnalyzeHandler({ resolveAppTools: async () => ({}) });
       const replay = await restartedPOST(
         makeRequest({
           messages: [],
@@ -1023,8 +661,7 @@ describe("任务中止传导（WS-2:abortTask → streamText abortSignal）", ()
   });
 
   it("streamText 接收任务 abortSignal;用户停止后 signal 被触发(取消 provider 生成/计费)", async () => {
-    const manager = await makeFakeManager();
-    const POST = createAnalyzeHandler({ datasources: manager });
+    const POST = createAnalyzeHandler({ resolveAppTools: async () => ({}) });
 
     // 发起会话任务(mock 流即刻完成,任务进 30s 终态保留窗,abortController 仍随 task 保留)
     await POST(
@@ -1086,8 +723,7 @@ describe("成本预算与并发准入（WS-3）", () => {
       }) as never
     );
 
-    const manager = await makeFakeManager();
-    const POST = createAnalyzeHandler({ datasources: manager });
+    const POST = createAnalyzeHandler({ resolveAppTools: async () => ({}) });
     const res = await POST(
       makeRequest({ messages: [], apiKey: "k", sessionId: "sess_budget", budgetTokens: 10_000 })
     );
@@ -1117,8 +753,7 @@ describe("成本预算与并发准入（WS-3）", () => {
       }) as never
     );
 
-    const manager = await makeFakeManager();
-    const POST = createAnalyzeHandler({ datasources: manager });
+    const POST = createAnalyzeHandler({ resolveAppTools: async () => ({}) });
     const res = await POST(
       makeRequest({ messages: [], apiKey: "k", sessionId: "sess_ok_budget", budgetTokens: 600_000 })
     );
@@ -1143,8 +778,7 @@ describe("成本预算与并发准入（WS-3）", () => {
         }),
     }) as never);
 
-    const manager = await makeFakeManager();
-    const POST = createAnalyzeHandler({ datasources: manager });
+    const POST = createAnalyzeHandler({ resolveAppTools: async () => ({}) });
 
     // 任务 A:占满并发名额(流挂起在途)
     const resA = await POST(
@@ -1233,99 +867,24 @@ describe("Plan→execute 结构化交接（WS-4）", () => {
     );
   }
 
-  it("extractPlanMethods:含 methods 代码块提取 id;无 methods/坏 DSL/无代码块返回空", async () => {
-    const { extractPlanMethods } = await import("./handler");
-
-    expect(extractPlanMethods(PLAN_BLOCK_TEXT)).toEqual(["pareto"]);
-
-    const noMethods = PLAN_BLOCK_TEXT.replace(', ["pareto"]', "").replace("（方法：pareto）", "");
-    expect(extractPlanMethods(noMethods)).toEqual([]);
-
-    expect(extractPlanMethods("```openui\nroot = Root([insight])\n```")).toEqual([]);
-    expect(extractPlanMethods("纯文字规划,没有代码块")).toEqual([]);
-
-    // id 去重
-    const dupText = PLAN_BLOCK_TEXT.replace('["pareto"]', '["pareto","pareto","trend"]');
-    expect(extractPlanMethods(dupText)).toEqual(["pareto", "trend"]);
-  });
-
-  it("plan 模式 onFinish:提取 methods 并持久化 pendingPlan", async () => {
+  it("plan 模式 onFinish:触发 onTaskFinish 应用收尾钩子（finalText/sessions 透传）", async () => {
     mockPlanTextStream(PLAN_BLOCK_TEXT);
     const sessions = makeSessionsStub();
-    const manager = await makeFakeManager();
-    const POST = createAnalyzeHandler({ datasources: manager, sessions });
+    const onTaskFinish = vi.fn().mockResolvedValue(undefined);
+    const POST = createAnalyzeHandler({ sessions, onTaskFinish });
 
     await POST(
       makeRequest({ messages: [], apiKey: "k", sessionId: "sess_plan", mode: "plan" })
     );
 
-    expect(sessions.updateContext).toHaveBeenCalledWith(
-      "sess_plan",
-      expect.objectContaining({ pendingPlan: { methodIds: ["pareto"] } })
-    );
+    expect(onTaskFinish).toHaveBeenCalledTimes(1);
+    const event = onTaskFinish.mock.calls[0][0];
+    expect(event.mode).toBe("plan");
+    expect(event.sessionId).toBe("sess_plan");
+    expect(event.finalText).toContain("pareto");
+    expect(event.sessions).toBe(sessions);
   });
 
-  it("execute 模式:pendingPlan 精确注入方法详情并消费清空", async () => {
-    mockPlanTextStream("执行中");
-    const sessions = makeSessionsStub({ pendingPlan: { methodIds: ["pareto"] } });
-    const manager = await makeFakeManager();
-    const POST = createAnalyzeHandler({ datasources: manager, sessions });
-
-    await POST(
-      makeRequest({
-        messages: [{ role: "assistant", content: "不含方法名的旧规划" }],
-        apiKey: "k",
-        sessionId: "sess_exec",
-        mode: "execute",
-      })
-    );
-
-    // system prompt 注入 pareto 卡详情(结构化主路径;散文匹配本应命不中该卡)
-    const arg = vi.mocked(streamText).mock.calls[0][0];
-    expect(String(arg.system)).toContain("### Method pareto");
-    // 消费后清空 pendingPlan
-    expect(sessions.updateContext).toHaveBeenCalledWith(
-      "sess_exec",
-      expect.objectContaining({ pendingPlan: { methodIds: [] } })
-    );
-  });
-
-  it("execute 模式无 pendingPlan:回退散文匹配并发 PLAN_FALLBACK_LEGACY 遥测", async () => {
-    mockPlanTextStream("执行中");
-    const sessions = makeSessionsStub(undefined);
-    const telemetryEvents: Array<{ type: string; code?: string }> = [];
-    const manager = await makeFakeManager();
-    const POST = createAnalyzeHandler({
-      datasources: manager,
-      sessions,
-      telemetry: { emit: (e) => telemetryEvents.push(e as { type: string; code?: string }) },
-    });
-
-    await POST(
-      makeRequest({
-        messages: [
-          {
-            role: "assistant",
-            content: "思路确认卡(方法:pareto + ranking),请确认以下分析方案。",
-          },
-        ],
-        apiKey: "k",
-        sessionId: "sess_legacy",
-        mode: "execute",
-      })
-    );
-
-    const arg = vi.mocked(streamText).mock.calls[0][0];
-    expect(String(arg.system)).toContain("### Method pareto");
-    expect(
-      telemetryEvents.some((e) => e.type === "warn" && e.code === "PLAN_FALLBACK_LEGACY")
-    ).toBe(true);
-    // 未消费 pendingPlan:不写 pendingPlan 补丁(onFinish 的 token 锚点回写不受影响)
-    const pendingPatches = vi
-      .mocked(sessions.updateContext)
-      .mock.calls.filter(([, patch]) => "pendingPlan" in patch);
-    expect(pendingPatches).toHaveLength(0);
-  });
 });
 
 describe("finish_task 服务端不变量（WS-5）", () => {
@@ -1354,8 +913,7 @@ describe("finish_task 服务端不变量（WS-5）", () => {
 
   it("无产出证据宣告 completed:被服务端拒绝并返回纠正指令(terminated=false)", async () => {
     const { events, sink } = makeTelemetrySpy();
-    const manager = await makeFakeManager();
-    const POST = createAnalyzeHandler({ datasources: manager, telemetry: sink });
+    const POST = createAnalyzeHandler({ resolveAppTools: async () => ({}) , telemetry: sink });
     await POST(makeRequest({ messages: [], apiKey: "k" }));
 
     const arg = vi.mocked(streamText).mock.calls[0][0];
@@ -1386,8 +944,7 @@ describe("finish_task 服务端不变量（WS-5）", () => {
       }) as never
     );
 
-    const manager = await makeFakeManager();
-    const POST = createAnalyzeHandler({ datasources: manager });
+    const POST = createAnalyzeHandler({ resolveAppTools: async () => ({}) });
     await POST(makeRequest({ messages: [], apiKey: "k" }));
 
     const arg = vi.mocked(streamText).mock.calls[0][0];
@@ -1415,8 +972,7 @@ describe("finish_task 服务端不变量（WS-5）", () => {
       }) as never
     );
 
-    const manager = await makeFakeManager();
-    const POST = createAnalyzeHandler({ datasources: manager });
+    const POST = createAnalyzeHandler({ resolveAppTools: async () => ({}) });
     await POST(makeRequest({ messages: [{ role: "user", content: "不错" }], apiKey: "k" }));
 
     const arg = vi.mocked(streamText).mock.calls[0][0];
@@ -1445,8 +1001,7 @@ describe("finish_task 服务端不变量（WS-5）", () => {
       }) as never
     );
 
-    const manager = await makeFakeManager();
-    const POST = createAnalyzeHandler({ datasources: manager });
+    const POST = createAnalyzeHandler({ resolveAppTools: async () => ({}) });
     await POST(makeRequest({ messages: [{ role: "user", content: "gitlab mcp 有哪些工具" }], apiKey: "k" }));
 
     const arg = vi.mocked(streamText).mock.calls[0][0];
@@ -1474,8 +1029,7 @@ describe("finish_task 服务端不变量（WS-5）", () => {
       }) as never
     );
 
-    const manager = await makeFakeManager();
-    const POST = createAnalyzeHandler({ datasources: manager });
+    const POST = createAnalyzeHandler({ resolveAppTools: async () => ({}) });
     await POST(
       makeRequest({
         messages: [{ role: "user", content: "请按已确认思路执行。澄清问题答复：「输出形式？」选择：仅核心结论摘要。" }],
@@ -1497,14 +1051,12 @@ describe("finish_task 服务端不变量（WS-5）", () => {
 describe("多应用生态：Prompt 与工具隔离", () => {
   it("当 appId 为通用助手 general 时，采用 resolveAppPrompt 提示词且不装配数据库工具", async () => {
     vi.mocked(streamText).mockImplementation(() => streamResult({}) as never);
-    const manager = await makeFakeManager();
     const resolveAppPrompt = vi.fn().mockImplementation((appId) => {
       if (appId === "general") return "你是一位通用智能助手，专注于编程与写作。";
       return undefined;
     });
 
     const POST = createAnalyzeHandler({
-      datasources: manager,
       resolveAppPrompt,
     });
 
@@ -1552,7 +1104,6 @@ describe("Provider 韧性层 fallback 链（WS-9）", () => {
     events = [];
     mockStreamOk();
     POST = createAnalyzeHandler({
-      datasources: await makeFakeManager(),
       telemetry: { emit: (e) => events.push(e as Record<string, unknown>) },
     });
   });
@@ -1894,11 +1445,9 @@ describe("WS-11 成本入账", () => {
       }) as never
     );
 
-    const manager = await makeFakeManager();
     const ledger = new InMemoryCostLedger();
     const pricing = { priceFor: () => ({ input: 2.5, output: 10 }) } as unknown as ModelPricingTable;
     const POST = createAnalyzeHandler({
-      datasources: manager,
       costLedger: ledger,
       quota: { tenantTokenLimit: 1_000_000, windowMs: 3_600_000 },
       pricing,
@@ -1915,8 +1464,7 @@ describe("WS-11 成本入账", () => {
   });
 
   it("未注入台账且未配置配额时不入账、不拦截（零行为变化）", async () => {
-    const manager = await makeFakeManager();
-    const POST = createAnalyzeHandler({ datasources: manager });
+    const POST = createAnalyzeHandler({ resolveAppTools: async () => ({}) });
     const res = await POST(makeRequest({ messages: [], apiKey: "k" }));
     expect(res.status).toBe(200);
     await res.text();
@@ -1932,8 +1480,7 @@ describe("WS-11 成本入账", () => {
       }) as never
     );
 
-    const manager = await makeFakeManager();
-    const POST = createAnalyzeHandler({ datasources: manager });
+    const POST = createAnalyzeHandler({ resolveAppTools: async () => ({}) });
     const res = await POST(makeRequest({ messages: [], apiKey: "k" }));
     expect(res.status).toBe(200);
     const text = await res.text();
@@ -1959,9 +1506,7 @@ describe("WS-11 成本入账", () => {
         }),
       } as unknown as MCPClientManager;
 
-      const manager = await makeFakeManager();
       const POST = createAnalyzeHandler({
-        datasources: manager,
         mcp: {
           manager: mockMcpManager,
           getServers: () => [
@@ -1979,8 +1524,6 @@ describe("WS-11 成本入账", () => {
 
       const callArgs = vi.mocked(streamText).mock.calls[0][0];
       expect(callArgs.tools).toHaveProperty("gitlab_search_repositories");
-      expect(callArgs.system).toContain("GitLab 协同");
-      expect(callArgs.system).toContain("gitlab_search_repositories");
     });
 
     it("当 MCP 服务连接失败时，优雅降级记录告警且不中断正常请求", async () => {
@@ -1991,9 +1534,7 @@ describe("WS-11 成本入账", () => {
         listTools: vi.fn().mockRejectedValue(new Error("Connection refused")),
       } as unknown as MCPClientManager;
 
-      const manager = await makeFakeManager();
       const POST = createAnalyzeHandler({
-        datasources: manager,
         telemetry: sink,
         mcp: {
           manager: mockMcpManager,

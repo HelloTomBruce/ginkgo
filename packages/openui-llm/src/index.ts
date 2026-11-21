@@ -1,7 +1,10 @@
 /**
  * @openui-analytics/llm
- * 针对 OpenUI 业务特化的分析 Agent 装配包。
- * 底层执行、流中继、配额计量、状态图与中间件管道由通用底座 @openui-analytics/harness-core 驱动。
+ * 领域中立的 LLM 编排装配包：streamText 生命周期、模型链韧性、流中继、
+ * 预算熔断、上下文治理与多应用接缝（resolveAppPrompt / resolveAppTools /
+ * deliverable / onTaskFinish）。
+ * 底层执行、韧性、配额计量与状态图由通用底座 @openui-analytics/harness-core 驱动；
+ * 应用领域逻辑（如数据分析的 prompt/方法卡/跨源）全部经接缝由应用包注入。
  */
 
 // 业务主入口与上下文
@@ -9,22 +12,16 @@ export { createAnalyzeHandler } from "./handler";
 export type {
   AnalyzeHandlerOptions,
   AnalyzeRequestBody,
+  AppResolutionContext,
+  AppSourceSummary,
   AuthContext,
   SessionContextMeta,
   SessionContextStore,
 } from "./handler";
 
-// 跨源映射注册表
+// 平台提示词设施（注入防御纪律段 + 中立兜底提示词）
 export {
-  resolveCrossSourcePairs,
-  CrossSourceRegistry,
-  defaultCrossSourceRegistry,
-} from "./crossSourceMap";
-export type {
-  CrossSourcePair,
-  CrossSourceLink,
-  MappingEntry,
-} from "./crossSourceMap";
-
-// OpenUI 领域特化校验器（含语言 AST 规则）
-export { OpenUIDslValidator } from "./guardrails/openuiDslValidator";
+  untrustedDataSection,
+  withPlatformGuardrails,
+  getPlatformBasePrompt,
+} from "./platformPrompt";

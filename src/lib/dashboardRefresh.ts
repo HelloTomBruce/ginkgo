@@ -18,7 +18,7 @@ import {
   createParser,
   jsonToOpenUI,
   serverLibrary,
-} from "@openui-analytics/llm/serverLibrary";
+} from "@openui-analytics/components/server";
 import { extractQueryRows, rowPropFor } from "./queryRows";
 import { materializeSpecRows } from "./specMaterialize";
 import { parseChartSpec, type ChartSpec } from "@openui-analytics/chart-spec";

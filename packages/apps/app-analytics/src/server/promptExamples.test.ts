@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { createParser } from "@openuidev/lang-core";
-import { serverLibrary } from "./serverLibrary";
+import { serverLibrary } from "@openui-analytics/components/server";
 import {
   promptExample,
   reportLayoutExample,

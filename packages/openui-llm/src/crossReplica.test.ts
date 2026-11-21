@@ -262,7 +262,7 @@ describe("工厂接线：LLM_TASK_STORE=redis（8.4 附属）", () => {
   it("redis 模式缺 REDIS_URL 时工厂抛含指引的错误", () => {
     process.env.LLM_TASK_STORE = "redis";
     delete process.env.REDIS_URL;
-    expect(() => createAnalyzeHandler({ datasources: {} as never })).toThrow(
+    expect(() => createAnalyzeHandler({})).toThrow(
       /LLM_TASK_STORE=redis 需要 REDIS_URL/
     );
   });
@@ -270,14 +270,14 @@ describe("工厂接线：LLM_TASK_STORE=redis（8.4 附属）", () => {
   it("显式 taskStore 时跳过 env store 解析（非法 env 值不影响注入方）", () => {
     process.env.LLM_TASK_STORE = "bogus-kind";
     expect(() =>
-      createAnalyzeHandler({ datasources: {} as never, taskStore: new InMemoryTaskStore() })
+      createAnalyzeHandler({ taskStore: new InMemoryTaskStore() })
     ).not.toThrow();
   });
 
   it("非法 store 值报可选清单（含 redis）", () => {
     process.env.LLM_TASK_STORE = "bogus-kind";
     delete process.env.REDIS_URL;
-    expect(() => createAnalyzeHandler({ datasources: {} as never })).toThrow(
+    expect(() => createAnalyzeHandler({})).toThrow(
       /可选 memory\/file\/redis/
     );
   });

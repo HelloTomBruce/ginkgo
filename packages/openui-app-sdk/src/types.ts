@@ -142,9 +142,6 @@ export interface AppClientContract {
 
   /** 侧边栏底部操作列表 */
   sidebarQuickActions?: AppSidebarQuickActionSpec[];
-
-  /** 获取当前工作区产物列表（由应用自理实现，可选） */
-  listArtifacts?: (ctx: AppWorkspaceContext) => Promise<AppArtifactItem[]>;
 }
 
 /**
@@ -167,10 +164,58 @@ export interface AppWorkspaceContext {
 export interface AppArtifactItem {
   id: string;
   name: string;
-  type: string; // 如 "dashboard" | "file" | "document" | "script"
+  /** 产物类型：平台约定值 "dashboard" | "file" | "document" | "script"，应用可自定义 */
+  type: string;
   path?: string;
   sizeBytes?: number;
   updatedAt: number;
+}
+
+/**
+ * 产物刷新裁决（活产物协议）：应用按自身语义重算产物数据（如重放取数查询），
+ * 平台路由负责持久化。compute-only——不落盘。
+ */
+export type AppArtifactRefreshVerdict =
+  | {
+      ok: true;
+      /** 刷新后的产物载荷（如回填后的新 DSL 全文） */
+      payload: string;
+      /** 部分成功的组件/区块 id（保留旧数据） */
+      stale?: string[];
+      /** 新数据时间戳（全部成功时由应用给出） */
+      dataUpdatedAt?: number;
+    }
+  | {
+      ok: false;
+      /** 归一失败原因：readonly | not-found | unsupported | source-unavailable | replay-failed | dsl-invalid | 应用自定义 */
+      reason: string;
+      error?: string;
+    };
+
+/**
+ * 会话上下文元数据（宿主会话存储中的治理锚点与应用编排状态）。
+ * 字段由宿主（token 锚点/摘要缓存）与应用（如规划待执行状态）共同扩展，
+ * 此处声明分析类应用常用的最小集合，其余字段经索引签名透传。
+ */
+export interface AppSessionContextMeta {
+  /** 最近一次实测 prompt token 锚点（宿主写入，应用只读） */
+  lastPromptTokens?: number;
+  /** 摘要缓存标记：摘要已覆盖到该消息（宿主读写） */
+  summaryUptoMessageId?: string;
+  /** 缓存的会话摘要文本（宿主读写） */
+  summary?: string;
+  /** 规划待执行状态：plan 阶段产出、execute 阶段消费（应用读写，如方法卡 id 列表） */
+  pendingPlan?: { methodIds?: string[] } & Record<string, unknown>;
+  [key: string]: unknown;
+}
+
+/**
+ * 会话上下文读写通道（宿主注入）：应用编排状态（如 pendingPlan）的
+ * 持久化经此通道落盘，update 为增量合并语义。
+ */
+export interface AppSessionContextChannel {
+  getContext(sessionId: string): Promise<AppSessionContextMeta | undefined>;
+  updateContext(sessionId: string, patch: Partial<AppSessionContextMeta>): Promise<void>;
 }
 
 export interface AppServerContext {
@@ -184,20 +229,45 @@ export interface AppServerContext {
   mode?: "direct" | "plan" | "execute";
   /** 数据源信息摘要文本（可选） */
   schemaDigestText?: string;
-  /** 启用的数据源摘要清单（可选） */
-  activeSources?: Array<{ id: string; name: string }>;
+  /** 平台装载的源摘要清单（可选；当前为 MCP 源，含已装载工具名，供应用 prompt 渲染数据访问段） */
+  activeSources?: Array<{ id: string; name: string; kind?: string; tools?: string[] }>;
   /** 方法论清单文本（可选） */
   methodologyText?: string;
   /** 用户前序消息上下文 */
   messages?: unknown[];
+  /** 最新用户提问文本（可选；语义召回/认证口径匹配等用途） */
+  userQuery?: string;
+  /** 当前会话启用的数据源 id 列表（可选；requiresDataTools 类应用装配工具用） */
+  enabledSources?: string[];
+  /** 会话上下文读写通道（可选；应用编排状态如 pendingPlan 的持久化） */
+  sessions?: AppSessionContextChannel;
+}
+
+/**
+ * 应用交付物契约：宿主编排层（如 finish_task 终态不变量）据此适配
+ * 应用领域的交付物语义。全部可选——未提供的字段由宿主使用中立缺省。
+ */
+export interface AppDeliverableContract {
+  /** finish_task 终态工具描述（应用领域语境） */
+  toolDescription?: string;
+  /** 无任何产出证据时拒绝 completed 的文案 */
+  rejectReason?: string;
+  /** 存在可视化交付物时的收尾指令 */
+  wrapUpWithArtifact?: string;
+  /** 仅有文本产出时的收尾指令 */
+  wrapUpPlainText?: string;
+  /** 交付物证据标记：任一出现即视为「有可视化交付物」（如 ["```openui", "PlanReviewCard"]） */
+  evidenceMarkers?: string[];
 }
 
 export interface AppServerContract {
   /**
    * 应用自治的 System Prompt 生成器。
    * 每个应用包全权负责编写自己的角色设定、业务指令、Few-shot 示例或格式约束。
+   * 可选：需要运行时依赖注入的应用（如 analytics 的数据源单例）不在静态包导出上
+   * 提供，而由宿主组合根经工厂（createXxxServer(deps)）装配运行时实例。
    */
-  buildSystemPrompt: (ctx: AppServerContext) => Promise<string> | string;
+  buildSystemPrompt?: (ctx: AppServerContext) => Promise<string> | string;
 
   /**
    * 应用自治声明并装配的工具集（Tools）。
@@ -207,6 +277,22 @@ export interface AppServerContract {
 
   /** 是否需要挂载数据库探查工具（标志位） */
   requiresDataTools?: boolean;
+
+  /**
+   * 产物列表（可选）：应用自治枚举其产物（看板/文档/文件等）为统一的
+   * AppArtifactItem 投影，供宿主产物面板/徽章计数等平台级消费。
+   */
+  listArtifacts?(
+    ctx: AppWorkspaceContext
+  ): Promise<AppArtifactItem[]> | AppArtifactItem[];
+
+  /**
+   * 活产物刷新（可选）：按应用语义重算产物数据（零 LLM），compute-only 不落盘。
+   * 未提供 = 该应用产物不支持数据刷新。
+   */
+  refreshArtifact?(input: {
+    artifactId: string;
+  }): Promise<AppArtifactRefreshVerdict>;
 
   /** 声明依赖的平台底层能力 */
   requiredCapabilities?: string[];

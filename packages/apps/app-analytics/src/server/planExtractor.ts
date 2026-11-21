@@ -1,5 +1,5 @@
 import { createParser } from "@openuidev/lang-core";
-import { serverLibrary } from "../serverLibrary";
+import { serverLibrary } from "@openui-analytics/components/server";
 
 /** WS-4:plan 代码块解析器(模块级构造一次;解析 PlanReviewCard.methods 用) */
 const planParser = createParser(serverLibrary.toJSONSchema(), "Root");

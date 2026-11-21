@@ -29,6 +29,10 @@ export const TEMPLATE_ABSTRACT_PROMPT_MAX = 1000;
 export const TEMPLATE_SLOTS_MAX = 50;
 
 const ID_RE = /^dash_[0-9a-f]{8}$/;
+/** 产物归属应用 id 规则（与 sessionStore 的 APP_ID_RE 一致） */
+const APP_ID_RE = /^[a-z0-9_-]{1,64}$/i;
+/** 存量记录（平台化前）无 appId 字段，读时归一到默认应用 */
+export const DEFAULT_DASHBOARD_APP_ID = "analytics";
 /** 查询 id：q_ + 1-32 位小写字母数字（生成期捕获为 q_ + 8 位十六进制散列） */
 const QUERY_ID_RE = /^q_[0-9a-z]{1,32}$/;
 /** 源 id 规则与数据源配置层一致（packages/openui-datasources SOURCE_ID_PATTERN） */
@@ -75,6 +79,8 @@ export interface TemplateMeta {
 
 export interface DashboardRecord {
   id: string;
+  /** 产物归属应用 id（平台产物协议；存量记录读时归一为 analytics） */
+  appId?: string;
   title: string;
   /** 记录形态；缺省 = favorite（向后兼容旧记录） */
   kind?: DashboardKind;
@@ -106,6 +112,7 @@ export type DashboardSummary = Omit<DashboardRecord, "dsl">;
 export function toSummary(record: DashboardRecord): DashboardSummary {
   return {
     id: record.id,
+    appId: record.appId,
     title: record.title,
     kind: record.kind,
     templateMeta: record.templateMeta,
@@ -123,6 +130,7 @@ export function toSummary(record: DashboardRecord): DashboardSummary {
 
 /** 入参宽容（未经校验的 JSON body）；校验统一收敛在 validateDashboardFields */
 export interface DashboardWriteInput {
+  appId?: unknown;
   kind?: unknown;
   templateMeta?: unknown;
   dsl?: unknown;
@@ -137,6 +145,7 @@ export interface DashboardWriteInput {
 }
 
 interface ValidFields {
+  appId?: string;
   kind?: DashboardKind;
   templateMeta?: TemplateMeta;
   dsl?: string;
@@ -171,6 +180,17 @@ export function validateDashboardFields(
   const errors: string[] = [];
   if (!isRecord(body)) {
     return { ok: false, status: 400, errors: ["请求体必须是 JSON 对象"] };
+  }
+
+  // appId：产物归属应用（缺省由存储层补默认应用；非法格式 400）
+  let appId: string | undefined;
+  if (body.appId !== undefined && body.appId !== null && body.appId !== "") {
+    const raw = String(body.appId).trim();
+    if (!APP_ID_RE.test(raw)) {
+      errors.push("appId 非法（小写字母数字与 - _，长度 1-64）");
+    } else {
+      appId = raw;
+    }
   }
 
   // kind：缺省 favorite；显式值仅允许枚举内
@@ -480,6 +500,7 @@ export function validateDashboardFields(
   return {
     ok: true,
     value: {
+      ...(appId !== undefined ? { appId } : {}),
       ...(kind !== undefined ? { kind } : {}),
       ...(templateMeta !== undefined ? { templateMeta } : {}),
       ...(dsl !== undefined ? { dsl } : {}),
@@ -591,8 +612,8 @@ function mergeLiveFields(
 }
 
 export interface DashboardStore {
-  /** 摘要列表（updatedAt 降序；坏文件静默跳过） */
-  list(): Promise<DashboardSummary[]>;
+  /** 摘要列表（updatedAt 降序；坏文件静默跳过；可按归属应用过滤） */
+  list(filter?: { appId?: string }): Promise<DashboardSummary[]>;
   /** 详情（含 dsl）；未知/坏文件返回 null */
   get(id: string): Promise<DashboardRecord | null>;
   /** 收藏/覆盖收藏：dsl 必填；同 origin.messageId 命中已有记录则覆盖更新（活看板字段整体替换） */
@@ -636,7 +657,12 @@ export function createDashboardStore(opts: { dir: string }): DashboardStore {
       ) {
         return null;
       }
-      return parsed as unknown as DashboardRecord;
+      const record = parsed as unknown as DashboardRecord;
+      // 读时归一：存量记录无 appId（平台化前全站共享库），补默认应用归属
+      if (typeof record.appId !== "string" || !APP_ID_RE.test(record.appId)) {
+        record.appId = DEFAULT_DASHBOARD_APP_ID;
+      }
+      return record;
     } catch {
       return null;
     }
@@ -694,12 +720,15 @@ export function createDashboardStore(opts: { dir: string }): DashboardStore {
   };
 
   return {
-    async list() {
+    async list(filter) {
       const records = await readAll();
       records.sort(
         (a, b) => b.updatedAt - a.updatedAt || b.createdAt - a.createdAt
       );
-      return records.map(toSummary);
+      const filtered = filter?.appId
+        ? records.filter((r) => r.appId === filter.appId)
+        : records;
+      return filtered.map(toSummary);
     },
 
     async get(id) {
@@ -731,6 +760,8 @@ export function createDashboardStore(opts: { dir: string }): DashboardStore {
         if (!live.ok) return { ok: false, status: 400, errors: live.errors };
         const record: DashboardRecord = {
           ...existing,
+          // 归属应用不可变更（收藏覆盖发生在同一应用的会话内）
+          ...(fields.appId !== undefined ? { appId: fields.appId } : {}),
           dsl: fields.dsl,
           ...(fields.title !== undefined ? { title: fields.title } : {}),
           ...(fields.prompt !== undefined ? { prompt: fields.prompt } : {}),
@@ -762,6 +793,7 @@ export function createDashboardStore(opts: { dir: string }): DashboardStore {
       if (!live.ok) return { ok: false, status: 400, errors: live.errors };
       const record: DashboardRecord = {
         id: `dash_${crypto.randomBytes(4).toString("hex")}`,
+        appId: fields.appId ?? DEFAULT_DASHBOARD_APP_ID,
         title:
           fields.title ??
           deriveDashboardTitle(fields.prompt) ??

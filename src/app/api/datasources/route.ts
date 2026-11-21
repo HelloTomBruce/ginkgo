@@ -1,6 +1,6 @@
 import { datasources } from "@/lib/datasources";
 import { describeDynamicSource } from "@openui-analytics/datasources";
-import { resolveCrossSourcePairs } from "@openui-analytics/llm/crossSource";
+import { resolveCrossSourcePairs } from "@openui-apps/analytics/server";
 
 /**
  * GET /api/datasources

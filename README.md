@@ -1,27 +1,27 @@
 # OpenUI Analytics
 
-对话式生成 UI 数据分析看板：用自然语言提问，由 LLM 编排 **PostgreSQL / GitLab / 禅道 / 文件（CSV·Excel → DuckDB）** 多路数据源取数，流式生成 **OpenUI Lang** 声明式看板（KPI 卡、漏斗、热力图、雷达图、预算模拟器等）并实时渲染。
+**OpenUI 智能体应用平台**：统一对话宿主 + 可插拔应用体系 + 平台级 Agent 运行时。
+用自然语言提问，由 LLM 编排 **PostgreSQL / GitLab / 禅道 / 文件（CSV·Excel → DuckDB）** 多路数据源取数，流式生成 **OpenUI Lang** 声明式看板（KPI 卡、漏斗、热力图、雷达图、预算模拟器等）并实时渲染。数据分析（analytics）与通用助手（general）是平台的前两个应用；新应用接入见 [docs/app-integration-guide.md](docs/app-integration-guide.md)。
 
 ## 架构
 
 ```text
 ┌──────────────────────────────────────────────────────────────┐
-│ Browser (Next.js 16 / React 19)                              │
-│  ChatDashboard (组合层)                                       │
-│   ├─ chat/ChatSidebar    会话管理 + 预设场景                  │
-│   ├─ chat/MessageList    消息流 + 工具调用指示 + OpenUI 渲染  │
-│   ├─ chat/ChatInput / SettingsModal / DevToolsPanel          │
-│   └─ hooks/useLlmSettings + useSessionManager                │
+│ 宿主壳层 Browser (Next.js 16 / React 19)                     │
+│  ChatDashboard · AppSwitcher（应用切换）· ChatSidebar        │
+│  MessageList + OpenUIRenderer 流式渲染 · hooks               │
 └──────────────┬───────────────────────────────────────────────┘
-               │ POST /api/analyze (Data Stream Protocol v1)
+               │ POST /api/analyze (Data Stream Protocol v1，按 appId 分发)
                ▼
 ┌──────────────────────────────────────────────────────────────┐
-│ Route Handler: streamText (Vercel AI SDK)                    │
-│  system prompt: OpenUI 组件规范 + 数据源使用指引             │
-│  tools:                                                      │
-│   ├─ execute_sql / list_tables / describe_table ──► QueryGateway │──► PostgreSQL (只读守卫)
-│   ├─ gitlab_* ──► 外部 GitLab MCP Server (Harness MCP)       │──► GitLab 工程数据
-│   └─ zentao_* ──► 本地 ZenTao CLI MCP (Harness MCP)          │──► 禅道项目/Bug/工时
+│ 应用插件层 packages/apps/*（协议：openui-app-sdk 插槽）        │
+│  app-analytics：三模式 prompt / 数据源与跨源工具 / 方法卡交接 │
+│  app-general：工作区文件/命令工具 / ArtifactViewer           │
+├──────────────────────────────────────────────────────────────┤
+│ 平台编排层 openui-llm（领域中立）: streamText + 模型链韧性    │
+│  四接缝: resolveAppPrompt / resolveAppTools / deliverable /  │
+│  onTaskFinish；工具: 应用工具 + gitlab_*/zentao_* (MCP)      │
+│   └─ execute_sql 等 ──► QueryGateway ──► PostgreSQL (只读守卫)│
 └──────────────────────────────────────────────────────────────┘
                │ 模型输出 ```openui 代码块
                ▼
@@ -32,14 +32,17 @@
 
 | 包 | 门面 | 职责 |
 | --- | --- | --- |
+| `packages/openui-app-sdk` | `defineApp` / `AppPackageDefinition` | 平台应用规范协议底座：manifest、客户端插槽（Workspace/InputAccessory/sidebar）、服务端契约（prompt/tools/产物）、交付物契约 |
+| `packages/apps/app-analytics` | `createAnalyticsServer` | 智能数据分析师应用（深度应用）：三模式 prompt、schema 摘要、方法卡交接、跨源映射、数据源工具装配、看板产物（收藏/零 LLM 刷新） |
+| `packages/apps/app-general` | — | 通用智能助手应用（轻应用）：工作区沙箱文件/命令工具、ArtifactViewer |
 | `packages/openui-chart-spec` | `parseDashboardSpec` / `applyJsonPatch` | DashboardSpec 2.0 声明式状态树 + RFC 6902 JSON Patch 引擎（最底层 spec 契约，zod-only） |
 | `packages/openui-harness-core` | `ContextEngine` / `createTerminationTool` / `MCPClientManager` | 通用 Agent Harness 底座：上下文裁剪压缩引擎、洋葱模型工具切面、任务生命周期断言、三维预算防跑飞、MCP 连接池、FinOps 台账 |
 | `packages/openui-datasources` | `createDatasourceManager` / `QueryGateway` | 原生结构化数据源直连 + QueryGateway 安全网关 + 只读守卫管线 + 结果集缓存 + Schema Card + Certified Queries 语义层 |
-| `packages/openui-components` | `analyticsLibrary` | OpenUI 规范展示组件库（24 组件，layout/metrics/charts/data/insight/timeline/interaction/spec 分类） |
-| `packages/openui-llm` | `createAnalyzeHandler` | LLM 领域编排、Prompt 装配、StreamHub 流中继、AST 语法守卫与双层评测体系 |
+| `packages/openui-components` | `analyticsLibrary` | OpenUI 规范展示组件库（24 组件）+ 平台渲染基建（serverLibrary schema 面 / OpenUIRenderer / DSL 校验器 / FilterBus） |
+| `packages/openui-llm` | `createAnalyzeHandler` | **领域中立** LLM 编排：模型链韧性、StreamHub 流中继、三维熔断、上下文投影治理、多应用四接缝 |
 | `packages/openui-methodology` | `builtinMethodCards` | 方法论资产：10 张内置方法卡 + 用户卡 JSON 契约 |
 
-应用侧 `src/` 只保留路由薄壳、前端 UI 与共享层。
+应用侧 `src/` 只保留宿主壳（路由薄壳、前端 UI、组合根装配与共享存储层）。
 
 ## 快速开始
 

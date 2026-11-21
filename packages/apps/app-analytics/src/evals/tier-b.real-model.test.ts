@@ -3,7 +3,7 @@
  * WS-6 Tier B:真实模型行为评估(手动/夜间,需要真实 API Key)。
  *
  * 运行方式:在环境变量提供 OPENAI_API_KEY(/ LLM_API_KEY)后执行
- *   pnpm --filter @openui-analytics/llm exec vitest run src/evals/tier-b.real-model.test.ts
+ *   pnpm --filter @openui-apps/analytics exec vitest run src/evals/tier-b.real-model.test.ts
  * 无 Key 时整组自动跳过(CI 默认不跑)。
  *
  * 固定夹具:文件数据源(CSV→DuckDB)加载确定性渠道营销数据,问题集固定,
@@ -17,9 +17,14 @@ import { describe, it, expect } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { createAnalyzeHandler } from "../handler";
-import { serverLibrary } from "../serverLibrary";
-import { createParser } from "@openuidev/lang-core";
+import { createAnalyzeHandler } from "@openui-analytics/llm";
+import { serverLibrary, createParser } from "@openui-analytics/components/server";
+import {
+  createAnalyticsServer,
+  analyticsDeliverable,
+  analyticsNoApiKeyMessage,
+  buildAnalyticsSummaryPrompt,
+} from "../server";
 import { createDatasourceManager, type DatasourceManager } from "@openui-analytics/datasources";
 import type { HarnessEvent, TelemetrySink } from "@openui-analytics/harness-core";
 
@@ -121,7 +126,18 @@ describe.skipIf(!hasApiKey)("Tier B 真实模型行为评估(需 OPENAI_API_KEY)
       async () => {
         const events: HarnessEvent[] = [];
         const sink: TelemetrySink = { emit: (e) => events.push(e) };
-        const evalHandler = createAnalyzeHandler({ datasources: manager, telemetry: sink });
+        // 与宿主组合根同构装配：analytics 深度编排经应用工厂注入编排层
+        const analyticsServer = createAnalyticsServer({ datasources: manager });
+        const evalHandler = createAnalyzeHandler({
+          defaultAppId: "analytics",
+          deliverable: analyticsDeliverable,
+          noApiKeyMessage: analyticsNoApiKeyMessage,
+          summaryPromptBuilder: buildAnalyticsSummaryPrompt,
+          resolveAppPrompt: (appId, ctx) => analyticsServer.buildSystemPrompt(ctx),
+          resolveAppTools: (appId, ctx) => analyticsServer.getTools(ctx),
+          onTaskFinish: (event) => analyticsServer.onTaskFinish(event),
+          telemetry: sink,
+        });
 
         const res = await evalHandler(
           makeRequest({

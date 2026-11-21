@@ -694,7 +694,7 @@ describe("ChatDashboard 守护测试（重构行为锁定）", () => {
     };
     server = installSessionServer((url, init) => {
       const method = (init?.method ?? "GET").toUpperCase();
-      if (url === "/api/dashboards" && method === "GET") {
+      if (url.startsWith("/api/dashboards") && !/\/dashboards\/[^/]+/.test(url) && method === "GET") {
         return json({ dashboards: [summary] });
       }
       if (url === `/api/dashboards/${record.id}`) {
@@ -762,7 +762,7 @@ describe("ChatDashboard 守护测试（重构行为锁定）", () => {
     const summary = { ...record, dsl: undefined };
     server = installSessionServer((url, init) => {
       const method = (init?.method ?? "GET").toUpperCase();
-      if (url === "/api/dashboards" && method === "GET") {
+      if (url.startsWith("/api/dashboards") && !/\/dashboards\/[^/]+/.test(url) && method === "GET") {
         return json({ dashboards: [summary] });
       }
       if (url === `/api/dashboards/${record.id}` && method === "GET") {

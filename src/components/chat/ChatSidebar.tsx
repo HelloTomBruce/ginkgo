@@ -621,15 +621,35 @@ export function ChatSidebar({
           <FileCode className="w-3.5 h-3.5" />
           <span>{showRawLang ? "隐藏 OpenUI 源码" : "查看 OpenUI Lang 源码"}</span>
         </button>
-        {currentApp.client.sidebarQuickActions?.some((a) => a.key === "methodology") && (
-          <button
-            onClick={onOpenMethodology}
-            className="w-full text-xs p-2 rounded-lg border border-border text-foreground-subtle hover:bg-muted transition-colors flex items-center gap-2"
-          >
-            <BookOpen className="w-3.5 h-3.5" />
-            <span>分析方法论</span>
-          </button>
-        )}
+        {/* 应用声明的快捷操作：通用渲染（label/icon 生效；onClick 缺省解析宿主内置能力） */}
+        {(currentApp.client.sidebarQuickActions ?? []).map((action) => {
+          const hostHandler =
+            action.key === "methodology"
+              ? onOpenMethodology
+              : action.key === "component-catalog"
+                ? onOpenComponentCatalog
+                : undefined;
+          const handler = action.onClick ?? hostHandler;
+          if (!handler) return null;
+          const ActionIcon =
+            action.icon === "BookOpen"
+              ? BookOpen
+              : action.icon === "LayoutGrid"
+                ? LayoutGrid
+                : action.icon === "Sparkles"
+                  ? Sparkles
+                  : Compass;
+          return (
+            <button
+              key={action.key}
+              onClick={handler}
+              className="w-full text-xs p-2 rounded-lg border border-border text-foreground-subtle hover:bg-muted transition-colors flex items-center gap-2"
+            >
+              <ActionIcon className="w-3.5 h-3.5" />
+              <span>{action.label}</span>
+            </button>
+          );
+        })}
         <button
           onClick={onOpenComponentCatalog}
           className="w-full text-xs p-2 rounded-lg border border-border text-foreground-subtle hover:bg-muted transition-colors flex items-center gap-2"

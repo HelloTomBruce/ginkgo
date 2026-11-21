@@ -10,16 +10,14 @@ import {
   Printer,
   Layers,
 } from "lucide-react";
-import { OpenUIRenderer } from "@/components/OpenUIRenderer";
-import { DashboardScopeProvider } from "@openui-analytics/components";
-import { Hint } from "@/components/ui/hint";
+import { OpenUIRenderer, DashboardScopeProvider } from "@openui-analytics/components";
+import { Hint } from "./ui/hint";
 
 export interface CanvasDashboardData {
   id: string;
   title?: string;
   dsl: string;
   isLive?: boolean;
-  queries?: string[];
 }
 
 export interface AnalysisCanvasProps {

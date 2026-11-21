@@ -5,15 +5,21 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./client": "./src/client/index.ts"
+    "./client": "./src/client/index.ts",
+    "./server": "./src/server/index.ts"
   },
   "dependencies": {
     "@openui-analytics/app-sdk": "workspace:*",
     "@openui-analytics/chart-spec": "workspace:*",
     "@openui-analytics/components": "workspace:*",
     "@openui-analytics/datasources": "workspace:*",
+    "@openui-analytics/llm": "workspace:*",
     "@openui-analytics/methodology": "workspace:*",
+    "@openuidev/lang-core": "^0.3.1",
+    "ai": "4.3.19",
+    "cn": "^0.5.2",
     "lucide-react": "^1.73.0",
+    "radix-ui": "^1.8.1",
     "react": "19.3.1",
     "react-dom": "19.3.1"
   },
@@ -22,5 +28,9 @@
     "@types/react-dom": "^19",
     "typescript": "^5",
     "vitest": "^5.1.0"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "eval:tier-b": "vitest run src/evals/tier-b.real-model.test.ts"
   }
 }

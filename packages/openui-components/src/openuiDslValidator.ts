@@ -1,15 +1,35 @@
-import { createParser } from "@openuidev/lang-core";
-import { serverLibrary } from "../serverLibrary";
-import type { StructureValidator, ValidationResult } from "@openui-analytics/harness-core";
+import { createParser, type Library } from "@openuidev/lang-core";
 
-const parser = createParser(serverLibrary.toJSONSchema(), "Root");
+/**
+ * 与 @openui-analytics/harness-core 的 StructureValidator 契约结构兼容的本地声明
+ * （组件包不引入 harness-core 依赖；结构类型在赋值处自动兼容）。
+ */
+export interface ValidationResult<T = unknown> {
+  ok: boolean;
+  data?: T;
+  errors: string[];
+}
+
+export interface StructureValidator<T = unknown> {
+  readonly name: string;
+  validate(content: string): ValidationResult<T>;
+  buildFixPrompt(content: string, errors: string[]): string;
+}
 
 /**
  * OpenUI DSL 看板代码块语法验证器：
- * 预检 ```openui 代码块是否符合 serverLibrary AST Schema 规范
+ * 预检 ```openui 代码块是否符合指定组件库的 AST Schema 规范。
+ *
+ * 工厂形式（createOpenUIDslValidator）接收任意 OpenUI Library，
+ * 不绑定具体组件集——校验器属于平台 DSL 设施，组件集由应用/宿主决定。
  */
 export class OpenUIDslValidator implements StructureValidator<unknown> {
   readonly name = "OpenUIDslValidator";
+  private readonly parser: ReturnType<typeof createParser>;
+
+  constructor(library: Library) {
+    this.parser = createParser(library.toJSONSchema(), "Root");
+  }
 
   validate(content: string): ValidationResult<unknown> {
     if (!content || !content.includes("```openui")) {
@@ -27,7 +47,7 @@ export class OpenUIDslValidator implements StructureValidator<unknown> {
       parsedCount++;
 
       try {
-        const result = parser.parse(code);
+        const result = this.parser.parse(code);
         if (result.meta?.errors && result.meta.errors.length > 0) {
           for (const err of result.meta.errors) {
             errors.push(typeof err === "string" ? err : JSON.stringify(err));
@@ -60,4 +80,9 @@ export class OpenUIDslValidator implements StructureValidator<unknown> {
       "Output ONLY the corrected markdown text with the fixed ```openui code block.",
     ].join("\n");
   }
+}
+
+/** 便捷工厂：基于传入 Library 构建校验器实例 */
+export function createOpenUIDslValidator(library: Library): OpenUIDslValidator {
+  return new OpenUIDslValidator(library);
 }

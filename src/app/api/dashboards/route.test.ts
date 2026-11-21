@@ -45,7 +45,7 @@ describe("GET /api/dashboards", () => {
   it("返回摘要列表（不含 dsl）", async () => {
     const { toSummary } = await import("@/lib/dashboardStore");
     vi.mocked(dashboardStore.list).mockResolvedValueOnce([toSummary(RECORD)]);
-    const res = await GET();
+    const res = await GET(new Request("http://localhost/api/dashboards"));
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.dashboards[0].id).toBe("dash_ab12cd34");

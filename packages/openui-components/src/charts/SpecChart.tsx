@@ -29,6 +29,11 @@ export interface SpecChartProps {
   /** 已物化的行数组（生成期快照或刷新回填产物） */
   data?: Array<Record<string, unknown>>;
   height?: number;
+  /**
+   * 筛选联动重物化端点（组件包不感知宿主路由；缺省保留宿主现网路径以零变更，
+   * 宿主/应用可显式传入自托管物化端点实现部署解耦）
+   */
+  materializeUrl?: string;
 }
 
 const EMPTY_DATA: Array<Record<string, unknown>> = [];
@@ -40,6 +45,7 @@ export const SpecChart: React.FC<SpecChartProps> = ({
   table,
   data = EMPTY_DATA,
   height = 280,
+  materializeUrl = "/api/dashboards/preview-query",
 }) => {
   // spec 可能是对象或 JSON 字符串（LLM 输出容错，与 parseArrayProp 同哲学）。
   // 按原始字符串形态 memo 解析结果：zod 解析（尤其内联 data 大数组）是热路径，
@@ -127,7 +133,7 @@ export const SpecChart: React.FC<SpecChartProps> = ({
             : [...rest, { field: event.field, op: "eq", value: event.value }],
       };
       const mySeq = ++seq;
-      fetch("/api/dashboards/preview-query", {
+      fetch(materializeUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sourceId: merged.sourceId, table: effectiveTable, spec: merged }),
@@ -150,7 +156,7 @@ export const SpecChart: React.FC<SpecChartProps> = ({
     return off;
     // specKey 稳定化：parsedSpec 对象每渲染重建，用序列化串做依赖
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [specKey, effectiveTable, scopeId]);
+  }, [specKey, effectiveTable, scopeId, materializeUrl]);
 
   // 当 data 引用变化（dashboardRefresh 回填新数组）或 specKey 变化时，陈旧筛选行自然失效并展示最新 data
   const activeFilteredRows =

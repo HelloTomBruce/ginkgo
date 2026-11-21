@@ -1,9 +1,6 @@
-import path from "node:path";
 import {
   streamText,
   generateText,
-  tool,
-  jsonSchema,
   createDataStreamResponse,
   type CoreMessage,
   type CoreTool,
@@ -15,36 +12,11 @@ import {
   projectMessages,
   resolveContextWindow,
   trimAfterSummaryCut,
-  buildSummaryPrompt,
+  buildGenericSummaryPrompt,
   SUMMARY_MAX_TOKENS,
 } from "./context";
-import {
-  mergeToolSets,
-  renderCardForPrompt,
-  CertifiedQueryStore,
-  matchCertifiedQueries,
-  type ActiveSourceSummary,
-  type DatasourceManager,
-} from "@openui-analytics/datasources";
-import { toAiTools } from "@openui-analytics/datasources/adapters/ai";
-import {
-  builtinMethodCards,
-  createMethodLibrary,
-  renderMethodIndex,
-  type MethodLibrary,
-} from "@openui-analytics/methodology";
-import { getOpenUISystemPrompt, getOpenUIPlanPrompt, getExecuteSystemPrompt } from "./prompt";
-import {
-  buildMethodDetailsFromMessages,
-  renderMethodDetailsByIds,
-} from "./pipeline/methodSelector";
-import { extractPlanMethods } from "./pipeline/planExtractor";
-
-export { buildMethodDetailsFromMessages, extractPlanMethods };
-import {
-  defaultCrossSourceRegistry,
-  CrossSourceRegistry,
-} from "./crossSourceMap";
+import type { AppDeliverableContract } from "@openui-analytics/app-sdk";
+import { withPlatformGuardrails, getPlatformBasePrompt } from "./platformPrompt";
 import {
   defaultModelCatalog,
   type ModelCatalog,
@@ -78,9 +50,6 @@ import {
   type MCPClientManager,
   type MCPServerConfig,
 } from "@openui-analytics/harness-core";
-
-/** 全部启用源结构卡注入 prompt 的总量预算（与单卡 2KB 预算配套，快照测试守护） */
-export const SCHEMA_DIGEST_TOTAL_BUDGET_BYTES = 8 * 1024;
 
 /**
  * env → TaskStore（显式注入 opts.taskStore 时本函数不被调用——注入优先于 env，
@@ -145,44 +114,7 @@ async function resolveRequestTokenizer(
   return createTiktokenEstimator(encoding);
 }
 
-/**
- * 组装启用源的结构卡摘要：逐源读卡（渲染职责在 datasources 包），
- * 依据用户提问相关度优先展开核心表，按总量预算降序纳入，超限的源省略并标注。
- * 读卡失败静默跳过（不阻塞分析）。返回摘要文本与因预算被省略的源数（供遥测告警）。
- */
-async function buildSchemaDigest(
-  datasources: DatasourceManager,
-  activeSources: ActiveSourceSummary[],
-  queryHint?: string
-): Promise<{ text?: string; omitted: number }> {
-  if (activeSources.length === 0) return { omitted: 0 };
-  const sections: string[] = [];
-  let used = 0;
-  let omitted = 0;
-  for (const s of activeSources) {
-    try {
-      const got = await datasources.getSchemaCard(s.id);
-      if (!got) continue;
-      const text = renderCardForPrompt(got.card, { queryHint });
-      const bytes = Buffer.byteLength(text, "utf-8");
-      if (used + bytes > SCHEMA_DIGEST_TOTAL_BUDGET_BYTES) {
-        omitted++;
-        continue;
-      }
-      sections.push(text);
-      used += bytes;
-    } catch {
-      // 读卡失败不阻塞分析
-    }
-  }
-  if (sections.length === 0) return { omitted };
-  if (omitted > 0) {
-    sections.push(`（另有 ${omitted} 个数据源的结构卡因总量预算省略，可用工具现场探查）`);
-  }
-  return { text: sections.join("\n\n"), omitted };
-}
-
-/** 提取对话历史中最后一条用户提问文本作为表画像召回提示词 */
+/** 提取对话历史中最后一条用户提问文本（语义召回/口径匹配提示） */
 function extractLatestUserQuery(messages: unknown[]): string | undefined {
   if (!Array.isArray(messages)) return undefined;
   for (let i = messages.length - 1; i >= 0; i--) {
@@ -201,6 +133,21 @@ function extractLatestUserQuery(messages: unknown[]): string | undefined {
   return undefined;
 }
 
+/** 合并工具集（同名冲突跳过并告警；语义与 datasources 包的 mergeToolSets 一致） */
+function mergeToolSets(
+  target: Record<string, unknown>,
+  incoming: Record<string, unknown>,
+  sourceId: string
+): void {
+  for (const [name, t] of Object.entries(incoming)) {
+    if (name in target) {
+      console.warn(`[llm] 工具名冲突，跳过 ${name}（来自 ${sourceId}）`);
+      continue;
+    }
+    target[name] = t;
+  }
+}
+
 /** 组合多个 abort signal:任一触发即触发(Node 原生 AbortSignal.any 的类型安全替代) */
 function anySignal(signals: AbortSignal[]): AbortSignal {
   const combined = new AbortController();
@@ -214,16 +161,17 @@ function anySignal(signals: AbortSignal[]): AbortSignal {
   return combined.signal;
 }
 
-/** 会话上下文元数据（投影式压缩的锚点与摘要缓存；与应用层 SessionContextMeta 同构） */
+/** 会话上下文元数据（投影式压缩的锚点与摘要缓存；与应用层会话存储同构） */
 export interface SessionContextMeta {
   lastPromptTokens?: number;
   summary?: string;
   summaryUptoMessageId?: string;
   /**
-   * WS-4 结构化规划工件:plan 阶段服务端从 PlanReviewCard.methods 提取后写入,
-   * execute 阶段消费(按 id 注入方法卡详情)后置空数组,防陈旧规划被复用。
+   * 应用编排待执行状态（应用经 sessions 通道读写：如规划确认后待执行的
+   * 方法/步骤标识；消费方负责消费后清空，防陈旧状态被复用）。
    */
-  pendingPlan?: { methodIds: string[] };
+  pendingPlan?: { methodIds: string[] } & Record<string, unknown>;
+  [key: string]: unknown;
 }
 
 /**
@@ -243,7 +191,6 @@ export interface SessionContextStore {
 export interface AuthContext {
   /** 调用方标识（API key id / user id），必填 */
   principal: string;
-  /** 租户隔离命名空间；缺省 = principal */
   /** 租户隔离命名空间；缺省 = principal。契约：不得含冒号（':' 是存储键分隔符）。 */
   tenantId?: string;
   /** 供配额/审计透传的自定义声明（如 allowEnvCredentials） */
@@ -255,16 +202,39 @@ export interface McpOptions {
   getServers: () => Promise<MCPServerConfig[]> | MCPServerConfig[];
 }
 
+/** 平台装载的源摘要（结构兼容 datasources 包的 ActiveSourceSummary） */
+export interface AppSourceSummary {
+  id: string;
+  name: string;
+  kind?: string;
+  dbType?: string;
+  tools: string[];
+}
+
+/**
+ * 应用解析上下文：注入 resolveAppPrompt / resolveAppTools / onTaskFinish 时
+ * 平台向应用开放的请求级信息（结构与 app-sdk 的 AppServerContext 对齐，
+ * 宿主组合根负责两者间的映射）。
+ */
+export interface AppResolutionContext {
+  mode: "direct" | "plan" | "execute";
+  sessionId?: string;
+  messages: unknown[];
+  /** 最新用户提问文本 */
+  userQuery?: string;
+  /** 请求体透传的数据源选择 */
+  enabledSources?: string[];
+  /** 平台装载的源摘要（当前为 MCP 源，含工具名） */
+  activeSources: AppSourceSummary[];
+  /** 会话上下文通道（应用编排状态如 pendingPlan 的持久化） */
+  sessions?: SessionContextStore;
+  /** 平台遥测告警出口（应用侧装配失败等经此入遥测事件流） */
+  warn?: (code: string, detail: string) => void;
+}
+
 export interface AnalyzeHandlerOptions {
-  /** 应用持有的数据源单例（src/lib/datasources.ts），包不自建 */
-  datasources: DatasourceManager;
   /** MCP 扩展客户端与服务清单（可选注入） */
   mcp?: McpOptions;
-  /**
-   * 方法论库（可选注入）：缺省用内置 10 卡装配（内置卡由 promptExamples.test
-   * 的组件名一致性校验守护）；应用层可注入「内置 + 用户卡/业务包卡」合并库。
-   */
-  methodology?: MethodLibrary;
   /** 会话上下文存取（可选注入；应用层为 src/lib/sessionStore 的适配器） */
   sessions?: SessionContextStore;
   /** 会话流中继中枢（可选注入；缺省全局单例 defaultStreamHub） */
@@ -273,8 +243,6 @@ export interface AnalyzeHandlerOptions {
   taskStore?: TaskStore;
   /** owner 实例标识（可选注入；缺省 hostname:pid） */
   instanceId?: string;
-  /** 认证口径知识库（可选注入；缺省尝试读取 config/certified-queries.json） */
-  certifiedStore?: CertifiedQueryStore;
   /**
    * 鉴权钩子（WS-10，可选注入）：返回 null/undefined 即 401。
    * 不注入时保持现状（包不鉴权）——所有请求视为同一匿名租户 "anon"，
@@ -305,47 +273,63 @@ export interface AnalyzeHandlerOptions {
    * 时按 config/model-tokenizer.json 映射动态加载 js-tiktoken（未安装回退启发式）。
    */
   tokenizer?: { encode(text: string): number };
-  /** 跨源联合映射注册表（可选注入；缺省全局单例 defaultCrossSourceRegistry） */
-  crossSourceRegistry?: CrossSourceRegistry;
   /** 模型元数据注册表（可选注入；缺省全局单例 defaultModelCatalog） */
   modelCatalog?: ModelCatalog;
   /**
-   * 应用级系统提示词解析器（可选注入，支持多应用生态）：
-   * 允许应用包自治生成对应的 System Prompt；未注入或返回 undefined 时回退到内置的分析提示词
+   * 缺省应用 ID（可选注入）：请求体未携带 appId 时的归一值。
+   * 宿主应注入其默认应用（如 DEFAULT_APP_ID）。
+   */
+  defaultAppId?: string;
+  /**
+   * 应用级系统提示词解析器（应用自治 prompt 的唯一来源）：
+   * 返回 undefined 时使用平台中立兜底提示词（getPlatformBasePrompt）。
    */
   resolveAppPrompt?: (
     appId: string,
-    ctx: {
-      mode: "direct" | "plan" | "execute";
-      sessionId?: string;
-      messages: unknown[];
-    }
+    ctx: AppResolutionContext
   ) => Promise<string | undefined> | string | undefined;
   /**
-   * 判断应用是否需要挂载数据库探查工具（可选注入；缺省仅 appId === "analytics" 时挂载）
-   */
-  isDataApp?: (appId: string) => boolean;
-  /**
-   * 应用级自主工具解析器（可选注入，支持多应用生态）：
-   * 允许应用包自治装配专属工具集（如通用助手的文件/命令行工具）；
-   * 解析出的工具会动态合并至 loadedTools 挂载给模型
+   * 应用级自主工具解析器：应用自治装配专属工具集（数据源工具、文件/命令行工具等），
+   * 解析出的工具会经遥测切面包装后合并挂载给模型。
    */
   resolveAppTools?: (
     appId: string,
-    ctx: {
-      mode: "direct" | "plan" | "execute";
-      sessionId?: string;
-      messages: unknown[];
-    }
+    ctx: AppResolutionContext
   ) =>
     | Promise<Record<string, CoreTool> | undefined>
     | Record<string, CoreTool>
     | undefined;
+  /**
+   * 应用交付物契约（可选注入，见 app-sdk AppDeliverableContract）：
+   * finish_task 终态语义文案与交付物证据标记；未注入使用中立缺省。
+   */
+  deliverable?: AppDeliverableContract;
+  /** 无 API Key 降级流的消息文案（可选注入；缺省中立引导文案） */
+  noApiKeyMessage?: string;
+  /**
+   * 会话摘要提示词构造器（可选注入；缺省 harness-core 通用摘要提示词）。
+   * 领域应用可注入保留领域要素（如指标/表名/已确认方案）的摘要指导。
+   */
+  summaryPromptBuilder?: (opts: {
+    covered: CoreMessage[];
+    previousSummary?: string;
+  }) => string;
+  /**
+   * 任务收尾钩子（可选注入）：onFinish 后异步触发（fire-and-forget），
+   * 应用用于登记编排状态（如 plan 阶段提取规划写入 pendingPlan）。
+   */
+  onTaskFinish?: (event: {
+    appId: string;
+    sessionId?: string;
+    mode: "direct" | "plan" | "execute";
+    finalText?: string;
+    sessions?: SessionContextStore;
+  }) => Promise<void> | void;
 }
 
 export interface AnalyzeRequestBody {
   action?: string;
-  /** 所属应用 ID，缺省为 "analytics" */
+  /** 所属应用 ID，缺省归一为 defaultAppId 选项值 */
   appId?: string;
   reconnect?: boolean;
   messages?: unknown[];
@@ -367,17 +351,17 @@ export interface AnalyzeRequestBody {
   /** 接口协议：anthropic（如 Kimi Coding 的 /v1/messages）或缺省 openai 兼容（/chat/completions） */
   protocol?: "openai" | "anthropic";
   /**
-   * 分析阶段（Plan-first 两阶段编排）：
-   * - direct（缺省）：直接分析产出看板
-   * - plan：规划确认阶段——仅探查表结构 + LIMIT 小样本，输出 PlanReviewCard 思路确认卡
-   * - execute：执行阶段——按历史中已确认的规划产出完整看板
+   * 交互阶段（两阶段编排，语义由应用定义）：
+   * - direct（缺省）：直接回复/产出
+   * - plan：规划阶段——先探查与澄清，产出供用户确认的规划
+   * - execute：执行阶段——按已确认的规划产出最终交付物
    */
   mode?: "direct" | "plan" | "execute";
   /** 会话 id（上下文治理：读取/回写计量锚点与摘要缓存；缺省则治理降级） */
   sessionId?: string;
   /** 客户端提供的模型窗口 hint（provider catalog 值；缺省服务端查表） */
   contextWindow?: number | string;
-  /** 步数上限（Agent 循环熔断兜底），缺省 plan 6 步，execute/direct 10 步 */
+  /** 步数上限（Agent 循环熔断兜底），缺省读 env 或 25 */
   maxSteps?: number | string;
   /**
    * 任务累计 token 预算（prompt+completion 总和）：
@@ -396,11 +380,12 @@ export interface AnalyzeRequestBody {
 }
 
 /**
- * LLM 编排门面：注入数据源单例，返回可直接作为 Next POST 路由的处理函数。
- * 逻辑与原 app/api/analyze/route.ts 逐行等价（仅依赖来源改为注入）。
+ * LLM 编排门面（领域中立）：注入平台设施与应用接缝，返回可直接作为 Next POST
+ * 路由的处理函数。应用领域逻辑（prompt/工具装配/交付物语义）全部经
+ * resolveAppPrompt / resolveAppTools / deliverable / onTaskFinish 注入。
  */
 export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
-  const { datasources, sessions } = opts;
+  const { sessions } = opts;
   // 注入替换缺省(需要 console+OTel 双写时由 app 侧传 compositeSink(consoleSink, otelSink))
   const telemetry = opts.telemetry ?? createConsoleSink();
 
@@ -418,18 +403,6 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
           sweepIntervalMs: envPositiveNumber("LLM_SWEEP_INTERVAL_MS"),
         })
       : defaultStreamHub);
-
-  // 方法论库：注入或缺省内置；索引文本在工厂期渲染一次（库不变无需逐请求重算）
-  const methodLibrary: MethodLibrary =
-    opts.methodology ??
-    createMethodLibrary({ builtin: builtinMethodCards }).library;
-  const methodIndexText = renderMethodIndex(methodLibrary.cards);
-
-  const certifiedStore =
-    opts.certifiedStore ??
-    new CertifiedQueryStore({
-      configPath: path.join(process.cwd(), "config/certified-queries.json"),
-    });
 
   // WS-3 进程级并发准入上限:同时 running 的会话任务数超限即拒绝新任务(reconnect 不占名额)
   const envConcurrent = Number(process.env.LLM_MAX_CONCURRENT_TASKS);
@@ -452,8 +425,26 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
       : undefined);
   const costLedger = opts.costLedger ?? (quota ? new InMemoryCostLedger() : undefined);
   const pricingTable = opts.pricing ?? new ModelPricingTable();
-  const crossSourceRegistry = opts.crossSourceRegistry ?? defaultCrossSourceRegistry;
   const modelCatalog = opts.modelCatalog ?? defaultModelCatalog;
+
+  // 应用交付物契约（缺省中立文案 + 平台 DSL 标记）
+  const evidenceMarkers: string[] = opts.deliverable?.evidenceMarkers ?? ["```openui"];
+  const finishToolDescription: string =
+    opts.deliverable?.toolDescription ??
+    "显式宣告任务已达成终态并闭环。当所需信息获取完毕、交付物（结论/报告/产物）已就绪时调用。调用此工具表示本轮工作全部结束，无需再发起其他查询。";
+  const finishRejectReason: string =
+    opts.deliverable?.rejectReason ??
+    "尚未输出任何实质性内容，不能宣告 completed。请先完成正式输出；若确属信息缺失或遇到阻塞，请改用 status=insufficient_data 或 status=blocked。";
+  const finishWrapUpWithArtifact: string =
+    opts.deliverable?.wrapUpWithArtifact ??
+    "任务已确认闭环。若交付物已输出，严禁重复输出，直接输出一句简要闭环致辞即可自然结束；若尚未输出，请基于已获取的信息完成正式交付。";
+  const finishWrapUpPlainText: string =
+    opts.deliverable?.wrapUpPlainText ??
+    "任务已确认闭环。请直接自然结束当前回复，无需重复输出。";
+  const noApiKeyMessage =
+    opts.noApiKeyMessage ??
+    "⚠️ 请先在右上角「设置」中配置您的 API Key 后再开始对话。";
+  const buildSummaryPrompt = opts.summaryPromptBuilder ?? buildGenericSummaryPrompt;
 
   const POST = async function (req: Request) {
     const runId = newRunId();
@@ -505,7 +496,7 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
       const clientAppId =
         typeof rawClientAppId === "string" && rawClientAppId.trim()
           ? rawClientAppId.trim()
-          : "analytics";
+          : (opts.defaultAppId ?? "app");
 
       // 遥测用的会话 id(缺省 undefined,贯穿全事件)
       const sessionIdForEvents =
@@ -586,7 +577,7 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
         typeof clientSupportsReasoning === "boolean"
           ? clientSupportsReasoning
           : isReasoningModel(model);
-      // 温度由客户端设置页透传，钳制在 0–2，默认 0.2（数据分析场景）；思考模型（o1, o3, R1）锁定温度
+      // 温度由客户端设置页透传，钳制在 0–2，默认 0.2；思考模型（o1, o3, R1）锁定温度
       const parsedTemp = Number(clientTemperature);
       const temperature = isReasoning
         ? undefined
@@ -610,7 +601,7 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
             : 16384;
       const maxOutputTokens = Math.min(Math.max(Math.round(maxOutputTokensBase), 1024), 65536);
 
-      // 分析阶段归一化：非法值回落 direct，保持向后兼容
+      // 交互阶段归一化：非法值回落 direct，保持向后兼容
       const mode =
         clientMode === "plan" || clientMode === "execute" ? clientMode : "direct";
 
@@ -669,7 +660,7 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
           code: "NO_API_KEY",
           detail: "请求缺apiKey且服务端无环境凭证，返回设置引导降级流",
         });
-        const msg = `⚠️ 请先在右上角「设置」中配置您的 API Key。\n\n\`\`\`openui\nInsightBox(type="warning", title="未检测到 LLM API Key", content="请点击右上角「设置」进入「模型配置」输入 API Key，开启由 Vercel AI SDK 与多数据源 MCP（内置 + 动态配置）驱动的流式数据分析看板。")\n\`\`\``;
+        const msg = noApiKeyMessage;
         const dataStreamChunk = `0:${JSON.stringify(msg)}\nd:{"finishReason":"stop","usage":{"promptTokens":0,"completionTokens":0}}\n`;
 
         return new Response(dataStreamChunk, {
@@ -761,69 +752,11 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
 
       const languageModel = buildLanguageModel(modelChain[0]);
 
-      // 会话级数据源：检查当前应用是否需要装配数据库工具，防止通用助手等产生幻觉去探查不存在的数据库
-      const isDataApp =
-        typeof opts.isDataApp === "function"
-          ? opts.isDataApp(clientAppId)
-          : clientAppId === "analytics";
-      const activeSources = isDataApp
-        ? datasources.resolveActive(
-            Array.isArray(clientSources) ? (clientSources as string[]) : undefined
-          )
-        : [];
-
-      // 按激活源装配工具（http-mcp / db / stdio-cli）；
-      // 单一数据源失败时降级为空工具集而非拖垮整个请求
-      const toolEntries: { id: string; tools: Promise<Record<string, CoreTool>> }[] =
-        [];
-      for (const s of activeSources) {
-        const conf = datasources.get(s.id);
-        if (!conf) continue;
-        toolEntries.push({
-          id: s.id,
-          tools: datasources.tools(conf).then((bindings) => toAiTools(bindings, { sourceId: s.id })),
-        });
-      }
-
-      const settledResults = await Promise.allSettled(
-        toolEntries.map((e) => e.tools)
-      );
       const loadedTools: Record<string, CoreTool> = {};
-      settledResults.forEach((r, i) => {
-        if (r.status === "rejected") {
-          telemetry.emit({
-            type: "warn",
-            runId,
-            sessionId: sessionIdForEvents,
-            code: "TOOL_LOAD_FAILED",
-            detail: `${toolEntries[i].id} 工具加载失败，降级为空工具集: ${
-              r.reason instanceof Error ? r.reason.message : String(r.reason)
-            }`,
-          });
-          return;
-        }
-        mergeToolSets(
-          loadedTools,
-          instrumentTools(r.value, {
-            runId,
-            sessionId: sessionIdForEvents,
-            sourceId: toolEntries[i].id,
-            telemetry,
-          }),
-          toolEntries[i].id
-        );
-      });
+      /** 平台装载的源摘要（MCP 源；应用自有数据源摘要由应用自行装配） */
+      const mcpSummaries: AppSourceSummary[] = [];
 
-      // prompt 数据源清单：动态源写入实际装载到的工具名
-      const summaries: ActiveSourceSummary[] = activeSources.map((s) => {
-        const idx = toolEntries.findIndex((e) => e.id === s.id);
-        const settled = idx >= 0 ? settledResults[idx] : undefined;
-        return settled?.status === "fulfilled"
-          ? { ...s, tools: Object.keys(settled.value) }
-          : s;
-      });
-
-      // 装配已启用的 MCP 扩展工具集（如 gitlab, zentao 等）
+      // 装配已启用的 MCP 扩展工具集（平台级数据面，应用无关）
       if (opts.mcp) {
         try {
           const mcpConfigs = await opts.mcp.getServers();
@@ -856,7 +789,7 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
                     }),
                     server.id
                   );
-                  summaries.push({
+                  mcpSummaries.push({
                     id: server.id,
                     name: server.name || server.id,
                     kind: "mcp",
@@ -899,14 +832,24 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
         }
       }
 
-      // 装配应用自治工具集（如通用智能助手的工作区文件/Bash操作工具）
+      // 应用解析上下文（平台向应用开放的请求级信息）
+      const appCtx: AppResolutionContext = {
+        mode,
+        sessionId: typeof clientSessionId === "string" && clientSessionId ? clientSessionId : undefined,
+        messages,
+        userQuery: extractLatestUserQuery(messages),
+        enabledSources: Array.isArray(clientSources) ? (clientSources as string[]) : undefined,
+        activeSources: mcpSummaries,
+        sessions,
+        warn: (code, detail) => {
+          telemetry.emit({ type: "warn", runId, sessionId: sessionIdForEvents, code, detail });
+        },
+      };
+
+      // 装配应用自治工具集（数据源工具 / 文件与命令行工具等，全部由应用声明）
       if (opts.resolveAppTools) {
         try {
-          const appTools = await opts.resolveAppTools(clientAppId, {
-            mode,
-            sessionId: clientSessionId,
-            messages,
-          });
+          const appTools = await opts.resolveAppTools(clientAppId, appCtx);
           if (appTools && Object.keys(appTools).length > 0) {
             mergeToolSets(
               loadedTools,
@@ -932,78 +875,24 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
         }
       }
 
-      // 按阶段分派系统提示词：plan → 规划变体（探查边界 + PlanReviewCard 契约 + 选法指令）；
-      // execute → base + 按已确认思路执行的增量约束 + 命中方法卡详情（按需注入）；
-      // direct → base 直出看板 + 方法索引（常驻）
-      const userQueryHint = extractLatestUserQuery(messages);
-      const activeSourceIds = summaries.map((s) => s.id);
-      // 认证口径配置热加载：改 config/certified-queries.json 无需重启进程
-      certifiedStore.reloadIfChanged();
-      const certifiedMatches = userQueryHint
-        ? matchCertifiedQueries(userQueryHint, activeSourceIds, certifiedStore)
-        : [];
-
-      const schemaDigest = await buildSchemaDigest(datasources, summaries, userQueryHint);
-      if (schemaDigest.omitted > 0) {
-        telemetry.emit({
-          type: "warn",
-          runId,
-          sessionId: sessionIdForEvents,
-          code: "SCHEMA_DIGEST_OMITTED",
-          detail: `${schemaDigest.omitted} 个数据源结构卡因总量预算(${SCHEMA_DIGEST_TOTAL_BUDGET_BYTES}B)省略`,
-        });
-      }
-      // 会话上下文元数据提前读取:execute 消费 pendingPlan(WS-4)与投影锚点共用;
+      // 会话上下文元数据提前读取:投影锚点（token 锚点/摘要缓存）用;
       // 读取失败静默降级（仅当次启发式，不阻塞分析）
       const sessionCtx =
         sessions && typeof clientSessionId === "string" && clientSessionId
           ? await sessions.getContext(clientSessionId).catch(() => undefined)
           : undefined;
-      let methodDetails: string | undefined;
-      if (mode === "execute") {
-        const pendingIds = sessionCtx?.pendingPlan?.methodIds ?? [];
-        if (pendingIds.length > 0) {
-          // WS-4 结构化主路径:plan 阶段登记的 methodIds 精确注入
-          methodDetails = renderMethodDetailsByIds(methodLibrary, pendingIds);
-          // 消费即清空(置空数组,增量合并语义可落盘),防陈旧规划被后续 execute 复用
-          void sessions
-            ?.updateContext(clientSessionId as string, {
-              pendingPlan: { methodIds: [] },
-            })
-            .catch(() => {});
-        } else {
-          // 降级兜底:旧格式规划(卡片无 methods 参数)走散文匹配
-          methodDetails = buildMethodDetailsFromMessages(methodLibrary, messages);
-          if (methodDetails) {
-            telemetry.emit({
-              type: "warn",
-              runId,
-              sessionId: sessionIdForEvents,
-              code: "PLAN_FALLBACK_LEGACY",
-              detail: "pendingPlan 缺失,execute 回退到散文匹配提取方法",
-            });
-          }
-        }
-      }
-      // 应用包自治提示词优先：若应用包定义了专属 System Prompt，优先采用应用包 Prompt
-      const appCustomPrompt = opts.resolveAppPrompt
-        ? await opts.resolveAppPrompt(clientAppId, {
-            mode,
-            sessionId: clientSessionId,
-            messages,
-          })
-        : undefined;
 
-      const baseSystem =
-        appCustomPrompt ||
-        (mode === "plan"
-          ? getOpenUIPlanPrompt(summaries, schemaDigest.text, methodIndexText, certifiedMatches)
-          : mode === "execute"
-            ? getExecuteSystemPrompt(summaries, schemaDigest.text, methodDetails, certifiedMatches)
-            : getOpenUISystemPrompt(summaries, schemaDigest.text, methodIndexText, certifiedMatches));
+      // 应用自治提示词优先：应用未提供时回退平台中立兜底；
+      // 平台注入防御纪律段对所有 prompt 强制生效（已包含时不重复追加）
+      const appCustomPrompt = opts.resolveAppPrompt
+        ? await opts.resolveAppPrompt(clientAppId, appCtx)
+        : undefined;
+      const baseSystem = withPlatformGuardrails(
+        appCustomPrompt && appCustomPrompt.trim() ? appCustomPrompt : getPlatformBasePrompt()
+      );
 
       // ========== 上下文治理（投影式压缩，设计见 context.ts） ==========
-      // sessionCtx 已在上方提前读取(execute 消费 pendingPlan 与此处投影共用)
+      // sessionCtx 已在上方提前读取(投影锚点)
       /**
        * 按当前模型解析上下文窗口并重算投影预算。WS-9 控制者裁决：客户端 contextWindow
        * hint 仅对主模型生效；fallback 模型只用查表值（hint 传 undefined），
@@ -1108,41 +997,6 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
       const system = primaryProjection.system;
       const projectedMessages = primaryProjection.messages;
 
-      // 跨源映射工具：仅当用户在 cross-source-map.json 配置的源配对
-      // 在当前激活源集合中成立时注册（代码不内置任何数据源名）
-      const crossSourceTools: Record<string, CoreTool> = {};
-      const crossSourcePairs = crossSourceRegistry.resolveCrossSourcePairs(summaries.map((s) => s.id));
-      if (crossSourcePairs.length > 0) {
-        const pairDesc = crossSourcePairs
-          .map((p) => `${p.projectSource} ↔ ${p.repoSource}`)
-          .join(", ");
-        crossSourceTools.cross_source_link = tool({
-          description: `查询项目管理侧项目与代码仓库侧仓库的关联映射（当前配对：${pairDesc}），用于跨源联合分析（迭代进度 × 代码活跃度）。映射缺失时返回 confidence=none，此时应提示用户在 config/cross-source-map.json 补充映射，不得编造关联结果。`,
-          parameters: jsonSchema<{ project_id: string }>({
-            type: "object",
-            properties: {
-              project_id: {
-                type: "string",
-                description: "项目管理侧的项目 ID",
-              },
-            },
-            required: ["project_id"],
-          }),
-          execute: async ({ project_id }) => {
-            telemetry.emit({
-              type: "tool_result",
-              runId,
-              sessionId: sessionIdForEvents,
-              tool: "cross_source_link",
-              ok: true,
-              bytes: -1,
-              durationMs: 0,
-            });
-            return crossSourceRegistry.getCrossSourceLinks(project_id);
-          },
-        });
-      }
-
       // 使用现代 createDataStreamResponse 管理流生命周期，避免旧 StreamData 15秒悬挂超时警告与异常中止泄漏
       const runStartTs = Date.now();
       let stepIndex = 0;
@@ -1150,11 +1004,10 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
       let lastStepPromptTokens: number | undefined;
       let lastStepFinishReason: string | undefined;
       let explicitFinishDetails: { status: string; summary?: string } | undefined;
-      /** 最后一步的模型文本(plan 模式 onFinish 据此提取 methods,WS-4) */
+      /** 最后一步的模型文本(onTaskFinish 钩子据此提取编排状态) */
       let lastStepText: string | undefined;
-      // WS-5 finish_task 不变量:跨步骤累计产出证据
-      let hasDashboardOutput = false;
-      let hasPlanCardOutput = false;
+      // 交付物证据:跨步骤累计（证据标记命中或实质性文本产出）
+      let hasArtifactEvidence = false;
       let totalTextChars = 0;
       // 任务级中止控制器:abortTask(用户停止/看门狗超时)经 hub 触发后传导进
       // streamText 并以 error 语义终止订阅;预算熔断走独立 controller——只取消
@@ -1170,18 +1023,15 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
           // 双重终态机制：显式终态工具 finish_task（基于 @openui-analytics/harness-core 终态契约）
           const finishTaskTool = createTerminationTool({
             toolName: "finish_task",
-            description:
-              "显式宣告分析/规划任务已达成终态并闭环。当数据获取完毕、分析结论和可视化看板或规划卡已就绪时调用。调用此工具表示本轮取数全部结束，无需再发起其他数据查询。",
+            description: finishToolDescription,
             assertion: () => {
-              // WS-5 服务端不变量: 校验任务是否有实质性产出证据
-              // 产出形式包含：可视化看板代码块、规划卡代码块、或实质性文本内容（如纯文本分析结论、问答解答、交互闭环等）。
-              // 唯有当三者皆无（模型未输出任何实质内容却宣告完成）时，才予以拒绝，避免空跑兜底。
-              const hasVisualArtifact = hasDashboardOutput || hasPlanCardOutput;
-              const hasOutputEvidence = hasVisualArtifact || totalTextChars > 0;
+              // 服务端不变量: 校验任务是否有实质性产出证据
+              // 产出形式包含：交付物证据标记命中（应用契约声明）、或实质性文本内容。
+              // 唯有两者皆无（模型未输出任何实质内容却宣告完成）时，才予以拒绝，避免空跑兜底。
+              const hasOutputEvidence = hasArtifactEvidence || totalTextChars > 0;
               return {
                 passed: hasOutputEvidence,
-                rejectReason:
-                  "尚未输出分析结论、报告或看板，不能宣告 completed。请先完成正式输出；若确属数据缺失或遇到阻塞，请改用 status=insufficient_data 或 status=blocked。",
+                rejectReason: finishRejectReason,
               };
             },
             onSignalRejected: () => {
@@ -1206,10 +1056,9 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
               });
             },
             resolveMessage: () => {
-              const hasVisualArtifact = hasDashboardOutput || hasPlanCardOutput;
-              return hasVisualArtifact
-                ? "数据取数与任务终态已确认闭环。若你在上一步或当前步骤已输出了完整的 Markdown 分析报告与 ```openui 看板代码块，严禁重复输出，直接输出一句简要闭环致辞即可自然结束；若尚未输出报告与看板，请在此处基于已获取的数据输出一份完整的 Markdown 深度分析报告及 ```openui ... ``` 可视化动态看板代码块。每轮回复严格只能有一份报告和一个看板，绝对不可重复输出两遍！"
-                : "任务已确认闭环。请直接自然结束当前回复，无需重复输出。";
+              return hasArtifactEvidence
+                ? finishWrapUpWithArtifact
+                : finishWrapUpPlainText;
             },
           });
 
@@ -1245,7 +1094,6 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
                 ]),
                 tools: {
                   ...loadedTools,
-                  ...crossSourceTools,
                   finish_task: finishTaskTool,
                 },
                 maxSteps,
@@ -1269,9 +1117,10 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
                   if (typeof text === "string" && text.length > 0) {
                     lastStepText = text;
                     totalTextChars += text.trim().length;
-                    // 不变量证据跨步骤累计(报告与看板可能分步输出)
-                    if (text.includes("```openui")) hasDashboardOutput = true;
-                    if (text.includes("PlanReviewCard")) hasPlanCardOutput = true;
+                    // 交付物证据跨步骤累计(报告与交付物可能分步输出)
+                    if (evidenceMarkers.some((m) => text.includes(m))) {
+                      hasArtifactEvidence = true;
+                    }
                   }
                   lastStepFinishReason = finishReason;
                   const stepDurationMs = Date.now() - prevStepTs;
@@ -1420,15 +1269,20 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
                       .catch(() => {});
                   }
 
-                  // WS-4:plan 阶段从最终文本提取结构化 methods,登记为 pendingPlan
-                  // (execute 轮消费后清空;提取失败静默——execute 侧有散文匹配兜底)
-                  if (mode === "plan" && sessions && typeof clientSessionId === "string" && clientSessionId) {
-                    const planIds = extractPlanMethods(lastStepText ?? "");
-                    if (planIds.length > 0) {
-                      void sessions
-                        .updateContext(clientSessionId, { pendingPlan: { methodIds: planIds } })
-                        .catch(() => {});
-                    }
+                  // 应用收尾钩子（fire-and-forget）：登记编排状态（如 plan 阶段提取规划）
+                  if (opts.onTaskFinish) {
+                    void Promise.resolve(
+                      opts.onTaskFinish({
+                        appId: clientAppId,
+                        sessionId:
+                          typeof clientSessionId === "string" && clientSessionId
+                            ? clientSessionId
+                            : undefined,
+                        mode,
+                        finalText: lastStepText,
+                        sessions,
+                      })
+                    ).catch(() => {});
                   }
 
                   if (

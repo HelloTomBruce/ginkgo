@@ -7,8 +7,6 @@ import {
   estimateMessagesTokens,
   projectMessages,
   trimAfterSummaryCut,
-  buildSummaryPrompt,
-  findLastPlanReviewIndex,
   DEFAULT_CONTEXT_WINDOW,
 } from "./context";
 
@@ -225,25 +223,4 @@ describe("trimAfterSummaryCut 边界清理", () => {
   });
 });
 
-describe("buildSummaryPrompt", () => {
-  it("包含保留要点与历史正文；有旧摘要时含增量指令", () => {
-    const prompt = buildSummaryPrompt({
-      covered: [userMsg("分析 CAC"), assistantMsg("结论：渠道 A 最低")],
-      previousSummary: "旧摘要",
-    });
-    expect(prompt).toContain("原始分析目标");
-    expect(prompt).toContain("PlanReviewCard");
-    expect(prompt).toContain("旧摘要");
-    expect(prompt).toContain("分析 CAC");
-  });
-});
 
-describe("findLastPlanReviewIndex", () => {
-  it("只看最近一条 assistant 消息", () => {
-    const old = assistantMsg('PlanReviewCard("旧规划")');
-    const messages = [old, userMsg("确认"), assistantMsg("看板输出")];
-    expect(findLastPlanReviewIndex(messages)).toBe(-1);
-    const messages2 = [old, userMsg("确认")];
-    expect(findLastPlanReviewIndex(messages2)).toBe(0);
-  });
-});

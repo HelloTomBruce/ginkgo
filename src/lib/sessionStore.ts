@@ -55,6 +55,12 @@ export interface SessionContextMeta {
   summary?: string;
   /** 摘要覆盖到的最后一条消息 id（增量更新依据） */
   summaryUptoMessageId?: string;
+  /**
+   * 应用编排待执行状态（应用经 sessions 通道读写，如分析方法卡 id 列表；
+   * 与 @openui-analytics/llm 的 SessionContextMeta 同构）
+   */
+  pendingPlan?: { methodIds: string[] } & Record<string, unknown>;
+  [key: string]: unknown;
 }
 
 export interface SessionRecord {

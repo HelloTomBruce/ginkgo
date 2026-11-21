@@ -1,7 +1,9 @@
-import { serverLibrary } from "./serverLibrary";
-import { resolveCrossSourcePairs } from "./crossSourceMap";
+import {
+  serverLibrary,
+  renderComponentKitDocumentation,
+} from "@openui-analytics/components/server";
+import { resolveCrossSourcePairs } from "./crossSource";
 import type { ActiveSourceSummary, CertifiedQueryMatch } from "@openui-analytics/datasources";
-import { renderComponentKitDocumentation } from "./components/docGenerator";
 
 /**
  * Prompt 中的 few-shot 示例。导出以便测试校验其与 serverLibrary schema 的一致性

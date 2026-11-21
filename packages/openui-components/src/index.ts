@@ -223,3 +223,59 @@ export {
   DashboardSpecRenderer,
   type DashboardSpecRendererProps,
 } from "./spec/DashboardSpecRenderer";
+
+// ===== 对外导出：平台渲染与 DSL 基础设施（宿主与应用包共用）=====
+
+// OpenUI DSL 流式渲染引擎（客户端本地工具经 OpenUIToolProviderContext 注入）
+export {
+  OpenUIRenderer,
+  OpenUIToolProvider,
+  type OpenUIToolMap,
+} from "./OpenUIRenderer";
+
+// 服务端组件 kit（schema 面）：与 analyticsLibrary（React 面）同一组件集的 zod 定义，
+// 供 System Prompt 组装、AST 校验与 DSL 序列化使用
+export {
+  serverLibrary,
+  serverRoot,
+  serverReportLayout,
+  serverFocusLayout,
+  serverComparisonLayout,
+  serverMonitoringLayout,
+  serverCohortRetentionLayout,
+  serverMetricCard,
+  serverAnalyticsChart,
+  serverSpecChart,
+  serverComboChart,
+  serverDataTable,
+  serverRankingList,
+  serverInsightBox,
+  serverMetricGrid,
+  serverAnalyticsFilterBar,
+  serverFunnelChart,
+  serverGaugeProgress,
+  serverActionPlanCard,
+  serverActivityTimeline,
+  serverRadarChart,
+  serverContributionHeatmap,
+  serverActionButton,
+  serverReactiveSimulator,
+  serverPlanReviewCard,
+} from "./serverLibrary";
+// RSC/Node 安全的解析器入口与 DSL 序列化（lang-core 纯实现，无 React 运行时）
+export { createParser, jsonToOpenUI } from "@openuidev/lang-core";
+
+// 组件 kit 的 System Prompt 文档生成器（机制 + 缺省指引文案）
+export {
+  renderComponentKitDocumentation,
+  extractPropsSignature,
+  DEFAULT_COMPONENT_PROMPT_GUIDES,
+} from "./docGenerator";
+
+// OpenUI DSL 语法守卫（StructureValidator 契约，可插拔进 harness-core 自愈护栏）
+export {
+  OpenUIDslValidator,
+  createOpenUIDslValidator,
+  type ValidationResult as DslValidationResult,
+  type StructureValidator as DslStructureValidator,
+} from "./openuiDslValidator";

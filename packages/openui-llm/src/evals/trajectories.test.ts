@@ -13,7 +13,7 @@ import {
   createAnalyzeHandler,
   type SessionContextStore,
 } from "../handler";
-import type { DatasourceManager, McpToolBinding } from "@openui-analytics/datasources";
+import type { CoreTool } from "ai";
 import type { HarnessEvent, TelemetrySink } from "@openui-analytics/harness-core";
 import { streamText, generateText } from "ai";
 
@@ -45,22 +45,15 @@ function spyTelemetry(): { events: HarnessEvent[]; sink: TelemetrySink } {
   return { events, sink: { emit: (e) => events.push(e) } };
 }
 
-/** 最小 DatasourceManager stub:单源单工具,call 返回脚本化结果(不触碰真实连接) */
-function stubManager(toolResult: unknown): DatasourceManager {
+/** 最小应用工具 stub:单工具,execute 返回脚本化结果(不触碰真实连接) */
+function stubAppTools(toolResult: unknown): Record<string, CoreTool> {
   return {
-    resolveActive: () => [{ id: "src1", name: "测试源", enabled: true }],
-    get: (id: string) => ({ id, name: "测试源", kind: "http-mcp", enabled: true }),
-    tools: async (): Promise<McpToolBinding[]> => [
-      {
-        name: "src1_query",
-        originalName: "query",
-        description: "查询",
-        inputSchema: { type: "object" },
-        call: async () => toolResult,
-      },
-    ],
-    getSchemaCard: async () => undefined,
-  } as unknown as DatasourceManager;
+    src1_query: {
+      description: "查询",
+      parameters: { type: "object", properties: {} },
+      execute: async () => toolResult,
+    },
+  };
 }
 
 interface StepScript {
@@ -82,7 +75,7 @@ interface TrajectoryResult {
  */
 async function runTrajectory(opts: {
   body?: Record<string, unknown>;
-  manager?: DatasourceManager;
+  appTools?: Record<string, CoreTool>;
   sessions?: SessionContextStore;
   steps: StepScript[];
   invokeTools?: boolean;
@@ -132,9 +125,9 @@ async function runTrajectory(opts: {
     } as never;
   });
 
-  const manager = opts.manager ?? stubManager({ rows: [{ a: 1 }] });
+  const appTools = opts.appTools ?? stubAppTools({ rows: [{ a: 1 }] });
   const POST = createAnalyzeHandler({
-    datasources: manager,
+    resolveAppTools: async () => appTools,
     sessions: opts.sessions,
     telemetry: sink,
   });
@@ -293,10 +286,10 @@ describe("Tier A 轨迹回归（零 LLM 成本）", () => {
     expect(sent.length).toBeLessThan(messages.length);
   });
 
-  it("T4 注入防御轨迹:超长工具结果进信封,无产出宣告 completed 被门禁拒绝", async () => {
-    const hugeResult = "A".repeat(100_000); // 100KB 工具结果 → 32KB 信封
-    const { args, events } = await runTrajectory({
-      manager: stubManager(hugeResult),
+  it("T4 不变量门轨迹:无产出宣告 completed 被门禁拒绝(信封截断由数据源适配器测试锁定)", async () => {
+    const hugeResult = "A".repeat(100_000);
+    const { events } = await runTrajectory({
+      appTools: stubAppTools(hugeResult),
       steps: [
         { toolCalls: ["src1_query"], finishReason: "tool-calls", usage: { promptTokens: 1000 } },
       ],
@@ -310,16 +303,5 @@ describe("Tier A 轨迹回归（零 LLM 成本）", () => {
       events.some((e) => e.type === "warn" && (e as { code?: string }).code === "FINV_GATE_REJECTED")
     ).toBe(true);
 
-    // 信封:同一 handler 工具链返回 untrusted 标注的截断文本(头尾保留)
-    const tools = (args as { tools?: Record<string, { execute?: (a: unknown, c: unknown) => Promise<unknown> }> }).tools;
-    const out = (await tools?.src1_query?.execute?.({}, {})) as {
-      output?: string;
-      truncated?: boolean;
-    };
-    expect(out.truncated).toBe(true);
-    expect(out.output).toBeDefined();
-    expect(out.output!).toContain('<tool_output source="src1"');
-    expect(out.output!).toContain('untrusted="true"');
-    expect(out.output!.length).toBeLessThan(60_000);
   });
 });

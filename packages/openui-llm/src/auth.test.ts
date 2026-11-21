@@ -3,11 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createAnalyzeHandler } from "./handler";
 import { SessionStreamHub, type HarnessEvent } from "@openui-analytics/harness-core";
 import type { AuthContext } from "./handler";
-import type { DatasourceManager, McpToolBinding } from "@openui-analytics/datasources";
 import { streamText } from "ai";
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
 
 vi.mock("@ai-sdk/openai", () => ({
   createOpenAI: vi.fn(() => vi.fn(() => ({}))),
@@ -27,34 +23,6 @@ vi.mock("ai", async (importOriginal) => {
 });
 
 /** 依赖注入接缝：真 manager 读临时配置文件，仅 tools（IO）覆写为 mock */
-async function makeFakeManager(): Promise<DatasourceManager> {
-  const { createDatasourceManager } = await import(
-    "@openui-analytics/datasources"
-  );
-  const file = path.join(
-    fs.mkdtempSync(path.join(os.tmpdir(), "llm-auth-")),
-    "datasources.json"
-  );
-  fs.writeFileSync(
-    file,
-    JSON.stringify({
-      sources: [
-        {
-          id: "jira",
-          name: "Jira DB",
-          kind: "db",
-          dbType: "postgres",
-          connectionString: "postgres://localhost/db",
-          enabled: true,
-        },
-      ],
-    })
-  );
-  const real = createDatasourceManager({ configPath: file });
-  const tools = vi.fn(async (): Promise<McpToolBinding[]> => []);
-  return { ...real, tools };
-}
-
 /** 贴近真实 SDK 契约的 streamText mock：字节经 toDataStream 交付 */
 function streamResult(chunks: string[]): ReturnType<typeof streamText> {
   return {
@@ -158,7 +126,6 @@ describe("WS-10 authenticate 钩子与 401（10.2）", () => {
   it("authenticate 返回 null → 401 且不再进入分析", async () => {
     const { events, sink } = makeSink();
     const POST = createAnalyzeHandler({
-      datasources: await makeFakeManager(),
       telemetry: sink,
       authenticate: async () => null,
     });
@@ -173,7 +140,6 @@ describe("WS-10 authenticate 钩子与 401（10.2）", () => {
   it("AuthContext → run_start 带 principal 与 tenantId", async () => {
     const { events, sink } = makeSink();
     const POST = createAnalyzeHandler({
-      datasources: await makeFakeManager(),
       telemetry: sink,
       authenticate: async () => ({ principal: "key-42", tenantId: "tenant-a" }),
     });
@@ -191,7 +157,6 @@ describe("WS-10 authenticate 钩子与 401（10.2）", () => {
   it("未注入 authenticate → run_start 不带 principal/tenantId（行为与现状一致）", async () => {
     const { events, sink } = makeSink();
     const POST = createAnalyzeHandler({
-      datasources: await makeFakeManager(),
       telemetry: sink,
     });
 
@@ -208,7 +173,6 @@ describe("WS-10 authenticate 钩子与 401（10.2）", () => {
   it("tenantId 缺省时以 principal 作为租户命名空间", async () => {
     const { events, sink } = makeSink();
     const POST = createAnalyzeHandler({
-      datasources: await makeFakeManager(),
       telemetry: sink,
       authenticate: async () => ({ principal: "user-7" }),
     });
@@ -258,7 +222,6 @@ describe("WS-10 跨租户重接防护（10.3）", () => {
     } as unknown as ReturnType<typeof streamText>);
 
     const POST = createAnalyzeHandler({
-      datasources: await makeFakeManager(),
       authenticate: tenantAuth({
         "tenant-a": { principal: "a", tenantId: "tenant-a" },
         "tenant-b": { principal: "b", tenantId: "tenant-b" },
@@ -336,7 +299,6 @@ describe("WS-10 env 凭证借用开关（10.4）", () => {
   it("allowEnvCredentials=false 且无请求体 key：跳过 env 凭证，走 NO_API_KEY 降级流", async () => {
     process.env.OPENAI_API_KEY = "platform-secret-key";
     const POST = createAnalyzeHandler({
-      datasources: await makeFakeManager(),
       authenticate: async () => ({
         principal: "tenant-x",
         claims: { allowEnvCredentials: false },
@@ -347,7 +309,7 @@ describe("WS-10 env 凭证借用开关（10.4）", () => {
     expect(res.status).toBe(200);
     expect(res.headers.get("x-vercel-ai-data-stream")).toBe("v1");
     const text = await res.text();
-    expect(text).toContain("未检测到 LLM API Key");
+    expect(text).toContain("API Key");
     // 平台 env 凭证未被借用
     expect(streamText).not.toHaveBeenCalled();
   });
@@ -355,7 +317,6 @@ describe("WS-10 env 凭证借用开关（10.4）", () => {
   it("allowEnvCredentials=false 但请求体自带 key：正常分析", async () => {
     process.env.OPENAI_API_KEY = "platform-secret-key";
     const POST = createAnalyzeHandler({
-      datasources: await makeFakeManager(),
       authenticate: async () => ({
         principal: "tenant-x",
         claims: { allowEnvCredentials: false },
@@ -370,7 +331,6 @@ describe("WS-10 env 凭证借用开关（10.4）", () => {
   it("未声明 allowEnvCredentials：env 凭证回退保持现状", async () => {
     process.env.OPENAI_API_KEY = "platform-secret-key";
     const POST = createAnalyzeHandler({
-      datasources: await makeFakeManager(),
       authenticate: async () => ({ principal: "tenant-x" }),
     });
 

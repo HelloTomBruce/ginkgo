@@ -2,7 +2,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { refreshDashboard, type RefreshGateway } from "./dashboardRefresh";
 import { createParser } from "@openuidev/react-lang";
-import { serverLibrary } from "@openui-analytics/llm/serverLibrary";
+import { serverLibrary } from "@openui-analytics/components/server";
 import type { DashboardRecord } from "./dashboardStore";
 import type { DynamicSourceConfig, McpConnection } from "@openui-analytics/datasources";
 

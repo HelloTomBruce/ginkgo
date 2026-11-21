@@ -17,6 +17,8 @@ import type {
 
 export interface FavoriteDashboardInput {
   dsl: string;
+  /** 产物归属应用 id（缺省由服务端补默认应用） */
+  appId?: string;
   title?: string;
   prompt?: string;
   sourceNames?: string[];
@@ -47,10 +49,13 @@ async function readErrorMessage(res: Response, fallback: string): Promise<string
   return `${fallback}（${res.status}）`;
 }
 
-/** 拉取收藏列表；失败返回 null（调用方静默降级） */
-async function fetchDashboardSummaries(): Promise<DashboardSummary[] | null> {
+/** 拉取收藏列表（可按归属应用过滤）；失败返回 null（调用方静默降级） */
+async function fetchDashboardSummaries(
+  appId?: string
+): Promise<DashboardSummary[] | null> {
   try {
-    const res = await fetch("/api/dashboards", {
+    const query = appId ? `?appId=${encodeURIComponent(appId)}` : "";
+    const res = await fetch(`/api/dashboards${query}`, {
       headers: { ...authHeaders() },
       cache: "no-store",
     });
@@ -63,7 +68,11 @@ async function fetchDashboardSummaries(): Promise<DashboardSummary[] | null> {
   }
 }
 
-export function useDashboards() {
+/**
+ * 看板收藏库客户端状态（按当前应用过滤：切换应用时列表自动重拉，
+ * 各应用的收藏互不可见）。
+ */
+export function useDashboards(appId?: string) {
   const [summaries, setSummaries] = useState<DashboardSummary[]>([]);
   // toggleTemplate 的当前形态判定用（state 读取的稳定引用）
   const summariesRef = useRef<DashboardSummary[]>([]);
@@ -72,10 +81,10 @@ export function useDashboards() {
   }, [summaries]);
   const [loaded, setLoaded] = useState(false);
 
-  // 初始加载：setState 只发生在 promise 回调中，避免 effect 内同步 setState 级联渲染
+  // 初始加载/应用切换：setState 只发生在 promise 回调中，避免 effect 内同步 setState 级联渲染
   useEffect(() => {
     let cancelled = false;
-    fetchDashboardSummaries().then((data) => {
+    fetchDashboardSummaries(appId).then((data) => {
       if (cancelled) return;
       if (data) setSummaries(data);
       setLoaded(true);
@@ -83,13 +92,13 @@ export function useDashboards() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [appId]);
 
   const refresh = useCallback(async () => {
-    const data = await fetchDashboardSummaries();
+    const data = await fetchDashboardSummaries(appId);
     if (data) setSummaries(data);
     setLoaded(true);
-  }, []);
+  }, [appId]);
 
   /** 拉取单条完整记录（含 dsl，预览用）；未知/失败返回 null */
   const get = useCallback(async (id: string): Promise<DashboardRecord | null> => {

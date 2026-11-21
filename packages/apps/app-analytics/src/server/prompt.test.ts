@@ -8,7 +8,7 @@ import {
   getOpenUIPlanPrompt,
   getExecuteSystemPrompt,
 } from "./prompt";
-import { reloadCrossSourceMap } from "./crossSourceMap";
+import { reloadCrossSourceMap } from "./crossSource";
 import type { ActiveSourceSummary } from "@openui-analytics/datasources";
 
 const ACTIVE: ActiveSourceSummary[] = [
@@ -196,7 +196,7 @@ describe("结构卡预算常量守护（防回归快照）", () => {
       CARD_STORE_MAX_BYTES,
       LOW_CARDINALITY_THRESHOLD,
     } = await import("@openui-analytics/datasources");
-    const { SCHEMA_DIGEST_TOTAL_BUDGET_BYTES } = await import("./handler");
+    const { SCHEMA_DIGEST_TOTAL_BUDGET_BYTES } = await import("./schemaDigest");
 
     // 契约快照：单卡渲染 ≤2KB；落盘 ≤64KB；总量 ≤8KB；低基数阈值 50
     expect({

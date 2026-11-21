@@ -5,28 +5,20 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./serverLibrary": "./src/serverLibrary.ts",
-    "./context": "./src/context.ts",
-    "./crossSource": "./src/crossSourceMap.ts",
-    "./pipeline": "./src/pipeline/index.ts",
-    "./guardrails": "./src/guardrails/index.ts"
+    "./context": "./src/context.ts"
   },
   "scripts": {
-    "test": "vitest run",
-    "eval:tier-b": "vitest run src/evals/tier-b.real-model.test.ts"
+    "test": "vitest run"
   },
   "dependencies": {
-    "@ai-sdk/anthropic": "1.2.12",
-    "@ai-sdk/openai": "1.3.24",
-    "@openui-analytics/chart-spec": "workspace:*",
-    "@openui-analytics/datasources": "workspace:*",
+    "@openui-analytics/app-sdk": "workspace:*",
     "@openui-analytics/harness-core": "workspace:*",
-    "@openui-analytics/methodology": "workspace:*",
-    "@openuidev/lang-core": "^0.3.1",
     "ai": "4.3.19",
     "zod": "4.6.7"
   },
   "devDependencies": {
+    "@ai-sdk/anthropic": "1.2.12",
+    "@ai-sdk/openai": "1.3.24",
     "@types/ioredis-mock": "^8.2.8",
     "@types/node": "^22",
     "ioredis": "^5.6.0",

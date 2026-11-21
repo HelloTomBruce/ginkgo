@@ -33,6 +33,8 @@ import { ComponentCatalogModal } from "@/components/chat/ComponentCatalogModal";
 import type { CanvasDashboardData } from "@openui-apps/analytics";
 import { extractOpenUI } from "@/lib/extractOpenUI";
 import { appRegistry } from "@/lib/apps/registry";
+import { OpenUIToolProvider } from "@openui-analytics/components";
+import { clientTools } from "@/lib/clientTools";
 import { Toaster } from "@/components/Toaster";
 import { toast } from "@/lib/toast";
 
@@ -250,7 +252,7 @@ export default function ChatDashboard() {
     refreshOne: refreshDashboardData,
     toggleTemplate: toggleDashboardTemplate,
     createFromTemplate: createDashboardFromTemplate,
-  } = useDashboards();
+  } = useDashboards(activeAppId);
   // 星标判定集合：收藏记录的 origin.messageId
   const favoritedMessageIds = useMemo(() => {
     const ids = new Set<string>();
@@ -264,9 +266,10 @@ export default function ChatDashboard() {
     (input: FavoriteDashboardInput) =>
       favoriteDashboard({
         ...input,
+        appId: activeAppId,
         origin: { ...input.origin, sessionId: currentSessionId },
       }),
-    [favoriteDashboard, currentSessionId]
+    [favoriteDashboard, currentSessionId, activeAppId]
   );
 
   // 会话级数据源：列表来自 /api/datasources（上方已取），勾选集写入当前会话并随请求体透传
@@ -966,6 +969,8 @@ export default function ChatDashboard() {
 
   return (
     <div className="flex h-screen bg-surface-sunken text-foreground font-sans overflow-hidden">
+      {/* 平台渲染引擎的客户端本地工具注入（消息流 / 画布 / 应用插槽组件共用） */}
+      <OpenUIToolProvider tools={clientTools}>
       <ChatSidebar
         activeAppId={activeAppId}
         onSwitchApp={setActiveAppId}
@@ -1287,6 +1292,7 @@ export default function ChatDashboard() {
       )}
 
       <Toaster />
+      </OpenUIToolProvider>
     </div>
   );
 }

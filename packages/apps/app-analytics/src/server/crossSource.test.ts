@@ -8,7 +8,7 @@ import {
   listCrossSourcePairs,
   resolveCrossSourcePairs,
   reloadCrossSourceMap,
-} from "./crossSourceMap";
+} from "./crossSource";
 
 function writeTempConfig(content: string): string {
   const file = path.join(

@@ -37,5 +37,5 @@ export const analyticsClient: AppClientContract = {
       description: "一键带入分析模板（按方法卡生成）",
     },
   ],
-  sidebarQuickActions: [{ key: "methodology", label: "分析方法论" }],
+  sidebarQuickActions: [{ key: "methodology", label: "分析方法论", icon: "BookOpen" }],
 };

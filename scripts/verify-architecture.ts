@@ -20,7 +20,7 @@ import {
 } from "@openui-analytics/chart-spec";
 import {
   certifiedQueriesSection,
-} from "../packages/openui-llm/src/prompt";
+} from "../packages/apps/app-analytics/src/server/prompt";
 import type { DbDialectClient } from "../packages/openui-datasources/src/connectors/db/sqlGuard";
 
 async function runVerification() {

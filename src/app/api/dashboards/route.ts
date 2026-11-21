@@ -1,12 +1,13 @@
 import { dashboardStore, toSummary } from "@/lib/dashboardStore";
 
 /**
- * GET /api/dashboards — 收藏列表（摘要，不含 dsl 全文；updatedAt 降序）。
- * 鉴权由 middleware 统一拦截 /api/*，本层不再重复校验。
+ * GET /api/dashboards?appId= — 收藏列表（摘要，不含 dsl 全文；updatedAt 降序）。
+ * 携带 appId 时按产物归属应用过滤（产物平台协议）；鉴权由 middleware 统一拦截。
  */
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const dashboards = await dashboardStore.list();
+    const appId = new URL(request.url).searchParams.get("appId") ?? undefined;
+    const dashboards = await dashboardStore.list(appId ? { appId } : undefined);
     return Response.json({ dashboards });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
