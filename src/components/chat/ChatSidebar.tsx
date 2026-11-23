@@ -35,6 +35,7 @@ import { toast } from "@/lib/toast";
 import type { DashboardSummary } from "@ginkgo-apps/analytics/server";
 import { SessionListItem, formatSessionTime } from "./SessionListItem";
 import { AppSwitcher } from "./AppSwitcher";
+import { GinkgoLogo } from "@/components/GinkgoLogo";
 import { appRegistry, DEFAULT_APP_ID } from "@/lib/apps/registry";
 
 /** 侧栏推荐项视图模型：由宿主按应用声明（resolvePresetQueries / presetQueries）组装 */
@@ -265,8 +266,12 @@ export function ChatSidebar({
 
   return (
     <aside className="w-72 border-r border-border bg-card flex flex-col shrink-0">
-      {/* 顶部应用切换器 */}
+      {/* 顶部品牌 + 应用切换器 */}
       <div className="p-3 border-b border-border-subtle">
+        <div className="flex items-center gap-2 mb-2.5 px-1">
+          <GinkgoLogo className="w-5 h-5 shrink-0" />
+          <span className="text-sm font-semibold tracking-tight text-foreground">Ginkgo</span>
+        </div>
         <AppSwitcher
           activeAppId={activeAppId}
           onSwitchApp={onSwitchApp ?? (() => {})}
