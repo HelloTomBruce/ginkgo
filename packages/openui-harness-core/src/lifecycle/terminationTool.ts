@@ -1,5 +1,6 @@
-import { tool, type CoreTool } from "ai";
+import { type CoreTool } from "ai";
 import { z } from "zod";
+import { zodTool } from "../tools/zodTool";
 import type {
   DeliverableAssertion,
   DeliverableAssertionContext,
@@ -42,7 +43,7 @@ export function createTerminationTool(
     options.description ??
     "显式声明当前任务达到终态。必须在已完成分析并产出实质内容，或确认数据不足需澄清时调用。";
 
-  return tool({
+  return zodTool({
     description: desc,
     parameters: terminationSchema,
     execute: async (args) => {

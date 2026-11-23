@@ -5,7 +5,7 @@
 ## 包定位
 
 - **通用执行与治理引擎底座**：作为 monorepo 中通用 AI Agent 与 LLM 调用的核心运行时底座，封装所有与具体分析业务无关的基础设施能力（通信弹性、中间件管线、上下文生命周期治理、工具调用拦截、双重终态状态机、成本核算、可观测性等）。
-- **零业务假设与绝对领域正交**：包内严禁包含任何特定数据分析、特定图表组件或业务 DSL，作为标准、通用的底层框架为上层业务编排层（如 `@openui-analytics/llm`）或其他 AI 应用提供执行保障。
+- **零业务假设与绝对领域正交**：包内严禁包含任何上层应用的领域语义、专用展示组件或业务 DSL，作为标准、通用的底层框架为上层业务编排层（如 `@openui-analytics/llm`）或其他 AI 应用提供执行保障。
 - **依赖生态**：基于 Vercel AI SDK（`ai`）、`@modelcontextprotocol/sdk`、`zod` 构建，提供针对 Redis、分布式文件及内存的多种存储与账本适配器。
 
 ---
@@ -63,6 +63,19 @@ Harness 采用**分层松耦合、门面装配、切面穿透、上下文治理�
 采用拦截器链模式包装工具执行（`composeToolInterceptors`）：
 - **遥测切面（TelemetryAspect）**：透明统计工具执行毫秒数、输入输出字节量与成败状态并上报遥测；
 - **超时切面（TimeoutAspect）**：对单次工具执行施加强制超时熔断，防止第三方接口卡死整个任务。
+
+### 4.1 zodTool —— zod 工具定义适配（ai@4.3 + zod@4 兼容缺口）
+
+ai@4.3 的 `asSchema` 对 zod@4（standard schema）做模型侧 JSON Schema 转换时**丢失参数结构**（只剩 `$schema` 声明），模型看不到参数必然乱传。`zodTool` 保持 zod schema 为单一事实来源，两端各取所需：
+
+- **模型侧**：zod@4 内置 `z.toJSONSchema`（draft-7，io=input）生成完整 `properties`/`required`/`description`；
+- **校验侧**：`jsonSchema()` 宽松入口 + execute 首行 `safeParse`，失败返回结构化 `{ error, isError }` 反馈给模型自我纠正（不上抛、不终结会话流）。
+
+**包内全部 zod 工具（terminationTool 等）已统一经它包装；新工具一律用 `zodTool` 而非裸 `tool()` + zod schema。**
+
+### 4.2 MCP 工具适配的错误约定
+
+`adaptMcpToolToCoreTool` 的 execute 整体防御：MCP server 业务错误（`isError`）与传输层失败（网络/超时/未注册）一律返回结构化 `{ error, isError: true }` 反馈给模型——**execute 抛错在 ai@4 中会作为 ToolExecutionError 终结整个会话流**，工具级错误不应杀死会话。
 
 ### 5. 任务生命周期与双重终态（Task Lifecycle Machine）
 提供标准化显式终态工具协议（`createTerminationTool`）与双重终态状态机：

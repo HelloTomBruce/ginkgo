@@ -2,10 +2,13 @@ import {
   streamText,
   generateText,
   createDataStreamResponse,
+  InvalidToolArgumentsError,
+  NoSuchToolError,
   type CoreMessage,
   type CoreTool,
   type LanguageModel,
 } from "ai";
+import { z } from "zod";
 import {
   computeBudget,
   estimateTextTokens,
@@ -46,6 +49,7 @@ import {
   createTerminationTool,
   composeToolInterceptors,
   createTelemetryInterceptor,
+  zodTool,
   type RunId,
   type MCPClientManager,
   type MCPServerConfig,
@@ -146,6 +150,110 @@ function mergeToolSets(
     }
     target[name] = t;
   }
+}
+
+/**
+ * 解析 data stream 错误分块（`3:"..."`）的正文；非法 JSON 回退 SDK 缺省文案
+ * （真实管线中正文由 toDataStream 的 getErrorMessage 还原为原始错误消息）
+ */
+function parseErrorChunk(line: string): string {
+  try {
+    const parsed: unknown = JSON.parse(line.slice(2));
+    if (typeof parsed === "string" && parsed.length > 0) return parsed;
+  } catch {
+    // 非法 JSON（真实管线不会出现）：落到 SDK 缺省文案，交由 catch 按 unknown 分类
+  }
+  return "An error occurred.";
+}
+
+/** 坏工具调用兜底反馈工具名（经 activeTools 对模型隐藏，仅 repair 重定向可达） */
+const TOOL_CALL_FEEDBACK_NAME = "__tool_call_feedback__";
+
+/** 反馈中附带的工具 schema 序列化上限（防病态 schema 撑爆上下文） */
+const FEEDBACK_SCHEMA_MAX_CHARS = 2048;
+
+/** 坏工具调用兜底反馈工具：repairToolCall 的重定向目标（见 repairToolCallToFeedback） */
+const toolCallFeedbackTool = zodTool({
+  description:
+    "系统内部兜底工具：承载上一次失败工具调用的错误详情。请勿主动调用；收到本工具的结果时，请按错误提示修正参数或改用真实存在的工具后重试。",
+  parameters: z.object({
+    toolName: z.string(),
+    argsText: z.string(),
+    reason: z.string(),
+    schemaText: z.string().optional(),
+  }),
+  execute: async ({ toolName, argsText, reason, schemaText }) => ({
+    error: `上一次对工具 "${toolName}" 的调用未执行：${reason}。原始参数：${argsText || "(空)"}。${
+      schemaText ? `该工具的参数 JSON Schema：${schemaText}。` : ""
+    }请按 schema 修正必填参数与类型后重新调用。`,
+  }),
+});
+
+/**
+ * 坏工具调用兜底重定向：模型输出空参数/类型错误参数（InvalidToolArgumentsError）
+ * 或幻觉工具名（NoSuchToolError）时，错误会作为流内 error 终结整个会话——单次
+ * 手误不应杀死整条流。这里把坏调用重定向到兜底反馈工具，错误详情（参数校验
+ * 失败时附目标工具 JSON Schema，帮模型一次纠正成功）以 tool result 形式反馈
+ * 给模型，由其在后续 step 按提示自我纠正。
+ * 其他错误返回 null，维持 SDK 原生抛错路径。独立导出以便单测
+ * （streamText 被上层 mock 时 experimental_repairToolCall 分支不可达）。
+ */
+export async function repairToolCallToFeedback(input: {
+  toolCall: { toolCallId: string; toolName: string; args?: unknown };
+  error: unknown;
+  /** 目标工具 JSON Schema 提取（NoSuchTool 场景勿传：工具不存在，提取会崩） */
+  parameterSchema?: (input: { toolName: string }) => unknown;
+}): Promise<{
+  toolCallType: "function";
+  toolCallId: string;
+  toolName: string;
+  args: string;
+} | null> {
+  const { toolCall, error, parameterSchema } = input;
+  const isInvalidArgs = InvalidToolArgumentsError.isInstance(error);
+  const isNoSuch = NoSuchToolError.isInstance(error);
+  if (!isInvalidArgs && !isNoSuch) return null;
+  let reason: string;
+  let schemaText: string | undefined;
+  if (isNoSuch) {
+    const available = (error as { availableTools?: unknown }).availableTools;
+    const availableText = Array.isArray(available)
+      ? (available as unknown[]).join(", ")
+      : "";
+    reason = `工具 "${toolCall.toolName}" 不存在${
+      availableText ? `（可用工具：${availableText}）` : ""
+    }`;
+  } else {
+    reason = error instanceof Error ? error.message : String(error);
+    if (parameterSchema) {
+      try {
+        const serialized = JSON.stringify(
+          parameterSchema({ toolName: toolCall.toolName })
+        );
+        if (typeof serialized === "string" && serialized.length > 0) {
+          schemaText = serialized.slice(0, FEEDBACK_SCHEMA_MAX_CHARS);
+        }
+      } catch {
+        // schema 提取失败不影响主反馈（错误详情已足够模型纠正）
+      }
+    }
+  }
+  const argsRaw = toolCall.args;
+  const argsText =
+    typeof argsRaw === "string" ? argsRaw : JSON.stringify(argsRaw ?? {});
+  // LanguageModelV1FunctionToolCall 契约：args 为 JSON 文本（doParseToolCall 会
+  // 重新按兜底工具 schema 校验），兜底工具必填字段在 JSON 内
+  return {
+    toolCallType: "function",
+    toolCallId: toolCall.toolCallId,
+    toolName: TOOL_CALL_FEEDBACK_NAME,
+    args: JSON.stringify({
+      toolName: toolCall.toolName,
+      argsText,
+      reason,
+      ...(schemaText !== undefined ? { schemaText } : {}),
+    }),
+  };
 }
 
 /** 组合多个 abort signal:任一触发即触发(Node 原生 AbortSignal.any 的类型安全替代) */
@@ -1095,8 +1203,47 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
                 tools: {
                   ...loadedTools,
                   finish_task: finishTaskTool,
-                },
+                  // 坏工具调用兜底：experimental_repairToolCall 的重定向目标
+                  [TOOL_CALL_FEEDBACK_NAME]: toolCallFeedbackTool,
+                } as Record<string, CoreTool>,
+                // 兜底工具对模型隐藏（activeTools 只过滤模型可见列表，repair
+                // 重定向后的执行走完整 tools 表不受影响）——防止模型主动调用
+                // 或模仿其命名
+                experimental_activeTools: [
+                  ...Object.keys(loadedTools),
+                  "finish_task",
+                ],
                 maxSteps,
+                // 坏工具调用（参数校验失败/工具名不存在）不终结流：重定向到兜底
+                // 反馈工具，错误+目标工具 schema 以 tool result 反馈给模型自我纠正
+                experimental_repairToolCall: async (options) => {
+                  const repaired = await repairToolCallToFeedback({
+                    toolCall: options.toolCall,
+                    error: options.error,
+                    parameterSchema: options.parameterSchema,
+                  });
+                  if (repaired) {
+                    // 坏调用根因可诊断：模型原始输出与校验失败原因全量落遥测
+                    let detail = "";
+                    try {
+                      const parsed = JSON.parse(repaired.args) as {
+                        reason?: string;
+                        argsText?: string;
+                      };
+                      detail = `${parsed.reason ?? ""} | 原始args=${parsed.argsText ?? ""}`;
+                    } catch {
+                      detail = repaired.args;
+                    }
+                    telemetry.emit({
+                      type: "warn",
+                      runId,
+                      sessionId: sessionIdForEvents,
+                      code: "TOOL_CALL_REPAIRED",
+                      detail,
+                    });
+                  }
+                  return repaired;
+                },
                 // 韧性边界标记：text/reasoning/tool-call 任一分块落地即置位——
                 // 这些分块都会写进客户端流（客户端可见即视为已产出）；tool-call 不置位
                 // 的话，工具已执行后重发 streamText 会重复执行数据源查询（副作用）
@@ -1305,20 +1452,44 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
               // 决策必须建立在真实抛错的迭代上。字节输出与 mergeIntoDataStream 等价
               // （同一 toDataStreamInternal 管线），错误则抛给下方 catch 做分类。
               const reader = result
-                .toDataStream({ sendReasoning: true })
+                .toDataStream({
+                  sendReasoning: true,
+                  // ai@4 缺省把流内 provider 失败脱敏为 "An error occurred."
+                  // （toDataStreamInternal 的 getErrorMessage 缺省值）——真实原因既
+                  // 不落遥测也无法向用户解释，这里还原原始错误消息
+                  getErrorMessage: (err: unknown) =>
+                    err instanceof Error ? err.message : String(err),
+                })
                 .getReader();
               const decoder = new TextDecoder();
               // toDataStream 产出的是规范化 data stream 分块串（0:/2:/3:/d: 前缀）
               type DataStreamChunk = Parameters<typeof dataStream.write>[0];
               try {
+                // provider 失败在本管线有两副面孔，都要变成真实抛错才能进入下方
+                // catch 的分类/fallback/遥测：
+                // 1. reader.read() 直接 reject（传输层中断等少数路径）；
+                // 2. toDataStreamInternal 把 fullStream 的 error chunk 吞成 3: 错误
+                //    分块继续下发（真实 SDK 的常态，含用户停止的 AbortError）——
+                //    下行按行检测 3: 前缀并抛出。
+                // 分块以 \n 结尾，但 read 的字节边界未必对齐分块边界：先拼行缓冲，
+                // 完整行才判定前缀，残段滚入下一轮（流尾 flush）。
+                let fragment = "";
                 for (;;) {
                   const { done, value } = await reader.read();
                   if (done) break;
-                  dataStream.write(
-                    decoder.decode(value, { stream: true }) as DataStreamChunk
-                  );
+                  fragment += decoder.decode(value, { stream: true });
+                  const lines = fragment.split("\n");
+                  fragment = lines.pop() ?? "";
+                  for (const line of lines) {
+                    if (line.startsWith("3:")) {
+                      throw new Error(parseErrorChunk(line));
+                    }
+                    if (line) {
+                      dataStream.write(`${line}\n` as DataStreamChunk);
+                    }
+                  }
                 }
-                const tail = decoder.decode();
+                const tail = fragment + decoder.decode();
                 if (tail) dataStream.write(tail as DataStreamChunk);
               } finally {
                 reader.releaseLock();

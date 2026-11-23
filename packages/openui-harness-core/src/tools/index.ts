@@ -16,3 +16,5 @@ export {
   createTimeoutInterceptor,
   ToolTimeoutError,
 } from "./timeoutAspect";
+
+export { zodTool } from "./zodTool";

@@ -1,13 +1,13 @@
 // @vitest-environment node
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { createAnalyzeHandler, type SessionContextMeta, type SessionContextStore } from "./handler";
+import { createAnalyzeHandler, repairToolCallToFeedback, type SessionContextMeta, type SessionContextStore } from "./handler";
 import {
   InMemoryTaskStore,
   InMemoryCostLedger,
   type ModelPricingTable,
   type MCPClientManager,
 } from "@openui-analytics/harness-core";
-import { streamText, generateText } from "ai";
+import { streamText, generateText, InvalidToolArgumentsError, NoSuchToolError } from "ai";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -1417,6 +1417,203 @@ describe("Provider 韧性层 fallback 链（WS-9）", () => {
       events.some((e) => e.type === "error" && e.code === "STREAM_ERROR")
     ).toBe(true);
     await expect(res.text()).rejects.toThrow("Stream error");
+  });
+
+  // ===== 真实 SDK 的 provider 失败形态：error chunk 被吞成 3: 错误分块 =====
+  // （ai@4 toDataStreamInternal 对 fullStream error chunk 是 enqueue `3:...` 而非
+  // reject——上方各用例的 controller.error 是少数传输层路径，这里补常态路径）
+
+  it("流内 3: 错误分块(首分块后):发 MID_STREAM_FAILURE、真实错误直达客户端", async () => {
+    vi.mocked(streamText).mockImplementation(
+      (opts) =>
+        streamResult({
+          chunks: ['0:"部分结果"\n', '3:"socket hang up"\n'],
+          onStart: () => {
+            (
+              opts.onChunk as ((e: unknown) => void) | undefined
+            )?.({ chunk: { type: "text-delta", textDelta: "部分结果" } });
+          },
+        }) as never
+    );
+
+    const res = await POST(
+      makeRequest({
+        messages: [],
+        apiKey: "k",
+        resilience: { fallbacks: [{ model: "backup-model" }] },
+      })
+    );
+    const text = await res.text();
+
+    // 与 reject 形态同语义:已见内容不重跑、真实错误(而非 "An error occurred.")下发
+    expect(vi.mocked(streamText)).toHaveBeenCalledTimes(1);
+    expect(text).not.toContain("model_fallback");
+    expect(hasWarn("MID_STREAM_FAILURE")).toBe(true);
+    expect(text).toContain("socket hang up");
+    expect(text).not.toContain("An error occurred.");
+  });
+
+  it("流内 3: 错误分块(首分块前,无 fallback):降级为友好文案并保留真实异常详情", async () => {
+    vi.mocked(streamText).mockImplementation(
+      () => streamResult({ chunks: ['3:"Insufficient balance"\n'] }) as never
+    );
+
+    const res = await POST(makeRequest({ messages: [], apiKey: "k" }));
+    const text = await res.text();
+
+    expect(
+      events.some((e) => e.type === "error" && e.code === "PROVIDER_CALL_FAILED")
+    ).toBe(true);
+    expect(text).toContain("大模型服务响应异常");
+    expect(text).toContain("Insufficient balance");
+    expect(text).not.toContain('3:"An error occurred."');
+  });
+
+  it("3: 错误分块跨 read 字节边界:行缓冲拼行后仍能识别", async () => {
+    // 一个分块拆成两次 enqueue,模拟 read 边界不对齐分块边界
+    vi.mocked(streamText).mockImplementation(
+      () => streamResult({ chunks: ['0:"ok"\n3:"bo', 'om"\n'] }) as never
+    );
+
+    const res = await POST(makeRequest({ messages: [], apiKey: "k" }));
+    const text = await res.text();
+
+    expect(
+      events.some((e) => e.type === "error" && e.code === "PROVIDER_CALL_FAILED")
+    ).toBe(true);
+    expect(text).toContain("boom");
+  });
+
+  it("用户停止(abort)以 3: 错误分块形态到达:仍走 abort 白名单,不 fallback 不误报", async () => {
+    vi.mocked(streamText).mockImplementation(
+      (opts) =>
+        ({
+          toDataStream: () =>
+            new ReadableStream<Uint8Array>({
+              start(controller) {
+                const signal = opts.abortSignal as AbortSignal | undefined;
+                const fail = () => {
+                  // 真实 SDK 中 AbortError 以 error chunk → 3: 分块形态下发
+                  controller.enqueue(
+                    new TextEncoder().encode('3:"This operation was aborted"\n')
+                  );
+                  controller.close();
+                };
+                if (signal?.aborted) {
+                  fail();
+                  return;
+                }
+                signal?.addEventListener("abort", fail, { once: true });
+                controller.enqueue(new TextEncoder().encode('0:"working"\n'));
+              },
+            }),
+        }) as never
+    );
+
+    const res = await POST(
+      makeRequest({
+        messages: [],
+        apiKey: "k",
+        sessionId: "sess_ws9_abort_chunk",
+        resilience: { fallbacks: [{ model: "backup-model" }] },
+      })
+    );
+    expect(res.status).toBe(200);
+
+    const stopRes = await POST(
+      makeRequest({ action: "stop", sessionId: "sess_ws9_abort_chunk" } as never)
+    );
+    expect(((await stopRes.json()) as { stopped?: boolean }).stopped).toBe(true);
+
+    // 白名单:不 fallback、不 MID_STREAM_FAILURE,按 STREAM_ERROR 遥测收尾
+    expect(vi.mocked(streamText)).toHaveBeenCalledTimes(1);
+    expect(hasWarn("MID_STREAM_FAILURE")).toBe(false);
+    expect(hasWarn("MODEL_FALLBACK")).toBe(false);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(
+      events.some((e) => e.type === "error" && e.code === "STREAM_ERROR")
+    ).toBe(true);
+    await expect(res.text()).rejects.toThrow("Stream error");
+  });
+
+  // ===== 坏工具调用兜底：空参数/幻觉工具名不终结流，以 tool result 反馈给模型 =====
+
+  it("工具参数校验失败:重定向到兜底反馈工具,错误详情+目标工具 schema 带给模型", async () => {
+    const repaired = await repairToolCallToFeedback({
+      toolCall: { toolCallId: "call-1", toolName: "read_file", args: "{}" },
+      error: new InvalidToolArgumentsError({
+        toolName: "read_file",
+        toolArgs: "{}",
+        cause: new Error("Type validation failed"),
+      }),
+      parameterSchema: ({ toolName }) => ({
+        type: "object",
+        properties: { path: { type: "string" } },
+        required: [toolName === "read_file" ? "path" : ""],
+      }),
+    });
+    expect(repaired).toMatchObject({
+      toolCallType: "function",
+      toolCallId: "call-1",
+      toolName: "__tool_call_feedback__",
+    });
+    // LanguageModelV1FunctionToolCall 契约:args 为 JSON 文本
+    const args = JSON.parse(repaired?.args ?? "{}") as {
+      toolName: string;
+      argsText: string;
+      reason: string;
+      schemaText?: string;
+    };
+    expect(args.toolName).toBe("read_file");
+    expect(args.argsText).toBe("{}");
+    expect(args.reason).toContain("Invalid arguments");
+    // 目标工具 schema 附带进反馈,帮模型一次纠正成功
+    expect(args.schemaText).toContain('"path"');
+  });
+
+  it("工具名不存在:reason 携带可用工具列表引导纠正,不提取 schema(工具不存在)", async () => {
+    const repaired = await repairToolCallToFeedback({
+      toolCall: { toolCallId: "call-2", toolName: "幻觉工具", args: "" },
+      error: new NoSuchToolError({
+        toolName: "幻觉工具",
+        availableTools: ["read_file", "write_file"],
+      }),
+      parameterSchema: () => {
+        throw new Error("tools[toolName] 为 undefined,不应被调用");
+      },
+    });
+    const args = JSON.parse(repaired?.args ?? "{}") as {
+      reason: string;
+      argsText: string;
+    };
+    expect(args.reason).toContain("不存在");
+    expect(args.reason).toContain("read_file");
+    expect(args.argsText).toBe("");
+  });
+
+  it("非工具调用类错误不拦截,返回 null 维持原生抛错路径", async () => {
+    const repaired = await repairToolCallToFeedback({
+      toolCall: { toolCallId: "call-3", toolName: "read_file", args: "{}" },
+      error: new Error("network down"),
+    });
+    expect(repaired).toBeNull();
+  });
+
+  it("streamText 装配:工具表含兜底反馈工具,activeTools 对模型隐藏之,repair 已启用", async () => {
+    const res = await POST(makeRequest({ messages: [], apiKey: "k" }));
+    await res.text();
+    const opts = vi.mocked(streamText).mock.calls[0][0] as {
+      tools: Record<string, unknown>;
+      experimental_activeTools?: string[];
+      experimental_repairToolCall?: unknown;
+    };
+    expect(Object.keys(opts.tools)).toContain("__tool_call_feedback__");
+    // 兜底工具不对模型暴露(防主动调用/模仿),repair 重定向执行不受影响
+    expect(opts.experimental_activeTools).not.toContain(
+      "__tool_call_feedback__"
+    );
+    expect(opts.experimental_activeTools).toContain("finish_task");
+    expect(typeof opts.experimental_repairToolCall).toBe("function");
   });
 });
 

@@ -3,8 +3,8 @@
 领域中立的 LLM 编排装配层：面向 OpenUI 平台的多应用统一分析入口，负责
 streamText 生命周期、模型链韧性（WS-9）、流中继（StreamHub）、并发/配额/预算
 三维熔断、上下文投影治理与多应用接缝；底层执行、韧性、计量与状态图由通用底座
-`@openui-analytics/harness-core` 驱动。**本包零应用领域语义**——数据分析等领域的
-prompt、方法卡、认证口径、跨源映射、交付物文案全部经四接缝由应用包注入
+`@openui-analytics/harness-core` 驱动。**本包零应用领域语义**——任何应用的
+prompt、工具、交付物文案全部经四接缝由应用包注入
 （如 `@openui-apps/analytics`）。
 
 ## 包定位
@@ -37,6 +37,15 @@ enabledSources / activeSources（MCP 源摘要）/ sessions（会话上下文通
   maxSteps 预算分档）。
 - **模型链韧性（WS-9）**：主模型 + fallback 链；仅未产出任何 content 分块时允许
   切换（防重复输出/重复执行工具副作用）；context_overflow 可换更大窗模型并重投影。
+  流消费按行检测 data stream 错误分块（`3:` 前缀，行缓冲容忍 read 字节边界不对齐）
+  并还原为真实抛错进入分类/fallback/遥测——ai@4 缺省把流内 provider 失败脱敏为
+  `"An error occurred."`，此处经 `getErrorMessage` 还原原始错误消息。
+- **坏工具调用兜底（三层防线之二）**：`experimental_repairToolCall` 把参数校验失败
+  （InvalidToolArgumentsError）与幻觉工具名（NoSuchToolError）重定向到内部反馈工具
+  `__tool_call_feedback__`（经 `experimental_activeTools` 对模型隐藏，仅 repair 重定向
+  可达）——错误详情 + 目标工具 JSON Schema 以 tool result 反馈给模型自我纠正，
+  **单次手误不终结会话流**；每次重定向发 `TOOL_CALL_REPAIRED` 遥测（含原始 args 与
+  校验原因）。其他错误返回 null 走原生抛错路径。
 - **流中继（StreamHub）**：后台续跑 + 多端重放续接 + 看门狗 + 终态 30s 保留窗
   （`reconnect=true` / `action=stop`）。
 - **三维熔断**：并发准入（`LLM_MAX_CONCURRENT_TASKS`，429）→ 租户配额（WS-11）→

@@ -24,30 +24,46 @@ export function adaptMcpToolToCoreTool(
         )
       : z.record(z.string(), z.any()),
     execute: async (args: Record<string, unknown>) => {
-      const result = await manager.callTool(serverId, tool.name, args);
-
-      if (result.isError) {
-        const errorText = result.content
-          .map((c) => c.text ?? JSON.stringify(c))
-          .join("\n");
-        throw new Error(`[MCP Tool Error] ${toolName}: ${errorText}`);
-      }
-
-      // 提取所有 text 内容
-      const texts = result.content
-        .map((c) => {
-          if (c.type === "text" && typeof c.text === "string") {
-            return c.text;
-          }
-          return JSON.stringify(c);
-        })
-        .join("\n");
-
-      // 尝试解析 JSON，如果成功直接返回结构化对象，否则返回字符串文本
       try {
-        return JSON.parse(texts);
-      } catch {
-        return texts;
+        const result = await manager.callTool(serverId, tool.name, args);
+
+        // 工具级业务错误：结构化反馈给模型自我纠正，不上抛——execute 抛错在
+        // ai@4 中会作为 ToolExecutionError 终结整个会话流（与 datasources 包
+        // toAiTools 的 { error, isError } 约定一致）
+        if (result.isError) {
+          const errorText = result.content
+            .map((c) => c.text ?? JSON.stringify(c))
+            .join("\n");
+          return {
+            error: `[MCP Tool Error] ${toolName}: ${errorText}`,
+            isError: true,
+          };
+        }
+
+        // 提取所有 text 内容
+        const texts = result.content
+          .map((c) => {
+            if (c.type === "text" && typeof c.text === "string") {
+              return c.text;
+            }
+            return JSON.stringify(c);
+          })
+          .join("\n");
+
+        // 尝试解析 JSON，如果成功直接返回结构化对象，否则返回字符串文本
+        try {
+          return JSON.parse(texts);
+        } catch {
+          return texts;
+        }
+      } catch (err) {
+        // 网络/超时/未注册等传输层失败：同样反馈给模型，不终结会话流
+        return {
+          error: `MCP 工具 ${toolName} 调用失败: ${
+            err instanceof Error ? err.message : String(err)
+          }。请检查参数后重试，或改用其他方式继续任务。`,
+          isError: true,
+        };
       }
     },
   };

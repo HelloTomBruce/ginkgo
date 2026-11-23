@@ -59,7 +59,7 @@ describe("MCPClientManager & ToolAdapter", () => {
     expect(result).toEqual({ commit: "abcdef", author: "alice" });
   });
 
-  it("当 MCP 工具返回 isError 为 true 时，抛出明确异常", async () => {
+  it("当 MCP 工具返回 isError 为 true 时，结构化反馈错误而非抛异常终结流", async () => {
     const manager = new MCPClientManager();
     vi.spyOn(manager, "callTool").mockResolvedValueOnce({
       isError: true,
@@ -74,9 +74,37 @@ describe("MCPClientManager & ToolAdapter", () => {
 
     const coreTool = adaptMcpToolToCoreTool(mcpTool as never, "gh", manager);
 
-    await expect(coreTool.execute?.({}, {} as never)).rejects.toThrow(
-      /Repository not found: 404/
+    // execute 抛错会在 ai@4 中作为 ToolExecutionError 终结整个会话流——
+    // 工具级业务错误必须以 { error, isError } 结果反馈给模型自我纠正
+    const result = (await coreTool.execute?.({}, {} as never)) as {
+      error: string;
+      isError: boolean;
+    };
+    expect(result.isError).toBe(true);
+    expect(result.error).toContain("Repository not found: 404");
+  });
+
+  it("MCP 工具传输层失败(网络/超时)时，结构化反馈错误而非抛异常终结流", async () => {
+    const manager = new MCPClientManager();
+    vi.spyOn(manager, "callTool").mockRejectedValueOnce(
+      new Error("[MCP] 工具调用超时 (30000ms): gh.get_repo")
     );
+
+    const mcpTool = {
+      name: "get_repo",
+      description: "查询仓库",
+      inputSchema: { type: "object", properties: {} },
+    };
+
+    const coreTool = adaptMcpToolToCoreTool(mcpTool as never, "gh", manager);
+
+    const result = (await coreTool.execute?.({}, {} as never)) as {
+      error: string;
+      isError: boolean;
+    };
+    expect(result.isError).toBe(true);
+    expect(result.error).toContain("工具调用超时");
+    expect(result.error).toContain("重试");
   });
 
   it("getCoreToolsFromMcp 批量扫描并装配工具集，遵循 allowedTools 白名单", async () => {

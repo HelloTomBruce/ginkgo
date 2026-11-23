@@ -233,6 +233,7 @@ export {
   composeToolInterceptors,
   createTelemetryInterceptor,
   createTimeoutInterceptor,
+  zodTool,
   ToolTimeoutError,
   type ToolExecutionContext,
   type ToolInterceptor,
