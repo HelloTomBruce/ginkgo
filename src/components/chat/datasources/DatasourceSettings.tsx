@@ -267,7 +267,7 @@ export function DatasourceSettings() {
                       ? "bg-surface-raised"
                       : h.ok
                         ? "bg-success-solid"
-                        : "bg-destructive-solid"
+                        : "bg-danger-solid"
                   }`}
                   title={h?.error || ""}
                 />
@@ -319,7 +319,7 @@ export function DatasourceSettings() {
                     disabled={busy}
                     aria-busy={busyDelete}
                     aria-label={`删除 ${s.id}`}
-                    className="p-1 rounded text-foreground-faint hover:text-destructive-fg hover:bg-muted disabled:opacity-50"
+                    className="p-1 rounded text-foreground-faint hover:text-danger-fg hover:bg-muted disabled:opacity-50"
                   >
                     {busyDelete ? (
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -559,7 +559,7 @@ export function DatasourceSettings() {
                                       prev.filter((_, i) => i !== idx)
                                     );
                                   }}
-                                  className="text-foreground-faint hover:text-destructive-fg ml-2 shrink-0 p-0.5"
+                                  className="text-foreground-faint hover:text-danger-fg ml-2 shrink-0 p-0.5"
                                   title="移除"
                                 >
                                   <Trash2 className="w-3 h-3" />
@@ -582,7 +582,7 @@ export function DatasourceSettings() {
               )}
 
               {errors.length > 0 && (
-                <div className="text-[11px] text-destructive-fg space-y-1 p-2 rounded-lg bg-destructive-soft border border-destructive-border">
+                <div className="text-[11px] text-danger-fg space-y-1 p-2 rounded-lg bg-danger-soft border border-danger-border">
                   {errors.map((e) => (
                     <div key={e}>· {e}</div>
                   ))}
