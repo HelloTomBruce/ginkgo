@@ -1,4 +1,6 @@
 import type { AppServerContext } from "@openui-analytics/app-sdk";
+// 子入口 import：主入口 re-export 了含 Node 内置模块的 tools，会污染客户端 bundle
+import { sandboxToolsPromptSection } from "@openui-analytics/sandbox/prompt";
 
 /**
  * 通用智能助手自治的系统提示词
@@ -7,6 +9,8 @@ import type { AppServerContext } from "@openui-analytics/app-sdk";
  * 1. 纯粹的通用智能助理定位，专注于代码、方案、知识与日常问题解答；
  * 2. 严禁强加数据库探查、SQL 或 BI 图表逻辑；
  * 3. 完美适配 Plan（先出方案规划）与 Build（直接构建交付）双模式。
+ * 工具说明段由 openui-sandbox 能力包供给，preset/permission 与 getTools
+ * 装配同源判定（plan → readonly 只读档，execute/direct → full）。
  */
 export function buildGeneralSystemPrompt(ctx?: AppServerContext): string {
   const mode = ctx?.mode ?? "direct";
@@ -18,14 +22,7 @@ export function buildGeneralSystemPrompt(ctx?: AppServerContext): string {
 2. 当涉及代码时，给出符合工程最佳实践、类型安全且易读的代码片段。
 3. 保持客观、专业和热情的协助态度。
 
-## 工作区与工具能力 (Workspace Tools)
-你拥有当前会话的专属工作区沙箱，并配备了以下物理操作工具：
-- \`read_file\`: 读取工作区内的文件内容（大文件可用 startLine/endLine 切片分页）；
-- \`write_file\`: 在工作区创建新文件或覆写文件（自动创建父目录）；
-- \`edit_file\`: 对现有文件进行精准的目标文本片段替换；
-- \`run_command\`: 在工作区目录下执行受限终端 Shell 命令（如依赖安装、测试运行、构建打包等）；
-- \`list_dir\`: 探索和浏览工作区目录树。
-当用户需要你查看工程文件、生成产物文件或验证执行结果时，请主动调用对应的工具。完成工作后简要向用户总结交付成果。`;
+${sandboxToolsPromptSection("atomic", mode === "plan" ? "readonly" : "full")}`;
 
   if (mode === "plan") {
     return `${base}

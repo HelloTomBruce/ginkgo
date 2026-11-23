@@ -91,8 +91,60 @@ export interface AppSidebarQuickActionSpec {
   key: string;
   label: string;
   icon?: string;
-  /** 触发快捷操作的回调 */
+  /** 触发快捷操作的回调（与 Component 二选一：宿主内置能力 key 或应用自治弹层） */
   onClick?: () => void;
+  /**
+   * 应用自治弹层组件（可选）：提供时由宿主统一管理 open 状态并渲染，
+   * 应用完全自治弹层内容（如方法论查看器）。
+   */
+  Component?: ComponentType<{ open: boolean; onClose: () => void }>;
+}
+
+/**
+ * 画布钉选载荷（平台渲染基建概念）：宿主把消息内看板区块钉选到右侧
+ * 工作台时传递的数据，由应用的工作台插槽组件消费。
+ */
+export interface AppCanvasData {
+  /** 来源消息 id（钉选唯一键） */
+  id: string;
+  title?: string;
+  /** 看板 DSL 全文 */
+  dsl: string;
+  /** 是否为活看板（携带可重放查询，支持零 LLM 刷新） */
+  isLive?: boolean;
+}
+
+/**
+ * 消息区扩展声明：宿主消息时间线按声明渲染应用语义的兜底卡与提示，
+ * 宿主零应用语义（禁止话术正则与 appId 特判）。
+ */
+export interface AppMessageExtensions {
+  /**
+   * 规划确认兜底：最后一条 assistant 消息无看板代码且文本包含任一
+   * pattern（子串匹配）时渲染确认按钮，点击发送 actionPrompt。
+   */
+  planConfirm?: {
+    /** 触发短语（子串匹配，来自应用 prompt 对模型输出话术的硬性要求） */
+    patterns: string[];
+    /** 确认按钮文案 */
+    label: string;
+    /** 点击后作为用户消息发送的执行指令 */
+    actionPrompt: string;
+  };
+  /**
+   * 终态闭环兜底：finish_task 已执行且消息无看板代码时渲染总结卡，
+   * 展示 finish_task 的 summary 并提供一键生成按钮。
+   */
+  completion?: {
+    /** 卡片标题（如「数据取数与分析计算已全部完成」） */
+    title: string;
+    /** 一键生成按钮文案 */
+    buttonLabel: string;
+    /** 点击后作为用户消息发送的生成指令 */
+    actionPrompt: string;
+  };
+  /** 流式中工具完成后的过渡文案；缺省「工具执行完成，正在组织回复...」 */
+  toolSettledHint?: string;
 }
 
 /**
@@ -142,6 +194,42 @@ export interface AppClientContract {
 
   /** 侧边栏底部操作列表 */
   sidebarQuickActions?: AppSidebarQuickActionSpec[];
+
+  /**
+   * 消息内看板区块的工具条能力声明（能力注入）：
+   * 未声明的应用不渲染任何操作按钮（钉选/收藏/导出 PDF 均按需开启），
+   * 工具条标题也可由应用定制。
+   */
+  dashboardToolbar?: {
+    /** 工具条标题文案，缺省「动态看板」 */
+    title?: string;
+    /** 钉选到右侧画布协同查看 */
+    pin?: boolean;
+    /** 收藏到看板收藏库（需配合 sidebarTabs 的 dashboards tab 完整体验） */
+    favorite?: boolean;
+    /** 浏览器打印 / 另存为 PDF */
+    exportPdf?: boolean;
+  };
+
+  /**
+   * 工作区视图语义：canvas=分析画布（canvas-only 模式需先有钉选看板，
+   * 文案为「画布」）；files=文件产物工作台（缺省，文案为「全屏」）。
+   */
+  workspaceView?: "canvas" | "files";
+
+  /** 会话支持挂载本地文件夹为工作区（侧栏「选择文件夹」按钮的渲染开关） */
+  workspaceMount?: boolean;
+
+  /** 消息区扩展声明（兜底卡/确认按钮/过渡文案），宿主零应用语义渲染 */
+  messageExtensions?: AppMessageExtensions;
+
+  /**
+   * 推荐列表运行时解析插槽（如方法卡内置 + /api 合并卡集）。
+   * 提供时宿主以其 resolved 结果为推荐列表唯一来源；缺省用静态 presetQueries。
+   * 设计为异步 resolver 而非 hook：宿主在 effect 中按应用条件调用，
+   * 避免「应用是否声明」造成的条件 hook 调用违规。
+   */
+  resolvePresetQueries?: () => Promise<AppPresetQuery[]>;
 }
 
 /**
@@ -277,6 +365,14 @@ export interface AppServerContract {
 
   /** 是否需要挂载数据库探查工具（标志位） */
   requiresDataTools?: boolean;
+
+  /**
+   * 声明应用需要会话工作区（标志位）：宿主据此解析沙箱并注入
+   * AppServerContext.workspace（sandboxDir / customRootDir），供
+   * buildSystemPrompt / getTools 消费。未声明则不解析（无沙箱语义的应用
+   * 不产生无谓的目录创建）。
+   */
+  needsWorkspace?: boolean;
 
   /**
    * 产物列表（可选）：应用自治枚举其产物（看板/文档/文件等）为统一的

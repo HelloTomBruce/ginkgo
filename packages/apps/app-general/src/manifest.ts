@@ -9,7 +9,7 @@ export const generalManifest: AppManifest = {
   version: "1.0.0",
   category: "通用助理",
   tags: ["对话", "助手", "通用", "代码"],
-  author: "OpenUI Team",
+  author: "Ginkgo Team",
 };
 
 export const generalClient: AppClientContract = {
@@ -22,6 +22,10 @@ export const generalClient: AppClientContract = {
   ],
   // 声明通用助手的工作区插槽与产物组件
   hasWorkspace: true,
+  // 工作区视图语义：文件产物工作台（canvas-only 不依赖钉选看板）
+  workspaceView: "files",
+  // 支持挂载本地文件夹为会话工作区（侧栏「选择文件夹」按钮）
+  workspaceMount: true,
   workspaceTitle: "工作区产物",
   WorkspaceComponent: ArtifactViewer,
   hasInputAccessory: false,
