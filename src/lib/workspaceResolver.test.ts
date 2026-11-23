@@ -8,7 +8,7 @@ describe("workspaceResolver", () => {
   let tempDir: string;
 
   beforeEach(async () => {
-    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "openui-ws-test-"));
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "ginkgo-ws-test-"));
   });
 
   afterEach(async () => {

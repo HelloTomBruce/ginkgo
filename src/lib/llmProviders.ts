@@ -9,7 +9,7 @@
 export type LlmProtocol = "openai" | "anthropic";
 
 export interface LlmProviderPreset {
-  /** 稳定 id，持久化于 localStorage openui_llm_provider */
+  /** 稳定 id，持久化于 localStorage ginkgo_llm_provider */
   id: string;
   /** 展示名 */
   name: string;
@@ -150,9 +150,9 @@ export interface ConfiguredProvider {
   contextWindow?: string;
 }
 
-export const PROVIDERS_STORAGE_KEY = "openui_llm_providers";
-export const ACTIVE_PROVIDER_STORAGE_KEY = "openui_llm_active_provider";
-export const ACTIVE_MODEL_STORAGE_KEY = "openui_llm_active_model";
+export const PROVIDERS_STORAGE_KEY = "ginkgo_llm_providers";
+export const ACTIVE_PROVIDER_STORAGE_KEY = "ginkgo_llm_active_provider";
+export const ACTIVE_MODEL_STORAGE_KEY = "ginkgo_llm_active_model";
 
 /** 生成内置提供商初始列表（未配置时默认包含常用预设） */
 export function createDefaultConfiguredProviders(): ConfiguredProvider[] {
@@ -555,7 +555,7 @@ export const LLM_PROVIDER_PRESETS: LlmProviderPreset[] = [
 // ---------------------------------------------------------------------------
 
 const CATALOG_URL = "https://models.dev/api.json";
-const CATALOG_CACHE_KEY = "openui_llm_provider_catalog";
+const CATALOG_CACHE_KEY = "ginkgo_llm_provider_catalog";
 /** 缓存有效期 24h：命中直接用，过期后台刷新，失败回退缓存/内置 */
 const CATALOG_TTL_MS = 24 * 60 * 60 * 1000;
 /** datalist 模型建议上限（超大列表截断，仅作提示用） */

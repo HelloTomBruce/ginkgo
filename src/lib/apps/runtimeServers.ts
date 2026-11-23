@@ -1,7 +1,7 @@
 import { analyticsServer } from "@/lib/analyticsRuntime";
-import { getGeneralTools as generalGetTools } from "@openui-apps/general/server";
+import { getGeneralTools as generalGetTools } from "@ginkgo-apps/general/server";
 import { appRegistry } from "./registry";
-import type { AppServerContract } from "@openui-analytics/app-sdk";
+import type { AppServerContract } from "@ginkgo/app-sdk";
 
 /**
  * 运行时服务端解析（宿主组合根统一出口）：

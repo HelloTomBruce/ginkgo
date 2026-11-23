@@ -9,9 +9,9 @@
 
 平台化收敛已完成（commit `61803cd`）：
 
-- 编排层 `@openui-analytics/llm` 领域中立，四接缝（`resolveAppPrompt` /
+- 编排层 `@ginkgo/llm` 领域中立，四接缝（`resolveAppPrompt` /
   `resolveAppTools` / `deliverable` / `onTaskFinish`）是应用领域逻辑的唯一注入口；
-- `@openui-analytics/app-sdk` 承载插槽协议（manifest / 客户端插槽 / 服务端契约 /
+- `@ginkgo/app-sdk` 承载插槽协议（manifest / 客户端插槽 / 服务端契约 /
   产物协议 / 交付物契约 / `defineApp`）；
 - 平台服务六件套：编排、数据语义（datasources）、渲染（components）、方法论、
   工作区沙箱、产物协议；
@@ -38,12 +38,12 @@
 
 | # | 能力包 | 解决什么 | 优先级 | 现有锚点 |
 | --- | --- | --- | --- | --- |
-| ① | **openui-memory** 记忆/知识 | 跨会话记忆、用户偏好、轻量知识库（RAG）——general/客服/研究类应用共同刚需 | ★★★ | `sessions` 通道（pendingPlan 同模式扩展）；harness tokenizer 做记忆预算 |
+| ① | **ginkgo-memory** 记忆/知识 | 跨会话记忆、用户偏好、轻量知识库（RAG）——general/客服/研究类应用共同刚需 | ★★★ | `sessions` 通道（pendingPlan 同模式扩展）；harness tokenizer 做记忆预算 |
 | ② | **文档交付物**（components 扩展 + document-spec） | 看板 DSL 目前是看板中心；补文档原语（章节/表格/导出）解锁第二类应用（app-sdk 注释已预留「文档写作包提供 DocumentEditor」） | ★★★ | `CATALOG_GROUPS` 单一注册源 + `serverLibrary` 同构扩展；产物协议 `type:"document"` 已预留 |
-| ③ | **openui-scheduler** 定时任务/订阅 | 看板定时刷新、日报周报订阅推送；产物协议的放大器 | ★★ | `refreshArtifact` 已 compute-only 化，调度层只需定时调它；harness 遥测观测 |
-| ④ | **openui-executor** 沙箱执行 | 受限代码执行（资源限额/超时/网络策略），devops/模拟器/数据科学类刚需 | ★★ | **基础层已落地**：`openui-sandbox` 能力包（atomic/explorer 预设 + full/readonly 权限档 + env 白名单，general 已消费）；本条目剩余演进 = worker/vm 隔离 + 声明式权限 + 审批边缘 |
-| ⑤ | **文件理解**（openui-ingest 扩展） | PDF/Word/JSON 等非结构化入库 | ★★ | `fileStore.ingestFiles` 的 staging→原子替换管线直接复用 |
-| ⑥ | **openui-share** 分享/导出 | 分享链接、PDF/图片导出、iframe embed——产物传播闭环 | ★ | `.openui.json` 快照已有；DashboardPreviewModal 只读渲染可复用 |
+| ③ | **ginkgo-scheduler** 定时任务/订阅 | 看板定时刷新、日报周报订阅推送；产物协议的放大器 | ★★ | `refreshArtifact` 已 compute-only 化，调度层只需定时调它；harness 遥测观测 |
+| ④ | **ginkgo-executor** 沙箱执行 | 受限代码执行（资源限额/超时/网络策略），devops/模拟器/数据科学类刚需 | ★★ | **基础层已落地**：`ginkgo-sandbox` 能力包（atomic/explorer 预设 + full/readonly 权限档 + env 白名单，general 已消费）；本条目剩余演进 = worker/vm 隔离 + 声明式权限 + 审批边缘 |
+| ⑤ | **文件理解**（ginkgo-ingest 扩展） | PDF/Word/JSON 等非结构化入库 | ★★ | `fileStore.ingestFiles` 的 staging→原子替换管线直接复用 |
+| ⑥ | **ginkgo-share** 分享/导出 | 分享链接、PDF/图片导出、iframe embed——产物传播闭环 | ★ | `.ginkgo.json` 快照已有；DashboardPreviewModal 只读渲染可复用 |
 | ⑦ | **应用级配额**（harness-core 扩展） | appId 维度的计量/限额/计费——第三方上架后的商业化基础 | ★（随分发做） | `CostLedger.record` 增加 appId 字段，向下兼容 |
 
 各能力包交付物统一为：包（协议类型 + 工厂 + 默认实现）+ app-sdk 契约扩展 +
@@ -60,7 +60,7 @@ factory 级测试 + 接入规范增量章节。
 
 **目标**：安装一个应用 = 「装包 + 配置一行」，宿主代码零改动。
 
-- `config/apps.json`：`{apps: [{package: "@openui-apps/devops", enabled: true, runtime?: {...}}]}`
+- `config/apps.json`：`{apps: [{package: "@ginkgo-apps/devops", enabled: true, runtime?: {...}}]}`
   ——符合仓库「配置零硬编码」原则；
 - `appRegistry` 启动时按配置 `await import(pkg)` 动态注册；`src/lib/apps/runtimeServers.ts`
   的工厂装配改为配置驱动（工厂包名 + 依赖映射进 config）；
@@ -83,7 +83,7 @@ factory 级测试 + 接入规范增量章节。
 
 ### P3 · 运行时沙箱分发（远期 · 应用商店终态 · 前两段验证生态成立后再投入）
 
-- **应用包格式规范**：`openui-app.tgz` = `manifest.json + client.js + server.js`
+- **应用包格式规范**：`ginkgo-app.tgz` = `manifest.json + client.js + server.js`
   （标准 ESM bundle）；
 - **server 侧**：worker_threads / `node:vm` 隔离执行，能力以显式句柄注入
   （能力即对象，不给 `require`/`fs`）——Cloudflare Workers 模型；

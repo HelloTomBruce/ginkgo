@@ -2,13 +2,13 @@
 
 import React, { useState } from "react";
 import { X, RefreshCw, Edit3, Trash2, Check, Star, Download, Copy, Pin } from "lucide-react";
-import { OpenUIRenderer } from "@/components/OpenUIRenderer";
+import { UiSpecRenderer } from "@/components/UiSpecRenderer";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Hint } from "@/components/ui/hint";
 // 仅取类型（编译期擦除）
-import type { DashboardRecord } from "@openui-apps/analytics/server";
+import type { DashboardRecord } from "@ginkgo-apps/analytics/server";
 import { toast } from "@/lib/toast";
-import { downloadDashboardSnapshot } from "@openui-apps/analytics/isomorphic";
+import { downloadDashboardSnapshot } from "@ginkgo-apps/analytics/isomorphic";
 import { formatSessionTime } from "./SessionListItem";
 
 /** 预览内刷新结果：成功附刷新后的完整记录与 stale 组件列表（由父层接线 get+refresh） */
@@ -33,7 +33,7 @@ interface DashboardPreviewModalProps {
 }
 
 /**
- * 收藏看板只读预览：全屏 Dialog 内以 OpenUIRenderer 渲染快照 DSL。
+ * 收藏看板只读预览：全屏 Dialog 内以 UiSpecRenderer 渲染快照 DSL。
  * 头部支持行内重命名 / 重新分析 / 删除（二次确认）；Esc 与遮罩点击关闭由 Radix Dialog 提供。
  * 交互组件的动作经 onAction 注入输入框（不自动发送），与消息流看板行为区分。
  */
@@ -109,7 +109,7 @@ export function DashboardPreviewModal({
     setEditing(false);
   };
 
-  // 导出快照：下载 <title>.openui.json（记录完整 JSON）
+  // 导出快照：下载 <title>.ginkgo.json（记录完整 JSON）
   const handleExportSnapshot = async () => {
     try {
       await downloadDashboardSnapshot(dashboard);
@@ -308,7 +308,7 @@ export function DashboardPreviewModal({
 
         {/* 快照看板本体（只读渲染；动作注入输入框不自动发送） */}
         <div className="flex-1 overflow-y-auto p-5 bg-surface-sunken/60">
-          <OpenUIRenderer
+          <UiSpecRenderer
             content={dashboard.dsl}
             isStreaming={false}
             onAction={onAction}

@@ -17,7 +17,7 @@ export type TextBlock = {
   type: "text";
   id: string;
   textPart: string;
-  openuiPart: string;
+  uiSpecPart: string;
   isClosed?: boolean;
   isLast: boolean;
 };
@@ -39,18 +39,18 @@ export type ContentBlock = TextBlock | ToolsBlock | ReasoningBlock;
 
 /**
  * 消息内冗余去重与防御（原地修改，调用方持有新构建的 blocks 数组）：
- * 1. 看板去重：多个 TextBlock 含 openuiPart 时仅保留最后一个（最新最全版本）；
+ * 1. 看板去重：多个 TextBlock 含 uiSpecPart 时仅保留最后一个（最新最全版本）；
  * 2. 长文报告去重：相邻 TextBlock 复读同一大标题且均为长文时，截断较早者的重复段。
  */
 export function dedupeContentBlocks(blocks: ContentBlock[]): ContentBlock[] {
   // 1. 看板去重
-  const openuiIndices: number[] = [];
+  const uiSpecIndices: number[] = [];
   blocks.forEach((b, i) => {
-    if (b.type === "text" && b.openuiPart) openuiIndices.push(i);
+    if (b.type === "text" && b.uiSpecPart) uiSpecIndices.push(i);
   });
-  if (openuiIndices.length > 1) {
-    for (let k = 0; k < openuiIndices.length - 1; k++) {
-      (blocks[openuiIndices[k]] as TextBlock).openuiPart = "";
+  if (uiSpecIndices.length > 1) {
+    for (let k = 0; k < uiSpecIndices.length - 1; k++) {
+      (blocks[uiSpecIndices[k]] as TextBlock).uiSpecPart = "";
     }
   }
 

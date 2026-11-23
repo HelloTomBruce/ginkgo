@@ -11,21 +11,21 @@ import {
   dryRunExplain,
   CertifiedQueryStore,
   matchCertifiedQueries,
-} from "@openui-analytics/datasources";
+} from "@ginkgo/datasources";
 import {
   parseDashboardSpec,
   applyJsonPatch,
   type DashboardSpec,
   type JsonPatchOperation,
-} from "@openui-analytics/chart-spec";
+} from "@ginkgo/chart-spec";
 import {
   certifiedQueriesSection,
 } from "../packages/apps/app-analytics/src/server/prompt";
-import type { DbDialectClient } from "../packages/openui-datasources/src/connectors/db/sqlGuard";
+import type { DbDialectClient } from "../packages/ginkgo-datasources/src/connectors/db/sqlGuard";
 
 async function runVerification() {
   console.log("==========================================================");
-  console.log("🚀 openui-analytics 企业级架构三位一体落地自测演示");
+  console.log("🚀 ginkgo 企业级架构三位一体落地自测演示");
   console.log("==========================================================\n");
 
   // ------------------------------------------------------------------------

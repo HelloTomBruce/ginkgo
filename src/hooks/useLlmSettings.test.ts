@@ -29,14 +29,14 @@ describe("useLlmSettings", () => {
       result.current.saveSettings();
     });
 
-    expect(localStorage.getItem("openui_llm_fallback_models")).toBe("gpt-4o-mini, qwen-plus");
+    expect(localStorage.getItem("ginkgo_llm_fallback_models")).toBe("gpt-4o-mini, qwen-plus");
     expect(result.current.chatBody.resilience).toEqual({
       fallbacks: ["gpt-4o-mini", "qwen-plus"],
     });
   });
 
   it("读取已保存的 fallbackModels 并正确解析", () => {
-    localStorage.setItem("openui_llm_fallback_models", "claude-3-5-sonnet, deepseek-chat");
+    localStorage.setItem("ginkgo_llm_fallback_models", "claude-3-5-sonnet, deepseek-chat");
 
     const { result } = renderHook(() => useLlmSettings());
 

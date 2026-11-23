@@ -5,7 +5,7 @@ import { datasources } from "@/lib/datasources";
 
 vi.mock("@/lib/datasources", async () => {
   const { validateSourceConfig } = await import(
-    "@openui-analytics/datasources"
+    "@ginkgo/datasources"
   );
   return {
     datasources: {

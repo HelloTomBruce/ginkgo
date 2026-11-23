@@ -8,10 +8,10 @@
  * 非 db 源（http-mcp/stdio-cli/file）返回 unsupported——调用方退化为自由输入，
  * M3 评估按连接器能力扩展。
  */
-import type { DynamicSourceConfig, McpConnection } from "@openui-analytics/datasources";
-import { parseMcpToolResult } from "@openui-analytics/datasources/parseToolResult";
-import { SOURCE_ID_RE } from "@openui-analytics/chart-spec";
-import { extractQueryRows } from "@openui-apps/analytics/isomorphic";
+import type { DynamicSourceConfig, McpConnection } from "@ginkgo/datasources";
+import { parseMcpToolResult } from "@ginkgo/datasources/parseToolResult";
+import { SOURCE_ID_RE } from "@ginkgo/chart-spec";
+import { extractQueryRows } from "@ginkgo-apps/analytics/isomorphic";
 import { TABLE_RE } from "./specMaterialize";
 
 export const DISTINCT_VALUES_CAP = 200;

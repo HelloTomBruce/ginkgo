@@ -5,12 +5,12 @@ import {
   type TextBlock,
 } from "./contentBlocks";
 
-function textBlock(id: string, textPart: string, openuiPart = ""): TextBlock {
-  return { type: "text", id, textPart, openuiPart, isLast: false };
+function textBlock(id: string, textPart: string, uiSpecPart = ""): TextBlock {
+  return { type: "text", id, textPart, uiSpecPart, isLast: false };
 }
 
 describe("dedupeContentBlocks 消息内冗余去重", () => {
-  it("多个看板块时仅保留最后一个 openuiPart", () => {
+  it("多个看板块时仅保留最后一个 uiSpecPart", () => {
     const blocks: ContentBlock[] = [
       textBlock("t1", "初稿说明", "root = Root([card1])"),
       { type: "tools", id: "tool1", tools: [] },
@@ -18,8 +18,8 @@ describe("dedupeContentBlocks 消息内冗余去重", () => {
     ];
     const result = dedupeContentBlocks(blocks);
     const texts = result.filter((b): b is TextBlock => b.type === "text");
-    expect(texts[0].openuiPart).toBe("");
-    expect(texts[1].openuiPart).toBe("root = Root([card2])");
+    expect(texts[0].uiSpecPart).toBe("");
+    expect(texts[1].uiSpecPart).toBe("root = Root([card2])");
   });
 
   it("相邻长文复读同一大标题时截断较早者，保留其标题前的前置文本", () => {
@@ -56,7 +56,7 @@ describe("dedupeContentBlocks 消息内冗余去重", () => {
       textBlock("t1", "分析报告", "root = Root([])"),
     ];
     const result = dedupeContentBlocks(blocks);
-    expect((result[0] as TextBlock).openuiPart).toBe("root = Root([])");
+    expect((result[0] as TextBlock).uiSpecPart).toBe("root = Root([])");
     expect((result[0] as TextBlock).textPart).toBe("分析报告");
   });
 });

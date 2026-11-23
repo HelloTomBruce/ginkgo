@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { probeMcpServer } from "@/lib/mcpStore";
-import type { MCPServerConfig } from "@openui-analytics/harness-core/mcp";
+import type { MCPServerConfig } from "@ginkgo/harness-core/mcp";
 
 export async function POST(req: Request) {
   try {

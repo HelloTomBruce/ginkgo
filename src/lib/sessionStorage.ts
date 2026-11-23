@@ -10,8 +10,8 @@ export interface ChatSession {
   enabledSources?: string[];
 }
 
-const STORAGE_SESSIONS_KEY = "openui_chat_sessions_v1";
-const STORAGE_CURRENT_SESSION_ID_KEY = "openui_current_session_id_v1";
+const STORAGE_SESSIONS_KEY = "ginkgo_chat_sessions_v1";
+const STORAGE_CURRENT_SESSION_ID_KEY = "ginkgo_current_session_id_v1";
 
 /**
  * @deprecated v2 起会话由服务端存储（/api/sessions），本模块仅保留：

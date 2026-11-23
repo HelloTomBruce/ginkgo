@@ -1,11 +1,11 @@
 import {
   createAnalyticsServer,
   type AnalyticsArtifactServices,
-} from "@openui-apps/analytics/server";
+} from "@ginkgo-apps/analytics/server";
 import { datasources } from "@/lib/datasources";
-import { createAppMethodology } from "@openui-apps/analytics/server";
-import { dashboardStore } from "@openui-apps/analytics/server";
-import { refreshDashboard } from "@openui-apps/analytics/server";
+import { createAppMethodology } from "@ginkgo-apps/analytics/server";
+import { dashboardStore } from "@ginkgo-apps/analytics/server";
+import { refreshDashboard } from "@ginkgo-apps/analytics/server";
 
 /**
  * analytics 运行时服务端单例（宿主组合根）：

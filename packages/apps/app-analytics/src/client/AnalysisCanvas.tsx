@@ -10,7 +10,7 @@ import {
   Printer,
   Layers,
 } from "lucide-react";
-import { OpenUIRenderer, DashboardScopeProvider } from "@openui-analytics/components";
+import { UiSpecRenderer, DashboardScopeProvider } from "@ginkgo/components";
 import { Hint } from "./ui/hint";
 
 export interface CanvasDashboardData {
@@ -161,7 +161,7 @@ export function AnalysisCanvas({
         ) : (
           <DashboardScopeProvider scopeId={data.id}>
             <div className="max-w-5xl mx-auto space-y-4">
-              <OpenUIRenderer
+              <UiSpecRenderer
                 content={data.dsl}
                 isStreaming={false}
                 onAction={onAction}

@@ -29,7 +29,7 @@ export const SESSION_MESSAGE_ID_MAX = 200;
 export const SESSION_CONTEXT_SUMMARY_MAX = 64 * 1024;
 /** 应用 ID 命名规则：1~64 位字母、数字、下划线、中划线 */
 export const APP_ID_RE = /^[a-z0-9_-]{1,64}$/i;
-/** 源 id 规则与数据源配置层一致（packages/openui-datasources SOURCE_ID_PATTERN） */
+/** 源 id 规则与数据源配置层一致（packages/ginkgo-datasources SOURCE_ID_PATTERN） */
 const SOURCE_ID_RE = /^[a-z][a-z0-9-]{0,31}$/;
 
 const ID_RE = /^sess_[0-9a-f]{8}$/;
@@ -56,7 +56,7 @@ export interface SessionContextMeta {
   summaryUptoMessageId?: string;
   /**
    * 应用编排待执行状态（应用经 sessions 通道读写，如分析方法卡 id 列表；
-   * 与 @openui-analytics/llm 的 SessionContextMeta 同构）
+   * 与 @ginkgo/llm 的 SessionContextMeta 同构）
    */
   pendingPlan?: { methodIds: string[] } & Record<string, unknown>;
   [key: string]: unknown;

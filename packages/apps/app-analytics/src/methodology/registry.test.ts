@@ -91,7 +91,7 @@ describe("createMethodLibrary", () => {
   });
 
   it("内置卡配对组件全部存在于真实组件库键集合（契约快照）", () => {
-    // 与 @openui-analytics/components serverLibrary 对齐的组件名全集
+    // 与 @ginkgo/components serverLibrary 对齐的组件名全集
     const realNames = [
       "Root", "MetricGrid", "MetricCard", "GaugeProgress", "AnalyticsChart", "SpecChart",
       "FunnelChart", "RadarChart", "ContributionHeatmap", "DataTable",

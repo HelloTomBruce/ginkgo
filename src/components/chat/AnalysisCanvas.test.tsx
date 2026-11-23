@@ -11,7 +11,7 @@ describe("AnalysisCanvas 分析画布组件", () => {
     expect(screen.getByText("分析画布已就绪")).toBeInTheDocument();
   });
 
-  it("有数据时渲染标题与 OpenUIRenderer 内容", () => {
+  it("有数据时渲染标题与 UiSpecRenderer 内容", () => {
     const dsl = 'root = Root([MetricCard("销售额", "120万")])';
     render(
       <AnalysisCanvas

@@ -1,9 +1,9 @@
-import { createAnalyzeHandler } from "@openui-analytics/llm";
+import { createAnalyzeHandler } from "@ginkgo/llm";
 import {
   compositeSink,
   createConsoleSink,
   createMetricsSink,
-} from "@openui-analytics/harness-core";
+} from "@ginkgo/harness-core";
 import { getMcpManager, loadMcpServers } from "@/lib/mcpStore";
 import { sessionStore } from "@/lib/sessionStore";
 import { DEFAULT_APP_ID } from "@/lib/apps/registry";
@@ -13,7 +13,7 @@ import {
   analyticsDeliverable,
   analyticsNoApiKeyMessage,
   buildAnalyticsSummaryPrompt,
-} from "@openui-apps/analytics/server";
+} from "@ginkgo-apps/analytics/server";
 import { resolveRuntimeServer } from "@/lib/apps/runtimeServers";
 import { analyticsServer } from "@/lib/analyticsRuntime";
 
@@ -51,11 +51,11 @@ async function resolveWorkspaceForSession(appId: string, sessionId?: string) {
 }
 
 /**
- * 薄壳：LLM 编排在 @openui-analytics/llm（领域中立），应用 prompt/工具全部经
+ * 薄壳：LLM 编排在 @ginkgo/llm（领域中立），应用 prompt/工具全部经
  * resolveAppPrompt / resolveAppTools 接缝注入（无 appId 特判：general 的沙箱
- * 工具在应用包内消费 openui-sandbox 能力包装配，宿主只按 needsWorkspace 声明
+ * 工具在应用包内消费 ginkgo-sandbox 能力包装配，宿主只按 needsWorkspace 声明
  * 注入会话沙箱）；analytics 的深度编排（schema 摘要、方法卡、认证口径、跨源
- * 工具）在 @openui-apps/analytics 服务端自治。
+ * 工具）在 @ginkgo-apps/analytics 服务端自治。
  * telemetry：NDJSON console（可 grep）+ 进程内指标聚合双写；接 OTel 时换
  * compositeSink(console, otelSink, metrics.sink)。
  */

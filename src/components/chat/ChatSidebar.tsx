@@ -32,7 +32,7 @@ import type { SessionSummary } from "@/lib/sessionStore";
 import type { WorkspaceRecord } from "@/lib/workspaceStore";
 import { toast } from "@/lib/toast";
 // 仅取类型（编译期擦除）
-import type { DashboardSummary } from "@openui-apps/analytics/server";
+import type { DashboardSummary } from "@ginkgo-apps/analytics/server";
 import { SessionListItem, formatSessionTime } from "./SessionListItem";
 import { AppSwitcher } from "./AppSwitcher";
 import { appRegistry, DEFAULT_APP_ID } from "@/lib/apps/registry";
@@ -60,7 +60,7 @@ interface ChatSidebarProps {
   onReanalyzeDashboard: (prompt?: string, originSessionId?: string) => void;
   onRenameDashboard: (id: string, title: string) => void;
   onDeleteDashboard: (id: string) => void;
-  /** 导出快照：父层拉取完整记录后下载 .openui.json */
+  /** 导出快照：父层拉取完整记录后下载 .ginkgo.json */
   onExportDashboard: (id: string) => void;
   /** 存为模板 / 取消模板（父层调 save-as-template 或 update kind=favorite） */
   onToggleDashboardTemplate: (id: string) => void;

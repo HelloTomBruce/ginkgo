@@ -52,7 +52,7 @@ export const DEFAULT_HARNESS_SETTINGS: HarnessSettingsState = {
   },
 };
 
-const STORAGE_KEY = "openui_harness_config";
+const STORAGE_KEY = "ginkgo_harness_config";
 
 function loadStoredSettings(): HarnessSettingsState {
   if (typeof window === "undefined") {

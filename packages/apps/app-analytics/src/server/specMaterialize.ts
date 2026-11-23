@@ -19,17 +19,17 @@ import {
   type ChartSpec,
   FIELD_RE,
   SOURCE_ID_RE,
-} from "@openui-analytics/chart-spec";
+} from "@ginkgo/chart-spec";
 import {
   type McpConnection,
-} from "@openui-analytics/datasources";
-import { parseMcpToolResult } from "@openui-analytics/datasources/parseToolResult";
-import { extractQueryRows } from "@openui-apps/analytics/isomorphic";
+} from "@ginkgo/datasources";
+import { parseMcpToolResult } from "@ginkgo/datasources/parseToolResult";
+import { extractQueryRows } from "@ginkgo-apps/analytics/isomorphic";
 import {
   applyTransform,
   isValidTransformSpec,
   type TransformSpec,
-} from "@openui-apps/analytics/isomorphic";
+} from "@ginkgo-apps/analytics/isomorphic";
 
 // ===== 常量与标识符规则 =====
 

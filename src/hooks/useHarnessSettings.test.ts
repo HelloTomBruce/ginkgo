@@ -33,7 +33,7 @@ describe("useHarnessSettings", () => {
     expect(result.current.settings.engine.maxRetries).toBe(5);
     expect(result.current.settings.engine.autoHealing).toBe(false);
 
-    const saved = JSON.parse(localStorage.getItem("openui_harness_config") || "{}");
+    const saved = JSON.parse(localStorage.getItem("ginkgo_harness_config") || "{}");
     expect(saved.engine.timeoutSeconds).toBe(60);
   });
 
@@ -68,7 +68,7 @@ describe("useHarnessSettings", () => {
     expect(result.current.settings.engine.timeoutSeconds).toBe(
       DEFAULT_HARNESS_SETTINGS.engine.timeoutSeconds
     );
-    expect(localStorage.getItem("openui_harness_config")).toBeNull();
+    expect(localStorage.getItem("ginkgo_harness_config")).toBeNull();
   });
 
   it("支持配置导出与导入 JSON", () => {

@@ -6,8 +6,8 @@ import {
   mergeToolSets,
   type ActiveSourceSummary,
   type DatasourceManager,
-} from "@openui-analytics/datasources";
-import { toAiTools } from "@openui-analytics/datasources/adapters/ai";
+} from "@ginkgo/datasources";
+import { toAiTools } from "@ginkgo/datasources/adapters/ai";
 import {
   builtinMethodCards,
   createMethodLibrary,
@@ -18,10 +18,10 @@ import type { CoreMessage } from "ai";
 import type {
   AppDeliverableContract,
   AppServerContext,
-} from "@openui-analytics/app-sdk";
+} from "@ginkgo/app-sdk";
 import {
-  getOpenUIPlanPrompt,
-  getOpenUISystemPrompt,
+  getUiSpecPlanPrompt,
+  getUiSpecSystemPrompt,
   getExecuteSystemPrompt,
 } from "./prompt";
 import { buildMethodDetailsFromMessages, renderMethodDetailsByIds } from "./methodSelector";
@@ -44,7 +44,7 @@ export * from "./crossSource";
 /**
  * analytics 应用的交付物契约（注入宿主编排层 createAnalyzeHandler 的 deliverable 选项）：
  * finish_task 终态语义与收尾指令均为数据分析领域文案，证据标记含平台 DSL 标记
- * （```openui）与规划卡组件名（PlanReviewCard）。
+ * （```ginkgo）与规划卡组件名（PlanReviewCard）。
  */
 export const analyticsDeliverable: AppDeliverableContract = {
   toolDescription:
@@ -52,13 +52,13 @@ export const analyticsDeliverable: AppDeliverableContract = {
   rejectReason:
     "尚未输出分析结论、报告或看板，不能宣告 completed。请先完成正式输出；若确属数据缺失或遇到阻塞，请改用 status=insufficient_data 或 status=blocked。",
   wrapUpWithArtifact:
-    "数据取数与任务终态已确认闭环。若你在上一步或当前步骤已输出了完整的 Markdown 分析报告与 ```openui 看板代码块，严禁重复输出，直接输出一句简要闭环致辞即可自然结束；若尚未输出报告与看板，请在此处基于已获取的数据输出一份完整的 Markdown 深度分析报告及 ```openui ... ``` 可视化动态看板代码块。每轮回复严格只能有一份报告和一个看板，绝对不可重复输出两遍！",
+    "数据取数与任务终态已确认闭环。若你在上一步或当前步骤已输出了完整的 Markdown 分析报告与 ```ginkgo 看板代码块，严禁重复输出，直接输出一句简要闭环致辞即可自然结束；若尚未输出报告与看板，请在此处基于已获取的数据输出一份完整的 Markdown 深度分析报告及 ```ginkgo ... ``` 可视化动态看板代码块。每轮回复严格只能有一份报告和一个看板，绝对不可重复输出两遍！",
   wrapUpPlainText: "任务已确认闭环。请直接自然结束当前回复，无需重复输出。",
-  evidenceMarkers: ["```openui", "PlanReviewCard"],
+  evidenceMarkers: ["```ginkgo", "PlanReviewCard"],
 };
 
 /** analytics 无 API Key 降级流文案（注入 createAnalyzeHandler 的 noApiKeyMessage 选项） */
-export const analyticsNoApiKeyMessage = `⚠️ 请先在右上角「设置」中配置您的 API Key。\n\n\`\`\`openui\nInsightBox(type="warning", title="未检测到 LLM API Key", content="请点击右上角「设置」进入「模型配置」输入 API Key，开启由 Vercel AI SDK 与多数据源 MCP（内置 + 动态配置）驱动的流式数据分析看板。")\n\`\`\``;
+export const analyticsNoApiKeyMessage = `⚠️ 请先在右上角「设置」中配置您的 API Key。\n\n\`\`\`ginkgo\nInsightBox(type="warning", title="未检测到 LLM API Key", content="请点击右上角「设置」进入「模型配置」输入 API Key，开启由 Vercel AI SDK 与多数据源 MCP（内置 + 动态配置）驱动的流式数据分析看板。")\n\`\`\``;
 
 /** analytics 会话摘要提示词（注入 createAnalyzeHandler 的 summaryPromptBuilder 选项） */
 export function buildAnalyticsSummaryPrompt(opts: {
@@ -159,7 +159,7 @@ export interface AnalyticsServerDeps {
 /**
  * analytics 应用服务端工厂：宿主组合根（api 路由）注入运行时依赖装配。
  * prompt 三模式分发 / 数据源工具与跨源工具装配 / plan→execute 方法卡交接
- * 全部在应用包内自治完成，编排层（@openui-analytics/llm）零 analytics 感知。
+ * 全部在应用包内自治完成，编排层（@ginkgo/llm）零 analytics 感知。
  */
 export function createAnalyticsServer(deps: AnalyticsServerDeps) {
   const { datasources } = deps;
@@ -303,12 +303,12 @@ export function createAnalyticsServer(deps: AnalyticsServerDeps) {
       }
 
       if (mode === "plan") {
-        return getOpenUIPlanPrompt(summaries, schemaDigest.text, methodIndexText, certifiedMatches);
+        return getUiSpecPlanPrompt(summaries, schemaDigest.text, methodIndexText, certifiedMatches);
       }
       if (mode === "execute") {
         return getExecuteSystemPrompt(summaries, schemaDigest.text, methodDetails, certifiedMatches);
       }
-      return getOpenUISystemPrompt(summaries, schemaDigest.text, methodIndexText, certifiedMatches);
+      return getUiSpecSystemPrompt(summaries, schemaDigest.text, methodIndexText, certifiedMatches);
     },
 
     /** 任务收尾钩子：plan 阶段从最终文本提取结构化 methods，登记为 pendingPlan */

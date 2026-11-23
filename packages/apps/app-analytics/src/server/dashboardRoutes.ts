@@ -1,7 +1,7 @@
 import { materializeSpecRows, TABLE_RE } from "./specMaterialize";
 import { retargetTemplate } from "./templateRetarget";
-import { parseChartSpec } from "@openui-analytics/chart-spec";
-import type { DatasourceManager } from "@openui-analytics/datasources";
+import { parseChartSpec } from "@ginkgo/chart-spec";
+import type { DatasourceManager } from "@ginkgo/datasources";
 import { toSummary, type DashboardStore } from "./dashboardStore";
 
 /**

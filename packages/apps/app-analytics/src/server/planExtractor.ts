@@ -1,5 +1,5 @@
 import { createParser } from "@openuidev/lang-core";
-import { serverLibrary } from "@openui-analytics/components/server";
+import { serverLibrary } from "@ginkgo/components/server";
 
 /** WS-4:plan 代码块解析器(模块级构造一次;解析 PlanReviewCard.methods 用) */
 const planParser = createParser(serverLibrary.toJSONSchema(), "Root");
@@ -34,12 +34,12 @@ export function findComponentProps(
 
 /**
  * WS-4:plan 阶段 onFinish 从最后一步文本提取结构化方法列表。
- * 用 serverLibrary 的 parser 正规解析 ```openui 代码块,读取 PlanReviewCard.methods;
+ * 用 serverLibrary 的 parser 正规解析 ```ginkgo 代码块,读取 PlanReviewCard.methods;
  * 任何失败(无代码块/解析错误/缺 methods)返回 [],由调用方决定降级路径。
  */
 export function extractPlanMethods(finalText: string): string[] {
   if (!finalText || typeof finalText !== "string") return [];
-  const blockRe = /```openui\n([\s\S]*?)```/g;
+  const blockRe = /```ginkgo\n([\s\S]*?)```/g;
   let match: RegExpExecArray | null;
   while ((match = blockRe.exec(finalText)) !== null) {
     const code = match[1];

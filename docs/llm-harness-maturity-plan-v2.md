@@ -75,7 +75,7 @@
 
 ### 设计
 
-**新建 `packages/openui-llm/src/resilience.ts`**：
+**新建 `packages/ginkgo-llm/src/resilience.ts`**：
 
 ```ts
 /** 错误分类：决定重试与 fallback 策略 */
@@ -128,10 +128,10 @@ fallback 中的裸 apiKey 沿用 CRED_GUARD 原则：不允许 fallback 把环�
 
 ### 文件级改动
 
-- 创建 `packages/openui-llm/src/resilience.ts` + `resilience.test.ts`
-- 修改 `packages/openui-llm/src/handler.ts`：模型构建段改为模型链循环；
+- 创建 `packages/ginkgo-llm/src/resilience.ts` + `resilience.test.ts`
+- 修改 `packages/ginkgo-llm/src/handler.ts`：模型构建段改为模型链循环；
   `AnalyzeRequestBody` 增 `resilience` 字段；遥测增 `MID_STREAM_FAILURE`/`MODEL_FALLBACK` code
-- 修改 `packages/openui-llm/src/handler.test.ts`
+- 修改 `packages/ginkgo-llm/src/handler.test.ts`
 
 ### 任务拆解
 
@@ -189,10 +189,10 @@ export interface AnalyzeHandlerOptions {
 
 ### 文件级改动
 
-- 修改 `packages/openui-llm/src/streamHub.ts`：键命名空间化（方法签名加可选 tenantId，缺省 "anon"）
-- 修改 `packages/openui-llm/src/handler.ts`：authenticate 调用点、401 响应、sessionKey 生成与透传
+- 修改 `packages/ginkgo-llm/src/streamHub.ts`：键命名空间化（方法签名加可选 tenantId，缺省 "anon"）
+- 修改 `packages/ginkgo-llm/src/handler.ts`：authenticate 调用点、401 响应、sessionKey 生成与透传
 - 修改 `src/app/api/analyze/route.ts`：注入应用侧 authenticate（无认证体系时先注入开发模式桩）
-- 创建 `packages/openui-llm/src/auth.test.ts`
+- 创建 `packages/ginkgo-llm/src/auth.test.ts`
 
 ### 任务拆解
 
@@ -214,7 +214,7 @@ export interface AnalyzeHandlerOptions {
 
 ### 设计
 
-**新建 `packages/openui-llm/src/taskStore.ts`**（接口与内存实现）：
+**新建 `packages/ginkgo-llm/src/taskStore.ts`**（接口与内存实现）：
 
 ```ts
 export type TaskStatus = "running" | "completed" | "error";
@@ -327,7 +327,7 @@ token 计量从「事件流里的数字」升级为「可持久化、可查询�
 
 ### 设计
 
-**新建 `packages/openui-llm/src/costLedger.ts`**：
+**新建 `packages/ginkgo-llm/src/costLedger.ts`**：
 
 ```ts
 export interface UsageRecord {
@@ -421,7 +421,7 @@ WS-1 的事件流接标准出口；WS-6 的 Tier B 升级为常态化基线对�
 
 ### 设计
 
-**A. OTel sink 适配器**：`packages/openui-llm/src/otelSink.ts`——`createOtelSink(tracer)`
+**A. OTel sink 适配器**：`packages/ginkgo-llm/src/otelSink.ts`——`createOtelSink(tracer)`
 映射 span 树（run_start → span，step_finish/tool_result → 子 span，task_finish → 结束），
 `@opentelemetry/api` 仅 peer optional。app 侧 `compositeSink(consoleSink, otelSink)` 接入。
 span attribute 带 `instance.id`（WS-8 的 instanceId），多副本事件可区分来源。

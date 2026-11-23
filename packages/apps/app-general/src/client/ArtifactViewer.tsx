@@ -18,7 +18,7 @@ import {
   ChevronRight,
   ChevronsUpDown,
 } from "lucide-react";
-import type { AppWorkspaceProps } from "@openui-analytics/app-sdk";
+import type { AppWorkspaceProps } from "@ginkgo/app-sdk";
 
 export interface WorkspaceFileItem {
   name: string;

@@ -2,9 +2,9 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useChat } from "@ai-sdk/react";
 import { TrendingUp, Bot, Settings, RefreshCw } from "lucide-react";
-import { resolveContextWindow, estimateMessagesTokens } from "@openui-analytics/llm/context";
+import { resolveContextWindow, estimateMessagesTokens } from "@ginkgo/llm/context";
 import { Hint } from "@/components/ui/hint";
-import type { AppPresetQuery } from "@openui-analytics/app-sdk";
+import type { AppPresetQuery } from "@ginkgo/app-sdk";
 import { DEFAULT_WELCOME_MESSAGE } from "@/lib/sessionStorage";
 import { upsertMessage } from "@/lib/messages";
 import { useLlmSettings } from "@/hooks/useLlmSettings";
@@ -12,11 +12,11 @@ import { useSessionManager } from "@/hooks/useSessionManager";
 import { useDashboards, type FavoriteDashboardInput } from "@/hooks/useDashboards";
 import { DashboardPreviewModal } from "@/components/chat/DashboardPreviewModal";
 // 仅取类型（编译期擦除）
-import type { DashboardRecord } from "@openui-apps/analytics/server";
+import type { DashboardRecord } from "@ginkgo-apps/analytics/server";
 import {
   downloadDashboardSnapshot,
   parseDashboardSnapshot,
-} from "@openui-apps/analytics/isomorphic";
+} from "@ginkgo-apps/analytics/isomorphic";
 import { ChatSidebar } from "@/components/chat/ChatSidebar";
 import { MessageList } from "@/components/chat/MessageList";
 import { ChatInput } from "@/components/chat/ChatInput";
@@ -25,10 +25,10 @@ import { SettingsModal } from "@/components/chat/SettingsModal";
 import { ModelSwitcher } from "@/components/chat/ModelSwitcher";
 import { ReasoningEffortSwitcher } from "@/components/chat/ReasoningEffortSwitcher";
 import { ContextUsageIndicator } from "@/components/chat/ContextUsageIndicator";
-import type { AppCanvasData } from "@openui-analytics/app-sdk";
-import { extractOpenUI } from "@/lib/extractOpenUI";
+import type { AppCanvasData } from "@ginkgo/app-sdk";
+import { extractUiSpec } from "@/lib/extractUiSpec";
 import { appRegistry, DEFAULT_APP_ID } from "@/lib/apps/registry";
-import { OpenUIToolProvider } from "@openui-analytics/components";
+import { UiSpecToolProvider } from "@ginkgo/components";
 import { clientTools } from "@/lib/clientTools";
 import { Toaster } from "@/components/Toaster";
 import { toast } from "@/lib/toast";
@@ -854,7 +854,7 @@ export default function ChatDashboard() {
     },
     [removeDashboard]
   );
-  // 导出快照：拉完整记录（含 dsl）→ 下载 <title>.openui.json
+  // 导出快照：拉完整记录（含 dsl）→ 下载 <title>.ginkgo.json
   const handleExportDashboard = useCallback(
     async (id: string) => {
       const record = await getDashboard(id);
@@ -907,7 +907,7 @@ export default function ChatDashboard() {
   return (
     <div className="flex h-screen bg-surface-sunken text-foreground font-sans overflow-hidden">
       {/* 平台渲染引擎的客户端本地工具注入（消息流 / 画布 / 应用插槽组件共用） */}
-      <OpenUIToolProvider tools={clientTools}>
+      <UiSpecToolProvider tools={clientTools}>
       <ChatSidebar
         activeAppId={activeAppId}
         onSwitchApp={setActiveAppId}
@@ -972,14 +972,14 @@ export default function ChatDashboard() {
                     if (!canvasData) {
                       const lastBoard = [...messages]
                         .reverse()
-                        .find((m) => m.role === "assistant" && /```openui/i.test(m.content || ""));
+                        .find((m) => m.role === "assistant" && /```ginkgo/i.test(m.content || ""));
                       if (lastBoard) {
-                        const extracted = extractOpenUI(lastBoard.content);
-                        if (extracted.openuiPart) {
+                        const extracted = extractUiSpec(lastBoard.content);
+                        if (extracted.uiSpecPart) {
                           setCanvasData({
                             id: lastBoard.id,
                             title: "最新分析看板",
-                            dsl: extracted.openuiPart,
+                            dsl: extracted.uiSpecPart,
                           });
                         }
                       }
@@ -1224,7 +1224,7 @@ export default function ChatDashboard() {
         />
       )}
       <Toaster />
-      </OpenUIToolProvider>
+      </UiSpecToolProvider>
     </div>
   );
 }

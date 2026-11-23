@@ -3,13 +3,13 @@
  * WS-6 Tier B:真实模型行为评估(手动/夜间,需要真实 API Key)。
  *
  * 运行方式:在环境变量提供 OPENAI_API_KEY(/ LLM_API_KEY)后执行
- *   pnpm --filter @openui-apps/analytics exec vitest run src/evals/tier-b.real-model.test.ts
+ *   pnpm --filter @ginkgo-apps/analytics exec vitest run src/evals/tier-b.real-model.test.ts
  * 无 Key 时整组自动跳过(CI 默认不跑)。
  *
  * 固定夹具:文件数据源(CSV→DuckDB)加载确定性渠道营销数据,问题集固定,
  * 轨迹(步数/token/终态/看板解析结果)落盘 src/evals/baselines/tier-b-baseline.json;
  * 与既有基线的差异仅打印对比(人工审阅),硬断言只锁结构成功:
- * 每个问题必须产出能通过 serverLibrary schema 解析的 ```openui 看板。
+ * 每个问题必须产出能通过 serverLibrary schema 解析的 ```ginkgo 看板。
  *
  * 用途:prompt/模型任何变更前后各跑一次,对比任务成功率与成本漂移。
  */
@@ -17,16 +17,16 @@ import { describe, it, expect } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { createAnalyzeHandler } from "@openui-analytics/llm";
-import { serverLibrary, createParser } from "@openui-analytics/components/server";
+import { createAnalyzeHandler } from "@ginkgo/llm";
+import { serverLibrary, createParser } from "@ginkgo/components/server";
 import {
   createAnalyticsServer,
   analyticsDeliverable,
   analyticsNoApiKeyMessage,
   buildAnalyticsSummaryPrompt,
 } from "../server";
-import { createDatasourceManager, type DatasourceManager } from "@openui-analytics/datasources";
-import type { HarnessEvent, TelemetrySink } from "@openui-analytics/harness-core";
+import { createDatasourceManager, type DatasourceManager } from "@ginkgo/datasources";
+import type { HarnessEvent, TelemetrySink } from "@ginkgo/harness-core";
 
 const hasApiKey = Boolean(process.env.OPENAI_API_KEY || process.env.LLM_API_KEY);
 
@@ -158,10 +158,10 @@ describe.skipIf(!hasApiKey)("Tier B 真实模型行为评估(需 OPENAI_API_KEY)
           | Extract<HarnessEvent, { type: "task_finish" }>
           | undefined;
 
-        const blockMatch = report.match(/```openui\n([\s\S]*?)```/);
+        const blockMatch = report.match(/```ginkgo\n([\s\S]*?)```/);
         const hasDashboardBlock = Boolean(blockMatch);
         let dashboardParsed = false;
-        let dashboardParseErrors: string[] = ["未产出 ```openui 看板代码块"];
+        let dashboardParseErrors: string[] = ["未产出 ```ginkgo 看板代码块"];
         if (blockMatch) {
           const parsed = parser.parse(blockMatch[1]);
           dashboardParsed = parsed.root !== null && parsed.meta.errors.length === 0;

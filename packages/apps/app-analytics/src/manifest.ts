@@ -1,4 +1,4 @@
-import type { AppManifest, AppClientContract } from "@openui-analytics/app-sdk";
+import type { AppManifest, AppClientContract } from "@ginkgo/app-sdk";
 import { AnalysisCanvas } from "./client/AnalysisCanvas";
 import { SourcePicker } from "./client/SourcePicker";
 import { resolveMethodologyPresets } from "./client/methodologyPresets";
@@ -71,7 +71,7 @@ export const analyticsClient: AppClientContract = {
       title: "数据取数与分析计算已全部完成",
       buttonLabel: "立即生成报告与看板",
       actionPrompt:
-        "数据取数与计算已全部完成。请立即基于上述结果，输出完整的 Markdown 深度分析报告以及 ```openui 可视化动态看板代码块。",
+        "数据取数与计算已全部完成。请立即基于上述结果，输出完整的 Markdown 深度分析报告以及 ```ginkgo 可视化动态看板代码块。",
     },
     toolSettledHint: "数据查询已完成，大模型正在组织分析洞察并构建视觉看板...",
   },

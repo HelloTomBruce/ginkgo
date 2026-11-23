@@ -1,5 +1,5 @@
 -- ========================================================
--- Database: openui_devops
+-- Database: ginkgo_devops
 -- Domain: 研发效能平台、DORA 关键指标、CI/CD 流水线与稳定性保障
 -- Components showcased: ContributionHeatmap, RadarChart, FunnelChart, ActivityTimeline, ActionPlanCard, GaugeProgress
 -- ========================================================

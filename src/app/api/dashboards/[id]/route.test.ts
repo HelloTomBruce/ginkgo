@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { GET, PUT, DELETE } from "./route";
-import { dashboardStore } from "@openui-apps/analytics/server";
-import type { DashboardRecord } from "@openui-apps/analytics/server";
+import { dashboardStore } from "@ginkgo-apps/analytics/server";
+import type { DashboardRecord } from "@ginkgo-apps/analytics/server";
 
-vi.mock("@openui-apps/analytics/server", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@openui-apps/analytics/server")>();
+vi.mock("@ginkgo-apps/analytics/server", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@ginkgo-apps/analytics/server")>();
   return {
     ...actual,
     dashboardStore: {

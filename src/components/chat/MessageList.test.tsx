@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { render, screen, cleanup, fireEvent, waitFor, act } from "@testing-library/react";
 import type { Message } from "@ai-sdk/react";
-import { extractOpenUI } from "@/lib/extractOpenUI";
+import { extractUiSpec } from "@/lib/extractUiSpec";
 import { toast } from "@/lib/toast";
 import { MessageList } from "./MessageList";
 
@@ -11,21 +11,21 @@ const ANALYTICS_EXTENSIONS = {
     title: "数据取数与分析计算已全部完成",
     buttonLabel: "立即生成报告与看板",
     actionPrompt:
-      "数据取数与计算已全部完成。请立即基于上述结果，输出完整的 Markdown 深度分析报告以及 ```openui 可视化动态看板代码块。",
+      "数据取数与计算已全部完成。请立即基于上述结果，输出完整的 Markdown 深度分析报告以及 ```ginkgo 可视化动态看板代码块。",
   },
   toolSettledHint: "数据查询已完成，大模型正在组织分析洞察并构建视觉看板...",
 };
 import type { FavoriteResult } from "@/hooks/useDashboards";
 
-vi.mock("@/lib/extractOpenUI", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/lib/extractOpenUI")>();
-  return { ...actual, extractOpenUI: vi.fn(actual.extractOpenUI) };
+vi.mock("@/lib/extractUiSpec", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/extractUiSpec")>();
+  return { ...actual, extractUiSpec: vi.fn(actual.extractUiSpec) };
 });
 
 vi.mock("@/lib/toast", () => ({ toast: vi.fn() }));
 
-vi.mock("@/components/OpenUIRenderer", () => ({
-  OpenUIRenderer: () => <div data-testid="renderer" />,
+vi.mock("@/components/UiSpecRenderer", () => ({
+  UiSpecRenderer: () => <div data-testid="renderer" />,
 }));
 
 const userMsg: Message = { id: "u1", role: "user", content: "分析营收" };
@@ -109,12 +109,12 @@ describe("MessageList 流式重渲染治理", () => {
     };
 
     const { rerender } = render(<MessageList {...props} />);
-    expect(vi.mocked(extractOpenUI)).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(extractUiSpec)).toHaveBeenCalledTimes(2);
 
     // 流式开始：仅最后一条消息的 isStreaming 变化
     rerender(<MessageList {...props} status="streaming" />);
     // user 消息 props 未变（memo 拦截）；ai 消息重渲染但 content 未变（useMemo 拦截）
-    expect(vi.mocked(extractOpenUI)).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(extractUiSpec)).toHaveBeenCalledTimes(2);
   });
 
   it("新消息到达时只为新消息执行提取", () => {
@@ -126,11 +126,11 @@ describe("MessageList 流式重渲染治理", () => {
       onReload: vi.fn(),
     };
     const { rerender } = render(<MessageList {...base} />);
-    expect(vi.mocked(extractOpenUI)).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(extractUiSpec)).toHaveBeenCalledTimes(2);
 
     const newMsg: Message = { id: "u2", role: "user", content: "再问一个" };
     rerender(<MessageList {...base} messages={[userMsg, aiMsg, newMsg]} />);
-    expect(vi.mocked(extractOpenUI)).toHaveBeenCalledTimes(3);
+    expect(vi.mocked(extractUiSpec)).toHaveBeenCalledTimes(3);
   });
 });
 
@@ -262,7 +262,7 @@ describe("看板打印导出", () => {
   const dashboardMsg: Message = {
     id: "d1",
     role: "assistant",
-    content: '结论如下\n```openui\n{"type":"Stack","children":[]}\n```',
+    content: '结论如下\n```ginkgo\n{"type":"Stack","children":[]}\n```',
   };
 
   const baseProps = {
@@ -363,7 +363,7 @@ describe("看板打印导出", () => {
       />
     );
     expect(screen.getByText("自定义看板标题")).toBeInTheDocument();
-    expect(screen.queryByText("OpenUI 动态看板")).not.toBeInTheDocument();
+    expect(screen.queryByText("UiSpec 动态看板")).not.toBeInTheDocument();
   });
 
   it("执行步骤与分析文字标记 no-print，仅看板本体导出", () => {
@@ -397,7 +397,7 @@ describe("看板收藏", () => {
   const boardMsg: Message = {
     id: "b1",
     role: "assistant",
-    content: "分析结论\n```openui\nroot = Root([table])\n```",
+    content: "分析结论\n```ginkgo\nroot = Root([table])\n```",
   };
 
   const baseProps = {
@@ -446,7 +446,7 @@ describe("看板收藏", () => {
     const liveMsg = {
       ...boardMsg,
       content:
-        "分析结论\n```openui\nroot = Root([chart, table])\nchart = AnalyticsChart(\"bar\", \"t\", \"s\", \"channel\", [{\"channel\":\"TikTok Ads\",\"deals\":186},{\"channel\":\"Google Ads\",\"deals\":152}], [])\ntable = DataTable(\"明细\", [], [{\"channel\":\"TikTok Ads\",\"deals\":186},{\"channel\":\"Google Ads\",\"deals\":152}])\n```",
+        "分析结论\n```ginkgo\nroot = Root([chart, table])\nchart = AnalyticsChart(\"bar\", \"t\", \"s\", \"channel\", [{\"channel\":\"TikTok Ads\",\"deals\":186},{\"channel\":\"Google Ads\",\"deals\":152}], [])\ntable = DataTable(\"明细\", [], [{\"channel\":\"TikTok Ads\",\"deals\":186},{\"channel\":\"Google Ads\",\"deals\":152}])\n```",
       toolInvocations: [
         {
           toolCallId: "call-1",
@@ -501,7 +501,7 @@ describe("看板收藏", () => {
     const derivedMsg = {
       ...boardMsg,
       content:
-        "分析结论\n```openui\nroot = Root([derived])\nderived = AnalyticsChart(\"bar\", \"t\", \"s\", \"channel\", [{\"channel\":\"TikTok Ads\",\"cac\":16.2},{\"channel\":\"Google Ads\",\"cac\":19.5}], [])\n```",
+        "分析结论\n```ginkgo\nroot = Root([derived])\nderived = AnalyticsChart(\"bar\", \"t\", \"s\", \"channel\", [{\"channel\":\"TikTok Ads\",\"cac\":16.2},{\"channel\":\"Google Ads\",\"cac\":19.5}], [])\n```",
       toolInvocations: [
         {
           toolCallId: "call-1",
@@ -694,7 +694,7 @@ describe("消息内容与工具执行按顺序交错渲染", () => {
     const interleavedMessage = {
       id: "a-interleaved",
       role: "assistant",
-      content: "第一步：先查项目\n第二步：再查提交\n第三步：生成看板\n```openui\n{\"type\":\"Stack\"}\n```",
+      content: "第一步：先查项目\n第二步：再查提交\n第三步：生成看板\n```ginkgo\n{\"type\":\"Stack\"}\n```",
       parts: [
         { type: "text", text: "第一步：先查项目" },
         {
@@ -718,7 +718,7 @@ describe("消息内容与工具执行按顺序交错渲染", () => {
         },
         {
           type: "text",
-          text: "第三步：生成看板\n```openui\n{\"type\":\"Stack\"}\n```",
+          text: "第三步：生成看板\n```ginkgo\n{\"type\":\"Stack\"}\n```",
         },
       ],
     } as unknown as Message;
@@ -954,7 +954,7 @@ describe("消息内容与工具执行按顺序交错渲染", () => {
     const pinBoardMsg = {
       id: "pin-1",
       role: "assistant",
-      content: "分析报告\n```openui\nroot = Root([MetricCard(\"销售\", 100)])\n```",
+      content: "分析报告\n```ginkgo\nroot = Root([MetricCard(\"销售\", 100)])\n```",
     } as unknown as Message;
     render(
       <MessageList
@@ -969,7 +969,7 @@ describe("消息内容与工具执行按顺序交错渲染", () => {
     expect(onPinDashboard).toHaveBeenCalledWith("pin-1", expect.stringContaining("root = Root"));
   });
 
-  it("当模型调用 finish_task 但未产出 openui 看板时，展示取数完成卡片与立即生成报告按钮并可点击触发", () => {
+  it("当模型调用 finish_task 但未产出 ginkgo 看板时，展示取数完成卡片与立即生成报告按钮并可点击触发", () => {
     const onRendererAction = vi.fn();
     const finishTaskMsg = {
       id: "a-finish-task",
@@ -1012,7 +1012,7 @@ describe("消息内容与工具执行按顺序交错渲染", () => {
     expect(generateBtn).toBeInTheDocument();
     fireEvent.click(generateBtn);
     expect(onRendererAction).toHaveBeenCalledWith(
-      "数据取数与计算已全部完成。请立即基于上述结果，输出完整的 Markdown 深度分析报告以及 ```openui 可视化动态看板代码块。"
+      "数据取数与计算已全部完成。请立即基于上述结果，输出完整的 Markdown 深度分析报告以及 ```ginkgo 可视化动态看板代码块。"
     );
   });
 
@@ -1022,7 +1022,7 @@ describe("消息内容与工具执行按顺序交错渲染", () => {
       id: "a-truncated",
       role: "assistant",
       content:
-        "## 分析报告\n数据如下...\n```openui\nroot = Root([dash])\ndash = FocusLayout(\"项目\", \"副标\", main, side, detail)\ndailyChart = AnalyticsChart(\"bar\", \"提交节奏\"",
+        "## 分析报告\n数据如下...\n```ginkgo\nroot = Root([dash])\ndash = FocusLayout(\"项目\", \"副标\", main, side, detail)\ndailyChart = AnalyticsChart(\"bar\", \"提交节奏\"",
     } as unknown as Message;
 
     render(
@@ -1042,7 +1042,7 @@ describe("消息内容与工具执行按顺序交错渲染", () => {
     expect(resumeBtn).toBeInTheDocument();
     fireEvent.click(resumeBtn);
     expect(onRendererAction).toHaveBeenCalledWith(
-      "上面的 ```openui 看板代码由于达到长度上限被截断未闭合。请继续输出未完成的看板代码，确保完整闭合并渲染。"
+      "上面的 ```ginkgo 看板代码由于达到长度上限被截断未闭合。请继续输出未完成的看板代码，确保完整闭合并渲染。"
     );
   });
 
@@ -1054,7 +1054,7 @@ describe("消息内容与工具执行按顺序交错渲染", () => {
       parts: [
         {
           type: "text",
-          text: "数据全部就绪。\n\n# 📈 经营复盘报告\n\n核心结论：业绩良好。\n\n```openui\nroot = Root([MetricCard(\"MRR\", \"$100k\")])\n```",
+          text: "数据全部就绪。\n\n# 📈 经营复盘报告\n\n核心结论：业绩良好。\n\n```ginkgo\nroot = Root([MetricCard(\"MRR\", \"$100k\")])\n```",
         },
         {
           type: "tool-invocation",
@@ -1068,7 +1068,7 @@ describe("消息内容与工具执行按顺序交错渲染", () => {
         },
         {
           type: "text",
-          text: "# 📈 经营复盘报告\n\n核心结论：业绩良好。\n\n```openui\nroot = Root([MetricCard(\"MRR\", \"$100k\")])\n```\n交付闭环 ✅",
+          text: "# 📈 经营复盘报告\n\n核心结论：业绩良好。\n\n```ginkgo\nroot = Root([MetricCard(\"MRR\", \"$100k\")])\n```\n交付闭环 ✅",
         },
       ],
     } as unknown as Message;
@@ -1082,8 +1082,8 @@ describe("消息内容与工具执行按顺序交错渲染", () => {
     );
 
     // 看板标题栏仅出现 1 次，绝不重复出现 2 个看板
-    const openuiHeaders = screen.getAllByText("动态看板");
-    expect(openuiHeaders).toHaveLength(1);
+    const uiSpecHeaders = screen.getAllByText("动态看板");
+    expect(uiSpecHeaders).toHaveLength(1);
     expect(screen.getByText("已就绪")).toBeInTheDocument();
   });
 

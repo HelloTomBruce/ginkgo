@@ -1,6 +1,6 @@
-import type { AppPackageDefinition } from "@openui-analytics/app-sdk";
-import analyticsAppPackage from "@openui-apps/analytics";
-import generalAppPackage from "@openui-apps/general";
+import type { AppPackageDefinition } from "@ginkgo/app-sdk";
+import analyticsAppPackage from "@ginkgo-apps/analytics";
+import generalAppPackage from "@ginkgo-apps/general";
 
 /**
  * 默认主应用 ID（用于向后兼容未指定 appId 的旧会话）

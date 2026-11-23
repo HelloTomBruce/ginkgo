@@ -2,7 +2,7 @@ import {
   describeDynamicSource,
   isDbType,
   type DynamicSourceConfig,
-} from "@openui-analytics/datasources";
+} from "@ginkgo/datasources";
 import { datasources } from "@/lib/datasources";
 
 /**

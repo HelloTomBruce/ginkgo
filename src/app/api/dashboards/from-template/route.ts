@@ -1,4 +1,4 @@
-import { handleCreateFromTemplate, dashboardStore } from "@openui-apps/analytics/server";
+import { handleCreateFromTemplate, dashboardStore } from "@ginkgo-apps/analytics/server";
 import { datasources } from "@/lib/datasources";
 
 /**

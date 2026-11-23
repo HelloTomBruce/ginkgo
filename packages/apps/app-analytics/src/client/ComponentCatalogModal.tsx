@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import { LayoutGrid, ChevronDown } from "lucide-react";
-import { Dialog, DialogContent, DialogTitle } from "@openui-analytics/components/ui/dialog";
+import { Dialog, DialogContent, DialogTitle } from "@ginkgo/components/ui/dialog";
 import { Renderer } from "@openuidev/react-lang";
 import {
   componentCatalog,
@@ -10,7 +10,7 @@ import {
   analyticsLibrary,
   ErrorBoundary,
   type ComponentCatalogEntry,
-} from "@openui-analytics/components";
+} from "@ginkgo/components";
 
 interface ComponentCatalogModalProps {
   open: boolean;
@@ -167,7 +167,7 @@ export function ComponentCatalogModal({ open, onClose }: ComponentCatalogModalPr
             预览为组件实况渲染（真实主题配色，亮暗自适应）。目录与渲染库同源维护：
             新增组件注册进{" "}
             <code className="px-1 py-0.5 rounded bg-muted text-muted-foreground">
-              @openui-analytics/components
+              @ginkgo/components
             </code>{" "}
             后自动出现在此处。
           </p>

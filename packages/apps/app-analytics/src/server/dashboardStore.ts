@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { isValidTransformSpec, type TransformSpec } from "@openui-apps/analytics/isomorphic";
+import { isValidTransformSpec, type TransformSpec } from "@ginkgo-apps/analytics/isomorphic";
 // 内部实现引用同一形状来源（re-export 仅供既有消费方稳定入口）
 import type {
   DashboardOrigin,
@@ -11,7 +11,7 @@ import type {
   TemplateMeta,
   DashboardRecord,
   DashboardSummary,
-} from "@openui-apps/analytics/isomorphic";
+} from "@ginkgo-apps/analytics/isomorphic";
 
 /**
  * 看板收藏存储层（server-only：依赖 node:fs，禁止在客户端组件引入）。
@@ -45,7 +45,7 @@ const APP_ID_RE = /^[a-z0-9_-]{1,64}$/i;
 export const DEFAULT_DASHBOARD_APP_ID = "analytics";
 /** 查询 id：q_ + 1-32 位小写字母数字（生成期捕获为 q_ + 8 位十六进制散列） */
 const QUERY_ID_RE = /^q_[0-9a-z]{1,32}$/;
-/** 源 id 规则与数据源配置层一致（packages/openui-datasources SOURCE_ID_PATTERN） */
+/** 源 id 规则与数据源配置层一致（packages/ginkgo-datasources SOURCE_ID_PATTERN） */
 const QUERY_SOURCE_ID_RE = /^[a-z][a-z0-9-]{0,31}$/;
 /** 绑定键：DSL statementId（标识符语法，长度 ≤ 64） */
 const BINDING_KEY_RE = /^[$_a-zA-Z][$_a-zA-Z0-9]{0,63}$/;
@@ -59,7 +59,7 @@ export type {
   TemplateMeta,
   DashboardRecord,
   DashboardSummary,
-} from "@openui-apps/analytics/isomorphic";
+} from "@ginkgo-apps/analytics/isomorphic";
 
 export function toSummary(record: DashboardRecord): DashboardSummary {
   return {

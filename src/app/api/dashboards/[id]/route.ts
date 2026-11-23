@@ -1,4 +1,4 @@
-import { dashboardStore, toSummary } from "@openui-apps/analytics/server";
+import { dashboardStore, toSummary } from "@ginkgo-apps/analytics/server";
 
 /**
  * GET /api/dashboards/:id — 详情（含 dsl，预览用）；不存在 404。

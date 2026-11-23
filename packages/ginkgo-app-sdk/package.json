@@ -1,0 +1,13 @@
+{
+  "name": "@ginkgo/app-sdk",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "devDependencies": {
+    "typescript": "^5",
+    "vitest": "^5.1.0"
+  }
+}

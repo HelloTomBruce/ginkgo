@@ -1,5 +1,5 @@
 {
-  "name": "@openui-apps/analytics",
+  "name": "@ginkgo-apps/analytics",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -11,11 +11,11 @@
     "./isomorphic/dashboardCapture": "./src/isomorphic/dashboardCapture.ts"
   },
   "dependencies": {
-    "@openui-analytics/app-sdk": "workspace:*",
-    "@openui-analytics/chart-spec": "workspace:*",
-    "@openui-analytics/components": "workspace:*",
-    "@openui-analytics/datasources": "workspace:*",
-    "@openui-analytics/llm": "workspace:*",
+    "@ginkgo/app-sdk": "workspace:*",
+    "@ginkgo/chart-spec": "workspace:*",
+    "@ginkgo/components": "workspace:*",
+    "@ginkgo/datasources": "workspace:*",
+    "@ginkgo/llm": "workspace:*",
     "@openuidev/lang-core": "^0.3.1",
     "ai": "4.3.19",
     "cn": "^0.5.2",

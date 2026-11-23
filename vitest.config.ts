@@ -9,7 +9,7 @@ export default defineConfig({
   },
   test: {
     // 根自身作为 project（应用测试，jsdom）+ packages/* 子包（各自配置，node 环境）
-    projects: [".", "packages/openui-*", "packages/apps/*"],
+    projects: [".", "packages/ginkgo-*", "packages/apps/*"],
     environment: "jsdom",
     // jsdom 环境每 worker 复用（此前每测试文件重建一次,55 次/29s 占全时长 37%）;
     // vmThreads 保持文件级隔离,仅共享同一 jsdom 实例与 worker 进程

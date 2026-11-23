@@ -1,6 +1,6 @@
 "use client";
 
-import { toCsvContent, downloadCsv } from "@openui-analytics/components";
+import { toCsvContent, downloadCsv } from "@ginkgo/components";
 import { toast } from "@/lib/toast";
 
 /**
@@ -87,7 +87,7 @@ export const clientTools: Record<string, (args: Record<string, unknown>) => Prom
   update_business_target: async (rawArgs: Record<string, unknown>) => {
     const metric = typeof rawArgs.metric === "string" ? rawArgs.metric : "指标";
     const newTarget = rawArgs.newTarget;
-    console.log(`[OpenUI Mutation] 更新业务目标: ${metric} -> ${newTarget}`);
+    console.log(`[UiSpec Mutation] 更新业务目标: ${metric} -> ${newTarget}`);
     toast(`已将「${metric}」目标调整为 ${newTarget}`, "success");
     return {
       success: true,

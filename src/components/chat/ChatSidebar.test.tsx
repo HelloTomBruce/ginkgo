@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, cleanup, fireEvent } from "@testing-library/react";
 import { ChatSidebar } from "./ChatSidebar";
-import type { DashboardSummary } from "@openui-apps/analytics/server";
+import type { DashboardSummary } from "@ginkgo-apps/analytics/server";
 
 const baseProps = {
   sessions: [],
@@ -190,7 +190,7 @@ describe("ChatSidebar 看板库 tab", () => {
     switchToDashboards();
 
     const input = screen.getByLabelText("导入看板快照文件");
-    const file = new File([JSON.stringify({ dsl: "root = Root([])" })], "a.openui.json", {
+    const file = new File([JSON.stringify({ dsl: "root = Root([])" })], "a.ginkgo.json", {
       type: "application/json",
     });
     fireEvent.change(input, { target: { files: [file] } });

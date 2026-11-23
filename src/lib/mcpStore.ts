@@ -4,7 +4,7 @@ import path from "node:path";
 import {
   MCPClientManager,
   type MCPServerConfig,
-} from "@openui-analytics/harness-core/mcp";
+} from "@ginkgo/harness-core/mcp";
 
 export interface StoredMcpServer extends MCPServerConfig {
   enabled?: boolean;

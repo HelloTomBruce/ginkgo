@@ -56,7 +56,7 @@ describe("bootstrap 初始化", () => {
 
   it("旧 localStorage 会话一次性迁移：保留标题/消息/时间戳，旧键清除", async () => {
     localStorage.setItem(
-      "openui_chat_sessions_v1",
+      "ginkgo_chat_sessions_v1",
       JSON.stringify([
         {
           id: "session_1000_abc",
@@ -68,7 +68,7 @@ describe("bootstrap 初始化", () => {
         },
       ])
     );
-    localStorage.setItem("openui_current_session_id_v1", "session_1000_abc");
+    localStorage.setItem("ginkgo_current_session_id_v1", "session_1000_abc");
 
     const { result } = await renderLoaded();
 
@@ -81,8 +81,8 @@ describe("bootstrap 初始化", () => {
     expect(migrated.enabledSources).toEqual(["postgres"]);
     expect(server.activeId).toBe(migrated.id);
     // 旧键已清除
-    expect(localStorage.getItem("openui_chat_sessions_v1")).toBeNull();
-    expect(localStorage.getItem("openui_current_session_id_v1")).toBeNull();
+    expect(localStorage.getItem("ginkgo_chat_sessions_v1")).toBeNull();
+    expect(localStorage.getItem("ginkgo_current_session_id_v1")).toBeNull();
   });
 
   it("迁移幂等：服务端已有同指纹会话时跳过，不产生重复（双标签页场景）", async () => {
@@ -96,7 +96,7 @@ describe("bootstrap 初始化", () => {
       }),
     ]);
     localStorage.setItem(
-      "openui_chat_sessions_v1",
+      "ginkgo_chat_sessions_v1",
       JSON.stringify([
         {
           id: "session_1000_abc",
@@ -113,7 +113,7 @@ describe("bootstrap 初始化", () => {
     expect(result.current.sessions).toHaveLength(1); // 无重复
     expect(server.records.size).toBe(1);
     // 旧键同样清除（迁移视为已完成）
-    expect(localStorage.getItem("openui_chat_sessions_v1")).toBeNull();
+    expect(localStorage.getItem("ginkgo_chat_sessions_v1")).toBeNull();
   });
 
   it("并发 bootstrap（StrictMode 双调用）：初始会话只创建一次", async () => {

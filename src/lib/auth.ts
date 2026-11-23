@@ -1,9 +1,9 @@
 /**
- * 部署鉴权访问令牌（对应服务端 OPENUI_API_AUTH_TOKEN）。
+ * 部署鉴权访问令牌（对应服务端 GINKGO_API_AUTH_TOKEN）。
  * 本地开发未配置服务端 token 时留空即可。
  */
 
-export const ACCESS_TOKEN_STORAGE_KEY = "openui_access_token";
+export const ACCESS_TOKEN_STORAGE_KEY = "ginkgo_access_token";
 
 export function getAccessToken(): string {
   if (typeof window === "undefined") return "";

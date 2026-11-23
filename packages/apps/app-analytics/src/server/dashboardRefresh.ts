@@ -11,23 +11,23 @@
 import type {
   DynamicSourceConfig,
   McpConnection,
-} from "@openui-analytics/datasources";
-import { assertReadOnlySql } from "@openui-analytics/datasources/sqlGuard";
-import { parseMcpToolResult } from "@openui-analytics/datasources/parseToolResult";
+} from "@ginkgo/datasources";
+import { assertReadOnlySql } from "@ginkgo/datasources/sqlGuard";
+import { parseMcpToolResult } from "@ginkgo/datasources/parseToolResult";
 import {
   createParser,
-  jsonToOpenUI,
+  jsonToUiSpec,
   serverLibrary,
-} from "@openui-analytics/components/server";
-import { extractQueryRows, rowPropFor } from "@openui-apps/analytics/isomorphic";
+} from "@ginkgo/components/server";
+import { extractQueryRows, rowPropFor } from "@ginkgo-apps/analytics/isomorphic";
 import { materializeSpecRows } from "./specMaterialize";
-import { parseChartSpec, type ChartSpec } from "@openui-analytics/chart-spec";
+import { parseChartSpec, type ChartSpec } from "@ginkgo/chart-spec";
 import {
   applyTransform,
   isValidTransformSpec,
   type TransformSpec,
-} from "@openui-apps/analytics/isomorphic";
-import { evaluateTimeMacros } from "@openui-apps/analytics/isomorphic";
+} from "@ginkgo-apps/analytics/isomorphic";
+import { evaluateTimeMacros } from "@ginkgo-apps/analytics/isomorphic";
 import type { DashboardRecord, DashboardQuery } from "./dashboardStore";
 
 /** 数据源网关（datasource manager 的结构子集，便于测试注入） */
@@ -402,7 +402,7 @@ export async function refreshDashboard(
   ];
   let dsl: string;
   try {
-    dsl = jsonToOpenUI(parsed.root, serverLibrary);
+    dsl = jsonToUiSpec(parsed.root, serverLibrary);
   } catch {
     return {
       ok: false,

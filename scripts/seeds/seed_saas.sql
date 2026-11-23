@@ -1,5 +1,5 @@
 -- ========================================================
--- Database: openui_saas
+-- Database: ginkgo_saas
 -- Domain: B2B SaaS 订阅、客户生命周期、留存与产品使用画像
 -- Components showcased: FunnelChart, RadarChart, MetricCard/Grid, GaugeProgress, SpecChart, ReactiveSimulator
 -- ========================================================

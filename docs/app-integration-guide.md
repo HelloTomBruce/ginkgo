@@ -2,7 +2,7 @@
 
 > 适用版本：平台化收敛（llm 领域中立化 + 产物协议）之后。
 > 本文是新增/接入一个 Ginkgo 平台应用的**唯一规范入口**，以 analytics（深度应用）与
-> general（轻应用）为双实例讲解。协议类型唯一事实来源：`packages/openui-app-sdk/src/types.ts`。
+> general（轻应用）为双实例讲解。协议类型唯一事实来源：`packages/ginkgo-app-sdk/src/types.ts`。
 > 平台侧能力包扩展与第三方应用分发的演进路线见
 > [平台生态路线图](platform-ecosystem-roadmap.md)。
 
@@ -14,25 +14,25 @@
 │ ChatDashboard · AppSwitcher · ChatSidebar · MessageList ·        │
 │ /api/analyze（统一入口）· middleware · sessionStore/dashboardStore │
 ├─────────────────────────────────────────────────────────────────┤
-│ 应用插件层 packages/apps/*（协议：@openui-analytics/app-sdk）       │
+│ 应用插件层 packages/apps/*（协议：@ginkgo/app-sdk）       │
 │   app-analytics：数据智能（深度应用，工厂装配）                      │
 │   app-general：通用助理（轻应用，静态包即全量）                      │
 ├─────────────────────────────────────────────────────────────────┤
 │ 平台服务层                                                        │
-│ ① Agent 编排：openui-llm（领域中立）+ harness-core（执行底座）      │
+│ ① Agent 编排：ginkgo-llm（领域中立）+ harness-core（执行底座）      │
 │    统一入口按 appId 分发：resolveAppPrompt / resolveAppTools /     │
 │    deliverable / onTaskFinish 四接缝                              │
-│ ② 数据语义层：openui-datasources（requiresDataTools 应用可复用）    │
-│ ③ 声明式渲染：openui-components（analyticsLibrary + serverLibrary  │
-│    + OpenUIRenderer + DSL 校验器）                                │
-│ ④ 沙箱原子工具：openui-sandbox（preset × permission 双维度）        │
+│ ② 数据语义层：ginkgo-datasources（requiresDataTools 应用可复用）    │
+│ ③ 声明式渲染：ginkgo-components（analyticsLibrary + serverLibrary  │
+│    + UiSpecRenderer + DSL 校验器）                                │
+│ ④ 沙箱原子工具：ginkgo-sandbox（preset × permission 双维度）        │
 │ ⑤ 工作区沙箱解析：workspaceStore / workspaceResolver              │
 │ ⑥ 产物协议：AppArtifactItem / listArtifacts / refreshArtifact     │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
 **关键不变量**：
-- `@openui-analytics/llm` 零应用领域语义（无内置业务 prompt、无数据源装配、无交付物文案）；
+- `@ginkgo/llm` 零应用领域语义（无内置业务 prompt、无数据源装配、无交付物文案）；
   一切领域逻辑经四接缝注入。
 - 依赖方向单向：`apps → app-sdk + 平台服务包`；app 包**禁止**穿透宿主 `src/`（tsconfig
   不得配置 `@/*` 指向宿主；需要的共享 UI 原语在应用包内自持或由 components 包提供）。
@@ -88,9 +88,9 @@ pattern），禁止在宿主组件里写 appId 比较、话术正则或硬编码
 先加契约字段、再让宿主按声明渲染。
 
 插槽组件 Props 契约见 `AppWorkspaceProps` / `AppInputAccessoryProps` / `AppSidebarTabProps`；
-画布钉选载荷类型为协议层 `AppCanvasData`。渲染基建（`OpenUIRenderer`、
-`DashboardScopeProvider`、`filterBus`、组件 Def）统一从 `@openui-analytics/components`
-取——客户端本地工具经宿主挂载的 `<OpenUIToolProvider>` 自动生效，无需逐层透传。
+画布钉选载荷类型为协议层 `AppCanvasData`。渲染基建（`UiSpecRenderer`、
+`DashboardScopeProvider`、`filterBus`、组件 Def）统一从 `@ginkgo/components`
+取——客户端本地工具经宿主挂载的 `<UiSpecToolProvider>` 自动生效，无需逐层透传。
 
 ## 4. 服务端契约（AppServerContract）
 
@@ -107,7 +107,7 @@ interface AppServerContract {
 }
 ```
 
-沙箱文件/shell 工具不要自研：消费 `@openui-analytics/sandbox` 能力包的
+沙箱文件/shell 工具不要自研：消费 `@ginkgo/sandbox` 能力包的
 `createSandboxTools({ sandboxDir, preset: "atomic" | "explorer", permission: "full" | "readonly" })`
 ——preset 是丰富度维度（atomic = read/edit/write/bash 四原子工具；explorer 追加
 list_dir），permission 是权限维度（readonly 只装配只读工具）；工具说明 prompt 片段
@@ -133,7 +133,7 @@ list_dir），permission 是权限维度（readonly 只装配只读工具）；�
 | --- | --- | --- |
 | `resolveAppPrompt(appId, ctx)` | 每请求一次，投影前 | 返回应用 System Prompt（undefined → 平台中立兜底；平台强制追加注入防御纪律段，已含则不重复） |
 | `resolveAppTools(appId, ctx)` | prompt 前 | 返回应用工具集（经遥测切面包装后挂载；数据源工具在此由应用装配） |
-| `deliverable`（AppDeliverableContract） | 工厂期 | finish_task 终态语义：工具描述 / 拒绝文案 / 收尾指令 / 证据标记（如 `["```openui", "PlanReviewCard"]`） |
+| `deliverable`（AppDeliverableContract） | 工厂期 | finish_task 终态语义：工具描述 / 拒绝文案 / 收尾指令 / 证据标记（如 `["```ginkgo", "PlanReviewCard"]`） |
 | `onTaskFinish(event)` | onFinish 后（fire-and-forget） | 登记编排状态（analytics：plan 轮提取方法卡写 `pendingPlan`） |
 
 **平台兜底**：未注入 prompt → 中立基础提示词 + 注入防御段；无证据标记命中且零文本 →
@@ -195,7 +195,7 @@ artifacts 三类依赖的装配点）。
 - **单元/集成**：应用包自带 `vitest.config.ts`（node 环境）；prompt 快照与装配行为
   在应用包内锁定（参照 `app-analytics/src/server/analyticsServer.test.ts`：
   工具装配降级 / 跨源注册 / 三模式 prompt / pendingPlan 交接 / 认证口径注入）。
-- **平台机制回归**：`packages/openui-llm/src/handler.test.ts` + `evals/trajectories.test.ts`
+- **平台机制回归**：`packages/ginkgo-llm/src/handler.test.ts` + `evals/trajectories.test.ts`
   用 `resolveAppTools`/`resolveAppPrompt` stub 驱动（机制与领域解耦验证）。
 - **真实模型评测（Tier B）**：`src/evals/tier-b.real-model.test.ts`（应用包内，缺 Key
   自动跳过）：`pnpm eval:tier-b`。prompt/模型变更前后各跑一次，对比基线合规率与成本。

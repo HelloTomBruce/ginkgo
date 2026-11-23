@@ -1,5 +1,5 @@
 /**
- * 看板快照文件（.openui.json）导出/导入/文件名工具。
+ * 看板快照文件（.ginkgo.json）导出/导入/文件名工具。
  * 快照 = 单条收藏记录的完整 JSON；导入时 origin 置空（视为手动导入，不与消息挂钩）。
  * 活看板（P2-A）：queries/bindings 随快照透传（新版快照往返保活）；
  * v0.1 旧快照无这些字段 → 缺省只读收藏，导入不报错。深层校验以服务端为准。
@@ -7,7 +7,7 @@
 // 仅取类型（编译期擦除，不把 server-only 存储层打进客户端包）
 import type { DashboardQuery, DashboardRecord } from "./dashboardTypes";
 
-export const SNAPSHOT_EXTENSION = ".openui.json";
+export const SNAPSHOT_EXTENSION = ".ginkgo.json";
 
 /** 下载文件名：标题清洗（非法字符/连续下划线/长度），兜底「未命名看板」 */
 export function snapshotFilename(title: string): string {

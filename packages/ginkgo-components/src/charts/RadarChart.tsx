@@ -1,0 +1,159 @@
+"use client";
+
+import React from "react";
+import {
+  ResponsiveContainer,
+  RadarChart as RechartsRadarChart,
+  Radar,
+  PolarGrid,
+  PolarAngleAxis,
+  PolarRadiusAxis,
+  Tooltip,
+  Legend,
+} from "recharts";
+import { Compass } from "lucide-react";
+import { parseArrayProp } from "../internal/parseProp";
+import { defineComponent } from "@openuidev/react-lang";
+import { z } from "zod";
+import { ComponentSafeWrapper } from "../internal/ComponentSafeWrapper";
+
+
+export interface RadarSeriesConfig {
+  key: string;
+  name?: string;
+  color?: string;
+}
+
+export interface RadarChartProps {
+  title?: string;
+  description?: string;
+  data: Array<Record<string, unknown>>;
+  angleKey?: string;
+  series?: RadarSeriesConfig[];
+  height?: number;
+}
+
+/* 读取主题 token --chart-1..5（见应用层 globals.css） */
+const DEFAULT_RADAR_COLORS = [
+  "var(--chart-1)",
+  "var(--chart-2)",
+  "var(--chart-3)",
+  "var(--chart-4)",
+  "var(--chart-5)",
+];
+
+export const RadarChart: React.FC<RadarChartProps> = ({
+  title,
+  description,
+  data = [],
+  angleKey = "metric",
+  series = [],
+  height = 300,
+}) => {
+  const safeData: Array<Record<string, unknown>> = parseArrayProp(data);
+
+  let safeSeries: RadarSeriesConfig[] = parseArrayProp(series).filter(
+    (s) => typeof s.key === "string"
+  ) as unknown as RadarSeriesConfig[];
+
+  // 自动提取数值字段
+  if (safeSeries.length === 0 && safeData.length > 0 && safeData[0] && typeof safeData[0] === "object") {
+    const firstRow = safeData[0];
+    const candidateKeys = Object.keys(firstRow).filter(
+      (k) => k !== angleKey && (typeof firstRow[k] === "number" || !isNaN(Number(firstRow[k])))
+    );
+    safeSeries = candidateKeys.map((k, idx) => ({
+      key: k,
+      name: k,
+      color: DEFAULT_RADAR_COLORS[idx % DEFAULT_RADAR_COLORS.length],
+    }));
+  }
+
+  return (
+    <div className="bg-card border border-border rounded-xl p-5 shadow-xs">
+      {(title || description) && (
+        <div className="mb-4">
+          {title && (
+            <h3 className="text-sm font-semibold text-foreground flex items-center gap-1.5">
+              <Compass className="w-4 h-4 text-info-fg" />
+              <span>{title}</span>
+            </h3>
+          )}
+          {description && (
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {description}
+            </p>
+          )}
+        </div>
+      )}
+
+      <div style={{ width: "100%", height, minHeight: height }}>
+        {safeData.length === 0 ? (
+          <div className="flex h-full items-center justify-center text-xs text-foreground-faint">
+            暂无雷达图数据
+          </div>
+        ) : (
+          <ResponsiveContainer width="100%" height={height} minWidth={0} debounce={50}>
+            <RechartsRadarChart data={safeData} outerRadius="75%">
+              <PolarGrid stroke="var(--border)" strokeOpacity={0.4} />
+              <PolarAngleAxis
+                dataKey={angleKey}
+                tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
+              />
+              <PolarRadiusAxis angle={30} domain={[0, "auto"]} stroke="var(--border-strong)" tick={{ fontSize: 10 }} />
+              <Tooltip
+                contentStyle={{
+                  borderRadius: "8px",
+                  border: "1px solid var(--border)",
+                  boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)",
+                }}
+              />
+              <Legend wrapperStyle={{ fontSize: "12px", paddingTop: "6px" }} />
+              {safeSeries.map((s, idx) => {
+                const color = s.color || DEFAULT_RADAR_COLORS[idx % DEFAULT_RADAR_COLORS.length];
+                return (
+                  <Radar
+                    key={`radar-${s.key || idx}`}
+                    name={s.name || s.key}
+                    dataKey={s.key}
+                    stroke={color}
+                    fill={color}
+                    fillOpacity={0.25}
+                  />
+                );
+              })}
+            </RechartsRadarChart>
+          </ResponsiveContainer>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// ===== UiSpec 组件库定义 =====
+export const RadarChartDef = defineComponent({
+  name: "RadarChart",
+  description: "多维能力与指标画像雷达图，用于销售代表综合胜任力、代码仓库质量多维体检与对比",
+  props: z.object({
+    title: z.any().optional().describe("雷达图标题"),
+    description: z.any().optional().describe("图表说明"),
+    data: z.any().optional().describe("结构化极坐标数据数组"),
+    angleKey: z.any().optional().describe("极坐标维度键名，如：metric"),
+    series: z.any().optional().describe("系列配置"),
+    height: z.any().optional().describe("图表容器高度（像素）"),
+  }),
+  component: ({ props }: { props: Record<string, unknown> }) => {
+    return (
+      <ComponentSafeWrapper name="RadarChart">
+        <RadarChart
+          title={props?.title ? String(props.title) : undefined}
+          description={props?.description ? String(props.description) : undefined}
+          data={props?.data as Array<Record<string, unknown>>}
+          angleKey={props?.angleKey ? String(props.angleKey) : "metric"}
+          series={props?.series as React.ComponentProps<typeof RadarChart>["series"]}
+          height={typeof props?.height === "number" ? props.height : 300}
+        />
+      </ComponentSafeWrapper>
+    );
+  },
+});

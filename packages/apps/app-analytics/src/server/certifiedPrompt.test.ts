@@ -1,9 +1,9 @@
 import { describe, it, expect } from "vitest";
 import {
   certifiedQueriesSection,
-  getOpenUISystemPrompt,
+  getUiSpecSystemPrompt,
 } from "./prompt";
-import type { CertifiedQueryMatch } from "@openui-analytics/datasources";
+import type { CertifiedQueryMatch } from "@ginkgo/datasources";
 
 describe("Certified Queries 提示词生成与注入", () => {
   const mockMatch: CertifiedQueryMatch = {
@@ -30,8 +30,8 @@ describe("Certified Queries 提示词生成与注入", () => {
     expect(text).toContain("严禁擅自修改核心度量与计算逻辑");
   });
 
-  it("getOpenUISystemPrompt 在命中时将认证段注入前置提示词", () => {
-    const prompt = getOpenUISystemPrompt([], undefined, undefined, [mockMatch]);
+  it("getUiSpecSystemPrompt 在命中时将认证段注入前置提示词", () => {
+    const prompt = getUiSpecSystemPrompt([], undefined, undefined, [mockMatch]);
     expect(prompt).toContain("权威业务口径约束 (Certified Queries)");
     expect(prompt).toContain("cq_cac");
   });
@@ -44,7 +44,7 @@ describe("Certified Queries 提示词生成与注入", () => {
     const text = certifiedQueriesSection([lowMatch]);
     expect(text).toBe("");
 
-    const prompt = getOpenUISystemPrompt([], undefined, undefined, []);
+    const prompt = getUiSpecSystemPrompt([], undefined, undefined, []);
     expect(prompt).not.toContain("权威业务口径约束");
   });
 

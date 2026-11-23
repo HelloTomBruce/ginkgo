@@ -1,4 +1,4 @@
-# @openui-apps/analytics · 智能数据分析师
+# @ginkgo-apps/analytics · 智能数据分析师
 
 Ginkgo 平台的**深度应用**范例：多源数据探查、指标计算、深度归因与敏捷可视化大屏。
 完整接入规范见 [docs/app-integration-guide.md](../../../docs/app-integration-guide.md)。
@@ -7,7 +7,7 @@ Ginkgo 平台的**深度应用**范例：多源数据探查、指标计算、深
 
 - `src/manifest.ts` — manifest + 客户端插槽声明：AnalysisCanvas 工作台（`workspaceView: "canvas"`）/ SourcePicker 输入挂件 / 看板+推荐侧栏 / 方法论快捷动作（`Component` 弹层）/ `dashboardToolbar`（看板操作能力）/ `messageExtensions`（规划确认 + 终态总结卡 + 过渡文案）/ `resolvePresetQueries`（方法卡合并集）
 - `src/client/` — 插槽组件与自持 UI：AnalysisCanvas / SourcePicker / MethodologyModal / `methodologyPresets.ts`（推荐 resolver，拉 `/api/methodology` 合并卡集）
-- `src/methodology/` — 方法论资产（自持，原 `packages/openui-methodology` 并入）：`builtinMethodCards` 10 张内置卡 + 用户卡契约 + 注册表合并 + 字节预算受限的 prompt 渲染纯函数
+- `src/methodology/` — 方法论资产（自持，原 `packages/ginkgo-methodology` 并入）：`builtinMethodCards` 10 张内置卡 + 用户卡契约 + 注册表合并 + 字节预算受限的 prompt 渲染纯函数
 - `src/isomorphic/` — **client-safe 领域层**（零 node/零 React）：声明式变换管线（transforms）、时间宏引擎（timeMacros）、查询行提取（queryRows）、活看板捕获（dashboardCapture）、快照导入导出（dashboardSnapshot）、记录类型（dashboardTypes）。宿主消息区收藏链路与本包服务端共用
 - `src/server/` — **运行时全量**：`createAnalyticsServer(deps)` 工厂（宿主组合根注入 datasources / methodology / certified / crossSource / artifacts 五类依赖）+ **看板产物域**（收藏存储 dashboardStore / SQL 物化 specMaterialize / 活看板重放 dashboardRefresh / 筛选联动 distinctValues / 模板重绑定 templateRetarget / 厚路由编排 dashboardRoutes）+ 方法卡装配（methodologyLoader）
 - `src/prompt.ts` — 三模式 System Prompt 文案（direct/plan/execute）

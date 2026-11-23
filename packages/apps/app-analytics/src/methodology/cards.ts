@@ -1,8 +1,8 @@
 import type { MethodCard } from "./types";
 
 /**
- * 内置 10 张方法卡（通用分析思维，全部映射既有 OpenUI 组件）。
- * 配对组件名与 @openui-analytics/components 的 serverLibrary 键一一对应，
+ * 内置 10 张方法卡（通用分析思维，全部映射既有 UiSpec 组件）。
+ * 配对组件名与 @ginkgo/components 的 serverLibrary 键一一对应，
  * 一致性由 llm 包 promptExamples.test.ts 传入组件名集合校验（本包零依赖）。
  */
 export const builtinMethodCards: MethodCard[] = [

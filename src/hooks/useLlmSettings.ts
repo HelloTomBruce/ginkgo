@@ -17,17 +17,17 @@ import {
 } from "@/lib/llmProviders";
 
 const STORAGE_KEYS = {
-  provider: "openui_llm_provider",
-  apiKey: "openui_llm_api_key",
-  baseURL: "openui_llm_base_url",
-  model: "openui_llm_model",
-  temperature: "openui_llm_temperature",
-  reasoningEffort: "openui_llm_reasoning_effort",
-  maxTokens: "openui_llm_max_tokens",
-  maxSteps: "openui_llm_max_steps",
-  contextWindow: "openui_llm_context_window",
-  protocol: "openui_llm_protocol",
-  fallbackModels: "openui_llm_fallback_models",
+  provider: "ginkgo_llm_provider",
+  apiKey: "ginkgo_llm_api_key",
+  baseURL: "ginkgo_llm_base_url",
+  model: "ginkgo_llm_model",
+  temperature: "ginkgo_llm_temperature",
+  reasoningEffort: "ginkgo_llm_reasoning_effort",
+  maxTokens: "ginkgo_llm_max_tokens",
+  maxSteps: "ginkgo_llm_max_steps",
+  contextWindow: "ginkgo_llm_context_window",
+  protocol: "ginkgo_llm_protocol",
+  fallbackModels: "ginkgo_llm_fallback_models",
 } as const;
 
 const DEFAULT_BASE_URL = "https://api.openai.com/v1";

@@ -1,6 +1,6 @@
 // @vitest-environment node
 /**
- * analytics 服务端工厂回归：从编排层（@openui-analytics/llm）下沉到应用包的
+ * analytics 服务端工厂回归：从编排层（@ginkgo/llm）下沉到应用包的
  * 领域行为——数据源工具装配与降级、跨源工具注册、三模式 prompt 分派、
  * schema 卡注入、认证口径注入、plan→execute 方法卡交接（pendingPlan）。
  */
@@ -11,9 +11,9 @@ import path from "node:path";
 import { createAnalyticsServer } from "./index";
 import { reloadCrossSourceMap } from "./crossSource";
 import { extractPlanMethods } from "./planExtractor";
-import { createDatasourceManager, type DatasourceManager } from "@openui-analytics/datasources";
+import { createDatasourceManager, type DatasourceManager } from "@ginkgo/datasources";
 import { createMethodLibrary, builtinMethodCards } from "../methodology";
-import type { AppServerContext } from "@openui-analytics/app-sdk";
+import type { AppServerContext } from "@ginkgo/app-sdk";
 
 /** 真 manager 读临时配置文件；tools(IO) 覆写为 mock——等价迁移前 handler.test 的 fixture 语义 */
 async function makeFakeManager(
@@ -283,7 +283,7 @@ describe("createAnalyticsServer.buildSystemPrompt", () => {
         },
       ])
     );
-    const { CertifiedQueryStore } = await import("@openui-analytics/datasources");
+    const { CertifiedQueryStore } = await import("@ginkgo/datasources");
     const certifiedStore = new CertifiedQueryStore({ configPath: certifiedFile });
     const server = createAnalyticsServer({ datasources: manager, certifiedStore });
 
@@ -300,7 +300,7 @@ describe("createAnalyticsServer.onTaskFinish", () => {
     const server = createAnalyticsServer({ datasources: manager });
     const updateContext = vi.fn(async () => {});
     const planText =
-      '思路确认（方法：pareto）\n```openui\nroot = Root([plan])\nplan = PlanReviewCard("投放 ROI 思路", undefined, undefined, [], undefined, "确认", ["pareto"])\n```';
+      '思路确认（方法：pareto）\n```ginkgo\nroot = Root([plan])\nplan = PlanReviewCard("投放 ROI 思路", undefined, undefined, [], undefined, "确认", ["pareto"])\n```';
 
     await server.onTaskFinish({
       sessionId: "sess_plan",
@@ -329,13 +329,13 @@ describe("createAnalyticsServer.onTaskFinish", () => {
 
 describe("extractPlanMethods 单元回归", () => {
   const PLAN_BLOCK_TEXT =
-    '规划（方法：pareto）\n```openui\nroot = Root([plan])\nplan = PlanReviewCard("渠道 CAC", undefined, undefined, [], undefined, "按此思路开始分析", ["pareto"])\n```';
+    '规划（方法：pareto）\n```ginkgo\nroot = Root([plan])\nplan = PlanReviewCard("渠道 CAC", undefined, undefined, [], undefined, "按此思路开始分析", ["pareto"])\n```';
 
   it("含 methods 代码块提取 id；无 methods/坏 DSL/无代码块返回空", () => {
     expect(extractPlanMethods(PLAN_BLOCK_TEXT)).toEqual(["pareto"]);
     const noMethods = PLAN_BLOCK_TEXT.replace(', ["pareto"]', "").replace("（方法：pareto）", "");
     expect(extractPlanMethods(noMethods)).toEqual([]);
-    expect(extractPlanMethods("```openui\nroot = Root([insight])\n```")).toEqual([]);
+    expect(extractPlanMethods("```ginkgo\nroot = Root([insight])\n```")).toEqual([]);
     expect(extractPlanMethods("纯文字规划,没有代码块")).toEqual([]);
     const dupText = PLAN_BLOCK_TEXT.replace('["pareto"]', '["pareto","pareto","trend"]');
     expect(extractPlanMethods(dupText)).toEqual(["pareto", "trend"]);

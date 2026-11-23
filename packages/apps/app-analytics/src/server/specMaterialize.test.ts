@@ -8,7 +8,7 @@ import {
   TABLE_RE,
   type BuiltQuery,
 } from "./specMaterialize";
-import { ChartSpecSchema, type ChartSpec } from "@openui-analytics/chart-spec";
+import { ChartSpecSchema, type ChartSpec } from "@ginkgo/chart-spec";
 
 const baseSpec = {
   dims: [{ field: "province" }],
@@ -204,7 +204,7 @@ import {
   rowPassesSpecFilters,
   specToTransformSpec,
 } from "./specMaterialize";
-import { isValidTransformSpec, applyTransform } from "@openui-apps/analytics/isomorphic";
+import { isValidTransformSpec, applyTransform } from "@ginkgo-apps/analytics/isomorphic";
 
 describe("rowMatchesSpecFilter 行级谓词", () => {
   const row = { channel: "TikTok Ads", spend: 120, title: "某告警事件", score: "3.5" };

@@ -7,7 +7,7 @@
 @custom-variant dark (@media (prefers-color-scheme: dark));
 
 /* workspace 组件包在应用根之外，Tailwind v4 需显式声明扫描源 */
-@source "../../packages/openui-components/src";
+@source "../../packages/ginkgo-components/src";
 
 /* ============================================================================
  * 主题 token 层（本文件是全项目唯一的颜色事实来源）

@@ -10,7 +10,7 @@ describe("WorkspaceStore", () => {
   let store: WorkspaceStore;
 
   beforeEach(async () => {
-    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "openui-ws-store-"));
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "ginkgo-ws-store-"));
     tempFile = path.join(tempDir, "_workspaces.json");
     store = new WorkspaceStore(tempFile);
   });

@@ -1,8 +1,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { AppWorkspaceContext } from "@openui-analytics/app-sdk";
-// 路径守卫唯一实现在 openui-sandbox 能力包（沙箱语义的所有者），宿主 re-export
-import { assertSafePath } from "@openui-analytics/sandbox";
+import type { AppWorkspaceContext } from "@ginkgo/app-sdk";
+// 路径守卫唯一实现在 ginkgo-sandbox 能力包（沙箱语义的所有者），宿主 re-export
+import { assertSafePath } from "@ginkgo/sandbox";
 
 export const DEFAULT_WORKSPACES_ROOT = path.join(process.cwd(), "data", "workspaces");
 
@@ -41,7 +41,7 @@ export async function resolveWorkspaceContext(
 
 /**
  * 安全校验：将入参相对路径解析至工作区内，严防路径穿越（Path Traversal）。
- * 实现委托 openui-sandbox 的 assertSafePath（唯一实现），本导出仅为存量
+ * 实现委托 ginkgo-sandbox 的 assertSafePath（唯一实现），本导出仅为存量
  * 消费方（/api/workspace 等）保持稳定入口。
  */
 export function resolveSafeWorkspacePath(workspaceDir: string, targetPath: string): string {

@@ -1,1 +1,1 @@
-export * from "@openui-apps/analytics";
+export * from "@ginkgo-apps/analytics";

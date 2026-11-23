@@ -1,9 +1,9 @@
 import {
   serverLibrary,
   renderComponentKitDocumentation,
-} from "@openui-analytics/components/server";
+} from "@ginkgo/components/server";
 import { resolveCrossSourcePairs } from "./crossSource";
-import type { ActiveSourceSummary, CertifiedQueryMatch } from "@openui-analytics/datasources";
+import type { ActiveSourceSummary, CertifiedQueryMatch } from "@ginkgo/datasources";
 
 /**
  * Prompt 中的 few-shot 示例。导出以便测试校验其与 serverLibrary schema 的一致性
@@ -254,7 +254,7 @@ ${methodDetails}
 The user confirmed a plan referencing the method(s) above — follow their detailed guidance strictly when executing.`;
 }
 
-export function getOpenUISystemPrompt(
+export function getUiSpecSystemPrompt(
   activeSources: ActiveSourceSummary[],
   schemaDigest?: string,
   methodIndex?: string,
@@ -282,7 +282,7 @@ Dashboards whose components bind directly to query results can be refreshed late
 1. When asked a business, data, or engineering/project question, first query the relevant data using your MCP tools.
 2. Deliverable Adaptation based on User Intent:
    - For specific factual lookups, single-metric queries, metadata/tool discovery, or simple Q&A (e.g. "gitlab mcp 有哪些工具", "上个月订单总额是多少", "表里有哪些字段"): answer directly and concisely in Markdown. Visual component is optional (e.g. at most a single MetricCard or compact DataTable if helpful), and NEVER force a full multi-zone dashboard or lengthy multi-chapter report.
-   - For comprehensive analysis, multi-dimensional breakdowns, or when the user explicitly asks for a dashboard/report (e.g. "综合复盘", "生成看板", "分析退款原因"): synthesize the insights and generate the complete analytical report followed by the \`\`\`openui ... \`\`\` generative UI dashboard.
+   - For comprehensive analysis, multi-dimensional breakdowns, or when the user explicitly asks for a dashboard/report (e.g. "综合复盘", "生成看板", "分析退款原因"): synthesize the insights and generate the complete analytical report followed by the \`\`\`ginkgo ... \`\`\` generative UI dashboard.
 3. CRITICAL: Never terminate your response after tool calls with just punctuation (such as "。" or empty text) or a brief placeholder. Always provide a clear, substantive answer (and a visual dashboard when appropriate).
 4. Choose the most suitable visual components based on the context:
    - For conversion/retention or requirement lifecycle -> **FunnelChart**
@@ -308,13 +308,13 @@ Dashboards whose components bind directly to query results can be refreshed late
   const promptOptions = {
     preamble,
     additionalRules: [
-      "Substantive Delivery: After executing MCP tools, provide a complete and informative answer. Generate a full ```openui ... ``` dashboard for analytical/dashboard requests; for factual queries or tool lookups, a clear markdown response (with optional compact visual) is appropriate. Do NOT finish early with just punctuation or empty text.",
-      "Single Output Enforcement (单一交付物原则): In any response turn, produce EXACTLY ONE Markdown analytical report and EXACTLY ONE ```openui ... ``` code block. NEVER duplicate, copy-paste, or repeat the report or code block in the same turn. If you call `finish_task` after already writing the report and dashboard, your post-finish response must be a brief 1-sentence sign-off, NOT a repetition of the report.",
-      "Dual-Termination Contract (双重终态): Once data is retrieved and the full markdown analysis + ```openui ... ``` code block is output, you may conclude naturally (finishReason=stop), OR call `finish_task` to explicitly mark task closure. Calling `finish_task` does NOT replace the final analysis if not yet output; but if you have ALREADY output the report and dashboard, do NOT re-generate or duplicate them after calling finish_task. Never stop inside a thinking block or with empty content.",
-      "Reasoning Token Budget: In thinking models (e.g. GLM, DeepSeek), keep <think> reasoning concise and focused on tool call strategy and logical checks. Do NOT write full analysis reports or draft extensive markdown inside <think> — reserve the vast majority of the output token budget for the final markdown report and ```openui code block.",
+      "Substantive Delivery: After executing MCP tools, provide a complete and informative answer. Generate a full ```ginkgo ... ``` dashboard for analytical/dashboard requests; for factual queries or tool lookups, a clear markdown response (with optional compact visual) is appropriate. Do NOT finish early with just punctuation or empty text.",
+      "Single Output Enforcement (单一交付物原则): In any response turn, produce EXACTLY ONE Markdown analytical report and EXACTLY ONE ```ginkgo ... ``` code block. NEVER duplicate, copy-paste, or repeat the report or code block in the same turn. If you call `finish_task` after already writing the report and dashboard, your post-finish response must be a brief 1-sentence sign-off, NOT a repetition of the report.",
+      "Dual-Termination Contract (双重终态): Once data is retrieved and the full markdown analysis + ```ginkgo ... ``` code block is output, you may conclude naturally (finishReason=stop), OR call `finish_task` to explicitly mark task closure. Calling `finish_task` does NOT replace the final analysis if not yet output; but if you have ALREADY output the report and dashboard, do NOT re-generate or duplicate them after calling finish_task. Never stop inside a thinking block or with empty content.",
+      "Reasoning Token Budget: In thinking models (e.g. GLM, DeepSeek), keep <think> reasoning concise and focused on tool call strategy and logical checks. Do NOT write full analysis reports or draft extensive markdown inside <think> — reserve the vast majority of the output token budget for the final markdown report and ```ginkgo code block.",
       "Compact Dashboard Code: Keep the dashboard visual structure clean and focused (typically 1-2 core charts, key metrics, and actionable insights). Avoid overly bloated datasets or sprawling multi-level layouts in the DSL to guarantee the output completes and closes within the token budget.",
-      "Valid dashboard DSL: When visual components or dashboards are produced, they MUST contain valid openui-lang code inside ```openui and ``` code fence.",
-      "root = Root(...) MUST be the first statement in the openui code block when an openui block is generated.",
+      "Valid dashboard DSL: When visual components or dashboards are produced, they MUST contain valid ginkgo-lang code inside ```ginkgo and ``` code fence.",
+      "root = Root(...) MUST be the first statement in the ginkgo code block when an ginkgo block is generated.",
       "Populate actual data rows/objects fetched from MCP tools inside the data arrays for charts, funnels, timelines, and tables.",
       "Aggregate in SQL, not in your head: GROUP BY/SUM/AVG/COUNT belong in the query; component rows must reuse the query result rows verbatim (no rounding, no computed extra columns).",
       "Exact Column References & Quotes: When generating SQL for database or Excel/file sources, ALWAYS wrap column names with double quotes verbatim when they contain spaces, parentheses, brackets, or punctuation (e.g. SELECT \"场景 （对应五大场景，可对应多个）\" AS 场景 ...). NEVER omit, truncate, or abbreviate explanatory notes or suffixes. Excel/CSV header line breaks (Alt+Enter) are normalized to single spaces (e.g. \"专业 （对应六大专业，可对应多个）\"), do NOT write '\\n' or raw newlines inside SQL column names.",
@@ -333,7 +333,7 @@ Dashboards whose components bind directly to query results can be refreshed late
  * 规划模式系统提示词：先探查数据结构，输出分析思路 + PlanReviewCard 供用户确认，
  * 严禁在本轮产出完整看板或全量取数。
  */
-export function getOpenUIPlanPrompt(
+export function getUiSpecPlanPrompt(
   activeSources: ActiveSourceSummary[],
   schemaDigest?: string,
   methodIndex?: string,
@@ -359,7 +359,7 @@ The user just sent a message while Plan Mode is active. First perform INTENT SCR
        a) Briefly explain what core domains and tables this data source covers (in 2-3 sentences);
        b) Proactively offer 2-3 recommended concrete analytical directions as options (e.g. "你想了解：A. 销售与收入趋势？B. 售后退款与流程瓶颈？C. 品类结构与贡献分布？");
        c) Invite the user to pick one or describe their specific goal.
-     - In this ambiguous case, output NO PlanReviewCard and NO openui code block. Conclude naturally in markdown.
+     - In this ambiguous case, output NO PlanReviewCard and NO ginkgo code block. Conclude naturally in markdown.
 
 2. **Concrete Analytical Goals (分析思路规划与确认卡)**:
    - When the user asks a concrete analytical question (e.g. "分析近3个月退款率为什么飙升", "各渠道获客成本对比", "做一次品类复盘"):
@@ -371,13 +371,13 @@ The user just sent a message while Plan Mode is active. First perform INTENT SCR
            ? `\n       * cross_source_link may be used to check whether a cross-source joint analysis is possible.`
            : ""
        }
-     - Output the plan: 1. A concise markdown plan (目标复述 / 数据基础 / 分析思路 / 澄清点说明) + 2. Exactly ONE \`\`\`openui block with PlanReviewCard.
+     - Output the plan: 1. A concise markdown plan (目标复述 / 数据基础 / 分析思路 / 澄清点说明) + 2. Exactly ONE \`\`\`ginkgo block with PlanReviewCard.
 
 ## Output contract for Concrete Analytical Goals (BOTH parts are mandatory ONLY when a concrete analysis goal is present):
 1. A concise markdown plan with four sections: **目标复述** / **数据基础** (which sources, tables/fields, and what you verified) / **分析思路** (ordered steps, each naming the intended visual component and layout template) / **澄清点说明**.
-2. Exactly ONE \`\`\`openui code block containing a single **PlanReviewCard** under Root — this is how the user reviews and confirms the plan.
+2. Exactly ONE \`\`\`ginkgo code block containing a single **PlanReviewCard** under Root — this is how the user reviews and confirms the plan.
 
-⚠️ 强制输出要求：在针对明确分析目标输出完第 1 部分文字规划（如「请确认以下分析方案」）之后，必须在当前同一回复中立即紧接着输出 \`\`\`openui 代码块并实例化 PlanReviewCard！若用户意图模糊则走上述引导反问分支，不输出 PlanReviewCard。
+⚠️ 强制输出要求：在针对明确分析目标输出完第 1 部分文字规划（如「请确认以下分析方案」）之后，必须在当前同一回复中立即紧接着输出 \`\`\`ginkgo 代码块并实例化 PlanReviewCard！若用户意图模糊则走上述引导反问分支，不输出 PlanReviewCard。
 
 ## PlanReviewCard(title, question?, sources?, steps, clarifications?, confirmLabel?, methods?):
 - title: short plan name; question?: your restatement of the user's question; sources?: data basis badges (e.g. "postgres: marketing.leads").
@@ -387,7 +387,7 @@ The user just sent a message while Plan Mode is active. First perform INTENT SCR
 - The card's confirm button sends the user's selected answers back to the chat and triggers execution. confirmLabel defaults to "按此思路开始分析".
 
 ## Hard constraints:
-- Do NOT output full dashboards, aggregated charts with real data, or multiple openui blocks. The ONLY allowed visuals are one PlanReviewCard (plus optionally one InsightBox to flag a data gap).
+- Do NOT output full dashboards, aggregated charts with real data, or multiple ginkgo blocks. The ONLY allowed visuals are one PlanReviewCard (plus optionally one InsightBox to flag a data gap).
 - Do NOT fabricate table/column/tool names — only reference what you verified via tools. If required data is missing, state it in the plan and propose an alternative.
 - Keep exploration cheap: a handful of discovery/sampling calls is enough; no full-table aggregation in this phase.`;
 
@@ -395,9 +395,9 @@ The user just sent a message while Plan Mode is active. First perform INTENT SCR
     preamble,
     additionalRules: [
       "Intent Ambiguity Screening: When the user's input is only a source name or too broad to infer a specific analysis goal, introduce the source's capabilities and offer 2-3 recommended angles in plain text; do NOT generate PlanReviewCard until the user clarifies.",
-      "CRITICAL: When a concrete analytical goal is confirmed, you MUST end your response with exactly one ```openui code block whose Root child is a single PlanReviewCard summarizing the plan. Do NOT stop after markdown text.",
+      "CRITICAL: When a concrete analytical goal is confirmed, you MUST end your response with exactly one ```ginkgo code block whose Root child is a single PlanReviewCard summarizing the plan. Do NOT stop after markdown text.",
       "Dual-Termination: You may conclude naturally after generating the PlanReviewCard (or after the text guidance in ambiguous cases), or call `finish_task` to explicitly mark planning completion.",
-      "必须输出确认卡：在明确分析目标的第四部分「澄清点说明」之后，必须紧随 ```openui 代码块输出 PlanReviewCard。绝对不可遗漏代码块。",
+      "必须输出确认卡：在明确分析目标的第四部分「澄清点说明」之后，必须紧随 ```ginkgo 代码块输出 PlanReviewCard。绝对不可遗漏代码块。",
       "Do NOT generate MetricCard/AnalyticsChart/FunnelChart with real aggregated data in this round — those belong to the execution round after user confirmation.",
       "Every clarification question must carry options or a default assumption; unanswered questions will be resolved with the default.",
       "Populate sources/steps with facts you verified via schema discovery or sampling, never invented names.",
@@ -419,7 +419,7 @@ export function getExecuteSystemPrompt(
   methodDetails?: string,
   certifiedMatches?: CertifiedQueryMatch[]
 ): string {
-  const base = getOpenUISystemPrompt(activeSources, schemaDigest, undefined, certifiedMatches);
+  const base = getUiSpecSystemPrompt(activeSources, schemaDigest, undefined, certifiedMatches);
   return `${base}
 ${methodDetailsSection(methodDetails)}
 
@@ -431,14 +431,14 @@ The conversation history contains an analysis plan (PlanReviewCard) the user has
   * Markdown Narrative: ONLY produce the concise "核心结论摘要" (3-5 high-value takeaway bullets with key facts and concrete numbers). STRICTLY FORBIDDEN to draft multi-chapter lengthy articles (like 一、月度趋势... 二、品类下钻...).
   * Visual Component: At most ONE focused component under Root (e.g. \`root = Root([grid])\` with a few MetricCards, or a single compact DataTable / InsightBox). DO NOT use composite multi-zone layouts (like ReportLayout / FocusLayout).
 - **Full Dashboard & Report Mode (完整看板与报告型)**: When the user requests a full review/report or has not restricted the deliverable:
-  * Produce the structured analytical markdown report plus the full \`\`\`openui dashboard following the confirmed steps and chosen visuals.
+  * Produce the structured analytical markdown report plus the full \`\`\`ginkgo dashboard following the confirmed steps and chosen visuals.
 
 - Execute the confirmed plan now: skip re-planning, do not ask further questions. Fetch the real data and deliver according to the deliverable adaptation specification above.
 - Exact Column References: Always reference exact column names in SQL, wrapping any column containing spaces, parentheses, or brackets in double quotes (e.g. \"场景 （对应五大场景，可对应多个）\"). Never truncate or fabricate column headers, and do not use '\\n' for multiline Excel headers (normalized to single spaces).
 - Compact Dashboard Code: Keep the dashboard visual structure clean and focused (typically 1-2 core charts, key metrics, and actionable insights). Avoid overly bloated datasets or sprawling multi-level layouts in the DSL to guarantee the output completes and closes within the token budget.
-- Reasoning Token Budget: In thinking models (e.g. GLM, DeepSeek), keep <think> reasoning concise and lightweight (focus on tool coordination and logic verification). Do NOT draft the full analytical report or verbose markdown inside <think> tags — reserve the output token budget for the final report and the \`\`\`openui dashboard.
-- Dual-Termination: When your analysis and dashboard are complete, you can conclude naturally, or call \`finish_task\` to explicitly confirm execution closure. Note: Output EXACTLY ONE analytical report and EXACTLY ONE \`\`\`openui dashboard code block per response turn; NEVER repeat or output a second duplicate copy after finish_task.
-- Single Output Enforcement: In your execution response, produce exactly ONE analytical report and exactly ONE \`\`\`openui dashboard. If \`finish_task\` is called after the report/dashboard is already written, close with a brief sign-off sentence only.
+- Reasoning Token Budget: In thinking models (e.g. GLM, DeepSeek), keep <think> reasoning concise and lightweight (focus on tool coordination and logic verification). Do NOT draft the full analytical report or verbose markdown inside <think> tags — reserve the output token budget for the final report and the \`\`\`ginkgo dashboard.
+- Dual-Termination: When your analysis and dashboard are complete, you can conclude naturally, or call \`finish_task\` to explicitly confirm execution closure. Note: Output EXACTLY ONE analytical report and EXACTLY ONE \`\`\`ginkgo dashboard code block per response turn; NEVER repeat or output a second duplicate copy after finish_task.
+- Single Output Enforcement: In your execution response, produce exactly ONE analytical report and exactly ONE \`\`\`ginkgo dashboard. If \`finish_task\` is called after the report/dashboard is already written, close with a brief sign-off sentence only.
 - If the user's latest message fundamentally changes or rejects the confirmed plan, do NOT force the old plan — output a REVISED PlanReviewCard instead (planning-mode output contract applies).
 - If the user's latest message is an unrelated new question, just answer it following the normal rules above.`;
 }

@@ -24,7 +24,7 @@ afterEach(() => {
 function seedMessages() {
   return [
     { id: "m1", role: "user", content: "分析各渠道 CAC" },
-    { id: "m2", role: "assistant", content: "```openui\nroot = Root([])\n```" },
+    { id: "m2", role: "assistant", content: "```ginkgo\nroot = Root([])\n```" },
   ];
 }
 

@@ -1,4 +1,4 @@
-import type { AppManifest, AppClientContract } from "@openui-analytics/app-sdk";
+import type { AppManifest, AppClientContract } from "@ginkgo/app-sdk";
 import { ArtifactViewer } from "./client/ArtifactViewer";
 
 export const generalManifest: AppManifest = {

@@ -1,4 +1,4 @@
-import { dashboardStore, toSummary } from "@openui-apps/analytics/server";
+import { dashboardStore, toSummary } from "@ginkgo-apps/analytics/server";
 
 /**
  * GET /api/dashboards?appId= — 收藏列表（摘要，不含 dsl 全文；updatedAt 降序）。

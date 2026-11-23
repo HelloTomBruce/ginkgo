@@ -45,7 +45,7 @@ export function GovernanceSettings({
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `openui-harness-config-${new Date().toISOString().slice(0, 10)}.json`;
+      a.download = `ginkgo-harness-config-${new Date().toISOString().slice(0, 10)}.json`;
       a.click();
       URL.revokeObjectURL(url);
       toast.success("已导出 Harness 配置文件");
@@ -262,7 +262,7 @@ export function GovernanceSettings({
             type="password"
             value={accessToken}
             onChange={(e) => onAccessTokenChange?.(e.target.value)}
-            placeholder="服务端配置 OPENUI_API_AUTH_TOKEN 时必填"
+            placeholder="服务端配置 GINKGO_API_AUTH_TOKEN 时必填"
             className="w-full p-2.5 rounded-lg border border-border bg-surface-sunken font-mono text-xs"
           />
           <p className="text-[10px] text-foreground-faint mt-1">

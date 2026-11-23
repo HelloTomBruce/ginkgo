@@ -49,5 +49,5 @@ jobs:
         if: always()
         with:
           name: tier-b-baselines-${{ github.event.inputs.model || 'scheduled' }}
-          path: packages/openui-llm/src/evals/baselines/
+          path: packages/ginkgo-llm/src/evals/baselines/
           retention-days: 30

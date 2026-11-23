@@ -1,5 +1,5 @@
 -- ========================================================
--- Database: openui_ecommerce
+-- Database: ginkgo_ecommerce
 -- Domain: 电商全链路：交易大盘、品类渠道、店铺履约体验雷达、售后漏斗与订单明细
 -- Components showcased: SpecChart, AnalyticsChart, RadarChart, FunnelChart, DataTable, MetricCard/Grid
 -- ========================================================

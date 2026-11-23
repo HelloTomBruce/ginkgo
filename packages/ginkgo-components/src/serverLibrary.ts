@@ -1,0 +1,473 @@
+import { defineComponent, createLibrary } from "@openuidev/lang-core";
+import { z } from "zod";
+import { ChartSpecSchema } from "@ginkgo/chart-spec";
+
+export const serverRoot = defineComponent({
+  name: "Root",
+  description: "页面顶级布局容器",
+  props: z.object({
+    children: z.array(z.any()).describe("子组件列表"),
+  }),
+  component: () => null,
+});
+
+export const serverReportLayout = defineComponent({
+  name: "ReportLayout",
+  description:
+    "BI 报表布局模板：页头 + KPI 横排区 + 双列图表区 + 全宽明细区 + 结论区。适用于周期性综合复盘（经营/获客/迭代月报季报）；单一主题深钻时直接用 Root 平铺组件",
+  props: z.object({
+    title: z.string().describe("报表标题"),
+    subtitle: z.string().optional().describe("周期或范围说明，如：2026 Q3 · 全渠道"),
+    kpis: z.array(z.any()).optional().describe("KPI 横排区：直接传 MetricCard 数组（模板自动 4 列栅格，勿嵌套 MetricGrid）"),
+    charts: z.array(z.any()).optional().describe("双列图表区：AnalyticsChart/FunnelChart/RadarChart/GaugeProgress 等数组"),
+    detail: z.array(z.any()).optional().describe("全宽明细区：DataTable 数组"),
+    insights: z.array(z.any()).optional().describe("结论区：InsightBox/ActionPlanCard 数组"),
+    controls: z.any().optional().describe("全局控制区：AnalyticsFilterBar 等筛选组件"),
+  }),
+  component: () => null,
+});
+
+export const serverFocusLayout = defineComponent({
+  name: "FocusLayout",
+  description:
+    "深钻归因布局模板：主图区（2/3 宽）+ 侧栏洞察（1/3 窄列）+ 底部明细。适用于单一主题的根因分析与归因（为什么 X 上升/下降）；多主题综合复盘用 ReportLayout",
+  props: z.object({
+    title: z.string().describe("深钻主题标题，如：为什么 Q3 CAC 上升"),
+    subtitle: z.string().optional().describe("聚焦对象或范围说明"),
+    main: z.array(z.any()).optional().describe("主分析区：核心趋势/对比图表数组（AnalyticsChart/FunnelChart/RadarChart）"),
+    side: z.array(z.any()).optional().describe("侧栏洞察（1/3 窄列，仅放紧凑结论件）：InsightBox/GaugeProgress/单个 MetricCard 或 MetricGrid；ActionPlanCard/ActivityTimeline/DataTable 等内容密集组件须放 detail"),
+    detail: z.array(z.any()).optional().describe("底部全宽明细区：DataTable 数组"),
+    controls: z.any().optional().describe("全局控制区：AnalyticsFilterBar 等筛选组件"),
+  }),
+  component: () => null,
+});
+
+export const serverComparisonLayout = defineComponent({
+  name: "ComparisonLayout",
+  description:
+    "左右对比布局模板：带对比对象标签的双栏面板 + 底部结论区。适用于 A/B 测试、两个渠道/仓库/成员/版本间的横向对比；多主题综合复盘用 ReportLayout",
+  props: z.object({
+    title: z.string().describe("对比主题标题"),
+    subtitle: z.string().optional().describe("对比范围或口径说明"),
+    leftLabel: z.string().optional().describe("左栏对比对象名，如：TikTok Ads"),
+    left: z.array(z.any()).optional().describe("左栏内容数组：MetricCard/AnalyticsChart 等"),
+    rightLabel: z.string().optional().describe("右栏对比对象名，如：Google Ads"),
+    right: z.array(z.any()).optional().describe("右栏内容数组"),
+    verdict: z.array(z.any()).optional().describe("底部结论区：InsightBox 数组"),
+    controls: z.any().optional().describe("全局控制区：AnalyticsFilterBar 等筛选组件"),
+  }),
+  component: () => null,
+});
+
+export const serverMonitoringLayout = defineComponent({
+  name: "MonitoringLayout",
+  description:
+    "监控巡检与告警排查模板：包含健康状态指示、异动指标网格、异常日志/事件明细及应急处置建议，适用于系统稳定性复盘、流量异动告警排查",
+  props: z.object({
+    title: z.string().describe("巡检/告警主题标题"),
+    subtitle: z.string().optional().describe("检测范围或周期说明"),
+    status: z.enum(["normal", "warning", "critical"]).optional().describe("整体健康状态"),
+    statusBanner: z.any().optional().describe("顶部状态横幅或核心警报摘要（如 InsightBox）"),
+    controls: z.any().optional().describe("控制筛选区：AnalyticsFilterBar 等"),
+    anomalies: z.array(z.any()).optional().describe("异动指标网格：MetricCard 数组"),
+    details: z.any().optional().describe("异常明细区：DataTable 或 ActivityTimeline"),
+    actions: z.array(z.any()).optional().describe("应急预案与处置建议：ActionPlanCard 或 ActionButton 数组"),
+  }),
+  component: () => null,
+});
+
+export const serverCohortRetentionLayout = defineComponent({
+  name: "CohortRetentionLayout",
+  description:
+    "留存与队列流转分析模板：包含核心留存指标（次留/7日留存）、队列矩阵、衰减曲线及归因结论，适用于用户增长、版本次日/长周期留存复盘",
+  props: z.object({
+    title: z.string().describe("模板标题，如：用户全周期留存追踪"),
+    subtitle: z.string().optional().describe("口径说明或周期"),
+    controls: z.any().optional().describe("控制筛选区：AnalyticsFilterBar 等"),
+    kpis: z.array(z.any()).optional().describe("留存核心指标：次留/7留/30留 MetricCard 数组"),
+    heatmapMatrix: z.any().optional().describe("队列留存矩阵：DataTable 等组件"),
+    decayTrend: z.any().optional().describe("留存衰减趋势走势图：AnalyticsChart 或 ComboChart"),
+    verdict: z.array(z.any()).optional().describe("归因结论区：InsightBox 数组"),
+  }),
+  component: () => null,
+});
+
+export const serverMetricCard = defineComponent({
+  name: "MetricCard",
+  description: "展示单个核心数据指标（KPI）、变化幅度及趋势徽章，支持可选 sparkline 迷你走势图",
+  props: z.object({
+    title: z.string().describe("指标卡片标题"),
+    value: z.union([z.string(), z.number()]).describe("指标核心数值"),
+    change: z.string().optional().describe("环比或同比变化率"),
+    trend: z.enum(["up", "down", "neutral"]).optional().describe("趋势方向"),
+    subtext: z.string().optional().describe("补充说明文本"),
+    sparkline: z.array(z.number()).optional().describe("迷你走势图数值数组，如近7天数据"),
+  }),
+  component: () => null,
+});
+
+export const serverAnalyticsChart = defineComponent({
+  name: "AnalyticsChart",
+  description: "多维数据可视化图表，支持折线图(line)、柱状图(bar)、面积图(area)和饼图(pie)",
+  props: z.object({
+    type: z.enum(["line", "bar", "area", "pie"]).describe("图表类型"),
+    title: z.string().optional().describe("图表标题"),
+    description: z.string().optional().describe("图表副标题或说明"),
+    xAxisKey: z.string().optional().default("name").describe("X轴对应的数据键名"),
+    data: z.array(z.record(z.string(), z.any())).describe("结构化图表数据数组"),
+    series: z.array(
+      z.object({
+        key: z.string().describe("对应数据对象中的字段名"),
+        label: z.string().optional().describe("显示标签"),
+        color: z.string().optional().describe("颜色代码"),
+      })
+    ).optional().describe("数据序列配置"),
+    height: z.number().optional().describe("图表容器高度（像素）"),
+    queryId: z.string().optional().describe("数据查询绑定 ID"),
+  }),
+  component: () => null,
+});
+
+export const serverSpecChart = defineComponent({
+  name: "SpecChart",
+  description:
+    "语义声明图表：不直接给渲染数据，而是声明 ChartSpec（维度 dims×指标 meas×过滤 filters×图形类型 chartType），系统按声明物化数据并可零 LLM 刷新；改 spec.chartType 可换图不换数据。报表统计场景优先用本组件",
+  props: z.object({
+    title: z.string().optional().describe("图表标题（缺省用 spec.title）"),
+    spec: ChartSpecSchema.describe(
+      "ChartSpec 声明对象：dims(维度数组)/meas(指标数组+聚合)/chartType(图形) 必填；filters/sort/limit/style 可选；sourceId 填当前激活数据源 id"
+    ),
+    table: z.string().optional().describe("数据表名（刷新物化用，describe_table 可见的表）"),
+    data: z
+      .array(z.record(z.string(), z.any()))
+      .optional()
+      .describe("物化行数组（生成期由取数结果填充；不要凭空编造数据行）"),
+    height: z.number().optional().describe("图表高度（像素）"),
+  }),
+  component: () => null,
+});
+
+export const serverComboChart = defineComponent({
+  name: "ComboChart",
+  description:
+    "双轴量率复合图：支持柱状图（绝对量，归属左Y轴）与折线图（比率/均值，归属右Y轴）同屏展示，适用于既要看总量又要看转化率或同比的复合场景",
+  props: z.object({
+    title: z.string().optional().describe("图表标题"),
+    description: z.string().optional().describe("图表副标题或口径说明"),
+    xAxisKey: z.string().optional().default("name").describe("X轴对应的数据键名"),
+    data: z.array(z.record(z.string(), z.any())).describe("结构化图表数据数组"),
+    series: z
+      .array(
+        z.object({
+          key: z.string().describe("对应数据对象中的字段名"),
+          label: z.string().optional().describe("显示标签"),
+          type: z.enum(["bar", "line"]).describe("图形类型：bar 为柱状图，line 为折线图"),
+          yAxis: z
+            .enum(["left", "right"])
+            .optional()
+            .describe("所归属的 Y 轴（bar 默认 left，line 默认 right）"),
+          unit: z.string().optional().describe("单位，如 '%' 或 '万'"),
+        })
+      )
+      .describe("系列配置列表"),
+    height: z.number().optional().describe("高度（像素）"),
+    leftAxisUnit: z.string().optional().describe("左 Y 轴单位"),
+    rightAxisUnit: z.string().optional().describe("右 Y 轴单位"),
+  }),
+  component: () => null,
+});
+
+export const serverDataTable = defineComponent({
+  name: "DataTable",
+  description: "交互式明细数据表格，支持前端搜索、列排序和一键导出CSV",
+  props: z.object({
+    title: z.string().optional().describe("表格标题"),
+    columns: z.array(
+      z.object({
+        key: z.string().describe("列字段键名"),
+        header: z.string().describe("列显示表头名称"),
+        align: z.enum(["left", "center", "right"]).optional().describe("对齐方式"),
+      })
+    ).optional().describe("表头定义"),
+    data: z.array(z.record(z.string(), z.any())).describe("行数据数组"),
+    searchable: z.boolean().optional().describe("是否启用搜索框"),
+    queryId: z.string().optional().describe("数据查询绑定 ID"),
+  }),
+  component: () => null,
+});
+
+export const serverRankingList = defineComponent({
+  name: "RankingList",
+  description: "高密排行榜组件，用于展示 Top N 核心实体、名次徽章及占比微进度条",
+  props: z.object({
+    title: z.string().optional().describe("排行榜标题"),
+    subtitle: z.string().optional().describe("副标题或统计周期"),
+    items: z.array(
+      z.object({
+        label: z.string().describe("实体名称或标签"),
+        value: z.union([z.string(), z.number()]).describe("核心数值"),
+        secondary: z.string().optional().describe("辅助说明，如环比变化"),
+        ratio: z.number().optional().describe("0~1 之间的归一化占比（缺省自动计算）"),
+      })
+    ).describe("排名项列表"),
+    maxDisplay: z.number().optional().describe("默认展示条数，默认 5"),
+    valueFormat: z.enum(["number", "currency", "percent", "duration", "text"]).optional().describe("数值格式化类型"),
+  }),
+  component: () => null,
+});
+
+export const serverInsightBox = defineComponent({
+  name: "InsightBox",
+  description: "高亮展示关键分析结论、行动建议或异常警报",
+  props: z.object({
+    type: z.enum(["tip", "info", "warning", "success"]).optional().describe("提示框类型"),
+    title: z.string().optional().describe("提示标题"),
+    content: z.string().describe("提示详细内容与分析洞察"),
+  }),
+  component: () => null,
+});
+
+export const serverMetricGrid = defineComponent({
+  name: "MetricGrid",
+  description: "并排布局多个 MetricCard 指标卡的栅格容器",
+  props: z.object({
+    columns: z.union([z.literal(2), z.literal(3), z.literal(4)]).optional().describe("网格列数"),
+    children: z.array(z.any()).describe("子组件列表"),
+  }),
+  component: () => null,
+});
+
+export const serverAnalyticsFilterBar = defineComponent({
+  name: "AnalyticsFilterBar",
+  description:
+    "交互式筛选控件。声明模式（推荐）：传 filterField {sourceId, field, table} 后选项从数据源字段去重值拉取，选择即联动刷新同页 SpecChart（零 LLM）；演示模式（不传 filterField）：三控件表单 + 提交触发 AI 重新计算",
+  props: z.object({
+    title: z.string().optional().describe("表单标题"),
+    defaultChannel: z.string().optional().describe("默认选中的渠道（演示模式）"),
+    defaultMetric: z.string().optional().describe("默认选中的指标维度（演示模式）"),
+    filterField: z
+      .object({
+        sourceId: z.string().describe("数据源 id（当前激活源）"),
+        field: z.string().describe("筛选字段名（需为同页 SpecChart 的维度/过滤字段）"),
+        table: z.string().describe("数据表名"),
+        label: z.string().optional().describe("展示名（缺省 = field）"),
+      })
+      .optional()
+      .describe("声明模式开关：提供后渲染数据驱动下拉并与 SpecChart 联动"),
+    filterName: z.string().optional().describe("$filter.<name> 写入键名（缺省 = filterField.field）"),
+  }),
+  component: () => null,
+});
+
+export const serverFunnelChart = defineComponent({
+  name: "FunnelChart",
+  description: "业务转化旅程与流失漏斗图，用于获客流程、商机跟进与留存各阶段流失率分析",
+  props: z.object({
+    title: z.string().optional().describe("漏斗图标题"),
+    description: z.string().optional().describe("说明描述"),
+    stages: z.array(
+      z.object({
+        name: z.string().describe("阶段名称"),
+        value: z.number().describe("该阶段数值量"),
+        conversion: z.string().optional().describe("转化率说明"),
+        subtext: z.string().optional().describe("补充说明"),
+      })
+    ).describe("漏斗阶段序列"),
+    unit: z.string().optional().describe("数值单位"),
+  }),
+  component: () => null,
+});
+
+export const serverGaugeProgress = defineComponent({
+  name: "GaugeProgress",
+  description: "目标达成度与核心进度条组件，用于展示年度/季度 KPI、预算消耗进度与超额达成状况",
+  props: z.object({
+    title: z.string().optional().describe("目标指标标题"),
+    description: z.string().optional().describe("副标题或周期说明"),
+    current: z.union([z.number(), z.string()]).describe("当前实际完成数值"),
+    target: z.union([z.number(), z.string()]).describe("预定目标数值"),
+    unit: z.string().optional().describe("指标单位"),
+    subtext: z.string().optional().describe("底部辅助说明"),
+  }),
+  component: () => null,
+});
+
+export const serverActionPlanCard = defineComponent({
+  name: "ActionPlanCard",
+  description: "大模型归因后给出的具体落地措施与优化行动清单，支持交互式点击触发进一步深度拆解",
+  props: z.object({
+    title: z.string().optional().describe("行动建议清单标题"),
+    description: z.string().optional().describe("行动清单背景说明"),
+    actions: z.array(
+      z.object({
+        title: z.string().describe("具体执行措施描述"),
+        priority: z.enum(["high", "medium", "low"]).optional().describe("优先级：high 高优, medium 中优, low 日常"),
+        impact: z.string().optional().describe("预期收益"),
+        owner: z.string().optional().describe("建议责任人"),
+        status: z.enum(["todo", "in_progress", "done"]).optional().describe("状态"),
+      })
+    ).describe("行动建议项列表"),
+  }),
+  component: () => null,
+});
+
+export const serverActivityTimeline = defineComponent({
+  name: "ActivityTimeline",
+  description: "垂直事件时间线，用于展示 GitLab Merge Request 合并历史、版本发版里程碑或业务事件流",
+  props: z.object({
+    title: z.string().optional().describe("时间线标题"),
+    description: z.string().optional().describe("说明描述"),
+    items: z.array(
+      z.object({
+        time: z.string().describe("发生时间或日期"),
+        title: z.string().describe("事件主标题"),
+        desc: z.string().optional().describe("详细描述"),
+        status: z.enum(["success", "warning", "error", "info"]).optional().describe("节点状态"),
+        author: z.string().optional().describe("关联人员或作者"),
+        tag: z.string().optional().describe("分支或版本标签"),
+      })
+    ).describe("时间线事件列表"),
+  }),
+  component: () => null,
+});
+
+export const serverRadarChart = defineComponent({
+  name: "RadarChart",
+  description: "多维能力与指标画像雷达图，用于销售代表综合胜任力、代码仓库质量多维体检与对比",
+  props: z.object({
+    title: z.string().optional().describe("雷达图标题"),
+    description: z.string().optional().describe("图表说明"),
+    data: z.array(z.record(z.string(), z.any())).describe("结构化极坐标数据数组"),
+    angleKey: z.string().optional().default("metric").describe("极坐标维度键名"),
+    series: z.array(
+      z.object({
+        key: z.string().describe("对应数据字段名"),
+        name: z.string().optional().describe("系列名称"),
+        color: z.string().optional().describe("颜色代码"),
+      })
+    ).optional().describe("系列配置"),
+    height: z.number().optional().describe("高度"),
+  }),
+  component: () => null,
+});
+
+export const serverContributionHeatmap = defineComponent({
+  name: "ContributionHeatmap",
+  description: "活跃度与密度热力图，用于研发团队 Commit 活跃度分布、时段流量或高频获客密度分析",
+  props: z.object({
+    title: z.string().optional().describe("热力图标题"),
+    description: z.string().optional().describe("说明描述"),
+    data: z.array(
+      z.object({
+        date: z.string().optional().describe("日期"),
+        day: z.string().optional().describe("星期"),
+        count: z.number().describe("频次数值"),
+        label: z.string().optional().describe("悬浮标签"),
+      })
+    ).describe("热力分布数据点"),
+    color: z.enum(["green", "blue", "purple"]).optional().describe("色系主题"),
+  }),
+  component: () => null,
+});
+
+export const serverActionButton = defineComponent({
+  name: "ActionButton",
+  description: "交互动作按钮，支持触发客户端本地工具执行 (Run)、修改状态 (Set) 或向 Agent 发送提示词 (ToAssistant)",
+  props: z.object({
+    label: z.string().describe("按钮文案"),
+    variant: z.enum(["primary", "secondary", "outline", "success", "danger"]).optional().describe("按钮样式主题"),
+    icon: z.enum(["play", "download", "copy", "link", "zap"]).optional().describe("图标类型"),
+    prompt: z.string().optional().describe("点击后向 AI 发送的分析提问"),
+    action: z.any().optional().describe("结构化动作流配置"),
+  }),
+  component: () => null,
+});
+
+export const serverReactiveSimulator = defineComponent({
+  name: "ReactiveSimulator",
+  description: "响应式预算模拟与本地实时试算器，集成响应式状态绑定、表单约束校验与客户端一键导出",
+  props: z.object({
+    title: z.string().optional().describe("试算器标题"),
+    defaultBudget: z.number().optional().describe("默认模拟预算金额"),
+    channelName: z.string().optional().describe("聚焦分析渠道"),
+    currentCac: z.number().optional().describe("基准获客成本 CAC"),
+    cvrRate: z.number().optional().describe("预估转化率"),
+  }),
+  component: () => null,
+});
+
+export const serverPlanReviewCard = defineComponent({
+  name: "PlanReviewCard",
+  description:
+    "分析规划确认卡（Plan-first 规划阶段专用）：复述问题 + 数据基础徽标 + 分步思路（含图表选型）+ 澄清问题选项，用户点选后一键确认触发执行；仅用于规划轮次，不要在执行轮次产出",
+  props: z.object({
+    title: z.string().describe("规划标题，如：渠道 CAC 分析思路确认"),
+    question: z.string().optional().describe("对用户原始问题的复述"),
+    sources: z.array(z.string()).optional().describe("数据基础徽标：源/表/字段或已验证的采样结论"),
+    steps: z
+      .array(
+        z.object({
+          title: z.string().describe("步骤标题"),
+          detail: z.string().optional().describe("步骤说明"),
+          chart: z.string().optional().describe("该步骤计划使用的可视化组件，如 FunnelChart / ReportLayout + MetricCard"),
+        })
+      )
+      .min(1)
+      .describe("有序分析步骤"),
+    clarifications: z
+      .array(
+        z.object({
+          question: z.string().describe("澄清问题"),
+          options: z.array(z.string()).optional().describe("可选答案，渲染为可点选 chips"),
+          default: z.string().optional().describe("默认假设：用户未选择时按此执行"),
+        })
+      )
+      .optional()
+      .describe("不明确的点；每题必须带 options 或 default"),
+    confirmLabel: z.string().optional().describe("确认按钮文案，默认「按此思路开始分析」"),
+    methods: z
+      .array(z.string())
+      .optional()
+      .describe("本规划采用的方法卡 id 列表（如 ['pareto','trend']，1-2 个）；服务端据此注入方法详情，必须与标题/步骤中出现的方法一致"),
+  }),
+  component: () => null,
+});
+
+export const serverLibrary = createLibrary({
+  components: [
+    serverRoot,
+    serverReportLayout,
+    serverFocusLayout,
+    serverComparisonLayout,
+    serverMonitoringLayout,
+    serverCohortRetentionLayout,
+    serverMetricCard,
+    serverAnalyticsChart,
+    serverSpecChart,
+    serverComboChart,
+    serverDataTable,
+    serverRankingList,
+    serverInsightBox,
+    serverMetricGrid,
+    serverAnalyticsFilterBar,
+    serverFunnelChart,
+    serverGaugeProgress,
+    serverActionPlanCard,
+    serverActivityTimeline,
+    serverRadarChart,
+    serverContributionHeatmap,
+    serverActionButton,
+    serverReactiveSimulator,
+    serverPlanReviewCard,
+  ],
+  root: "Root",
+});
+
+/** 服务端 DSL 序列化（活看板刷新回填用）：与 prompt/schema 同源，无客户端依赖 */
+export { jsonToOpenUI as jsonToUiSpec } from "@openuidev/lang-core";
+
+
+// RSC/Node 安全的解析器入口（lang-core 纯实现，无 React 运行时）：
+// 供 API 路由（如看板刷新）使用，替代 @openuidev/react-lang 根入口——
+// 后者在模块作用域调用 createContext，RSC 环境会直接 500。
+export { createParser } from "@openuidev/lang-core";

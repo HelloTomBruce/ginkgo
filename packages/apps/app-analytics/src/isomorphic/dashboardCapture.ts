@@ -10,7 +10,7 @@
  * 见 DocMind「看板留存与分享」M3 节与「个人 BI Agent 能力演进路线图」P2-A。
  */
 import { createParser } from "@openuidev/react-lang";
-import { analyticsLibrary } from "@openui-analytics/components";
+import { analyticsLibrary } from "@ginkgo/components";
 import { inferTransform, type TransformSpec } from "./transforms";
 import { inferTimeMacrosInObject } from "./timeMacros";
 // 纯函数下沉到 queryRows（刷新端不经本模块间接引入 React 运行时）；

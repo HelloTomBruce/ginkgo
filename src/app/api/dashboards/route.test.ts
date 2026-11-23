@@ -1,11 +1,11 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { GET, POST } from "./route";
-import { dashboardStore } from "@openui-apps/analytics/server";
-import type { DashboardRecord } from "@openui-apps/analytics/server";
+import { dashboardStore } from "@ginkgo-apps/analytics/server";
+import type { DashboardRecord } from "@ginkgo-apps/analytics/server";
 
 /** 接缝 mock：路由层只验证协议/状态码/载荷形态，落盘行为由存储层单测覆盖 */
-vi.mock("@openui-apps/analytics/server", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@openui-apps/analytics/server")>();
+vi.mock("@ginkgo-apps/analytics/server", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@ginkgo-apps/analytics/server")>();
   return {
     ...actual,
     dashboardStore: {
@@ -43,7 +43,7 @@ afterEach(() => {
 
 describe("GET /api/dashboards", () => {
   it("返回摘要列表（不含 dsl）", async () => {
-    const { toSummary } = await import("@openui-apps/analytics/server");
+    const { toSummary } = await import("@ginkgo-apps/analytics/server");
     vi.mocked(dashboardStore.list).mockResolvedValueOnce([toSummary(RECORD)]);
     const res = await GET(new Request("http://localhost/api/dashboards"));
     expect(res.status).toBe(200);

@@ -44,10 +44,10 @@ vi.mock("@ai-sdk/react", () => ({
   useChat: vi.fn(() => buildUseChatResult([DEFAULT_WELCOME_MESSAGE])),
 }));
 
-// mock OpenUIRenderer：守护测试关注外壳结构，不加载 openui 渲染生态
-vi.mock("@/components/OpenUIRenderer", () => ({
-  OpenUIRenderer: ({ content }: { content: string }) => (
-    <div data-testid="openui-renderer">{content}</div>
+// mock UiSpecRenderer：守护测试关注外壳结构，不加载 ginkgo 渲染生态
+vi.mock("@/components/UiSpecRenderer", () => ({
+  UiSpecRenderer: ({ content }: { content: string }) => (
+    <div data-testid="ginkgo-renderer">{content}</div>
   ),
 }));
 
@@ -207,7 +207,7 @@ describe("ChatDashboard 守护测试（重构行为锁定）", () => {
   });
 
   it("上下文用量条：当用户配置了自定义 contextWindow（如 1024000）时，依自定义容量渲染分母", async () => {
-    localStorage.setItem("openui_llm_context_window", "1024000");
+    localStorage.setItem("ginkgo_llm_context_window", "1024000");
     vi.mocked(useChat).mockImplementation(
       () =>
         buildUseChatResult(
@@ -602,7 +602,7 @@ describe("ChatDashboard 守护测试（重构行为锁定）", () => {
         id: "a1",
         role: "assistant" as const,
         content:
-          '思路如下：\n```openui\nroot = Root([plan])\nplan = PlanReviewCard("CAC 分析思路确认", "各渠道对比", [], [{"title":"取数"}], [])\n```',
+          '思路如下：\n```ginkgo\nroot = Root([plan])\nplan = PlanReviewCard("CAC 分析思路确认", "各渠道对比", [], [{"title":"取数"}], [])\n```',
       },
     ];
     vi.mocked(useChat).mockImplementation(

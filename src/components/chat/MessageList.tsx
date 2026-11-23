@@ -2,9 +2,9 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Message } from "@ai-sdk/react";
-import type { AppMessageExtensions } from "@openui-analytics/app-sdk";
+import type { AppMessageExtensions } from "@ginkgo/app-sdk";
 import { ArrowDown, ArrowUp, Loader2, Sparkles, Printer, Star, GitFork, RotateCcw, Square, Play, Brain, ListOrdered, X, Pin, CheckCircle2, AlertTriangle } from "lucide-react";
-import { OpenUIRenderer } from "@/components/OpenUIRenderer";
+import { UiSpecRenderer } from "@/components/UiSpecRenderer";
 import {
   dedupeContentBlocks,
   type ContentBlock,
@@ -16,8 +16,8 @@ export type { ToolInvocationState } from "./contentBlocks";
 import { Hint } from "@/components/ui/hint";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MarkdownContent } from "./MarkdownContent";
-import { extractOpenUI } from "@/lib/extractOpenUI";
-import { captureDashboardQueries } from "@openui-apps/analytics/isomorphic/dashboardCapture";
+import { extractUiSpec } from "@/lib/extractUiSpec";
+import { captureDashboardQueries } from "@ginkgo-apps/analytics/isomorphic/dashboardCapture";
 import { toast } from "@/lib/toast";
 import type { FavoriteDashboardInput, FavoriteResult } from "@/hooks/useDashboards";
 
@@ -231,7 +231,7 @@ const ReasoningViewer = React.memo(function ReasoningViewer({
 
 /**
  * 单条消息（memo 化）。流式期间仅最后一条消息的 content/parts 变化，
- * 历史消息跳过重渲染与 openui DSL 的重复 AST 解析。
+ * 历史消息跳过重渲染与 ginkgo DSL 的重复 AST 解析。
  */
 const MessageItem = React.memo(function MessageItem({
   msg,
@@ -304,12 +304,12 @@ const MessageItem = React.memo(function MessageItem({
         } else {
           flushTools();
           if (part.type === "text" && typeof part.text === "string") {
-            const { textPart, openuiPart, isClosed } = extractOpenUI(part.text);
+            const { textPart, uiSpecPart, isClosed } = extractUiSpec(part.text);
             result.push({
               type: "text",
               id: `text-${idx}`,
               textPart,
-              openuiPart,
+              uiSpecPart,
               isClosed,
               isLast: idx === parts.length - 1,
             });
@@ -330,7 +330,7 @@ const MessageItem = React.memo(function MessageItem({
     }
 
     // 2. 兜底回退：兼容无 parts 消息（历史会话或非流式消息）
-    const { textPart, openuiPart, isClosed } = extractOpenUI(rawContent);
+    const { textPart, uiSpecPart, isClosed } = extractUiSpec(rawContent);
     const result: ContentBlock[] = [];
     const visibleTools = toolInvocations?.filter(
       (t) => !CONTROL_PLANE_TOOLS.has(t.toolName)
@@ -342,12 +342,12 @@ const MessageItem = React.memo(function MessageItem({
         tools: visibleTools,
       });
     }
-    if (textPart || openuiPart || !toolInvocations || toolInvocations.length === 0) {
+    if (textPart || uiSpecPart || !toolInvocations || toolInvocations.length === 0) {
       result.push({
         type: "text",
         id: "fallback-text",
         textPart,
-        openuiPart,
+        uiSpecPart,
         isClosed,
         isLast: true,
       });
@@ -411,7 +411,7 @@ const MessageItem = React.memo(function MessageItem({
         lastBlock.tools.every((t) => t.state === "result")) ||
         (lastBlock?.type === "text" &&
           !lastBlock.textPart.trim() &&
-          !lastBlock.openuiPart &&
+          !lastBlock.uiSpecPart &&
           blocks.length > 1 &&
           blocks[blocks.length - 2]?.type === "tools")
     );
@@ -430,10 +430,10 @@ const MessageItem = React.memo(function MessageItem({
   const hasMainContent = blocks.some(
     (b) =>
       b.type === "text" &&
-      (Boolean(b.textPart && b.textPart.trim()) || Boolean(b.openuiPart))
+      (Boolean(b.textPart && b.textPart.trim()) || Boolean(b.uiSpecPart))
   );
-  const hasOpenuiPart = blocks.some(
-    (b) => b.type === "text" && Boolean(b.openuiPart)
+  const hasGinkgoPart = blocks.some(
+    (b) => b.type === "text" && Boolean(b.uiSpecPart)
   );
 
   return (
@@ -499,7 +499,7 @@ const MessageItem = React.memo(function MessageItem({
 
           // text block
           const hasText = Boolean(block.textPart && block.textPart.trim());
-          if (!hasText && !block.openuiPart && !(isStreaming && block.isLast)) {
+          if (!hasText && !block.uiSpecPart && !(isStreaming && block.isLast)) {
             return null;
           }
 
@@ -511,11 +511,11 @@ const MessageItem = React.memo(function MessageItem({
                     content={isStreaming && block.isLast ? block.textPart.trimStart() : block.textPart.trim()}
                     isStreaming={isStreaming && block.isLast}
                   />
-                  {isStreaming && block.isLast && !block.openuiPart && (
+                  {isStreaming && block.isLast && !block.uiSpecPart && (
                     <span className="inline-block w-1.5 h-3.5 bg-info-solid animate-pulse ml-1 align-middle rounded-xs" />
                   )}
                 </div>
-              ) : isStreaming && block.isLast && !block.openuiPart && !isWaitingAfterTools ? (
+              ) : isStreaming && block.isLast && !block.uiSpecPart && !isWaitingAfterTools ? (
                 <div className="no-print leading-relaxed">
                   <span className="inline-block w-1.5 h-3.5 bg-info-solid animate-pulse rounded-xs" />
                 </div>
@@ -523,7 +523,7 @@ const MessageItem = React.memo(function MessageItem({
 
               {/* 规划确认兜底（应用声明 messageExtensions.planConfirm）：模型输出文字规划但遗漏
                   PlanReviewCard DSL 时渲染确认按钮，patterns 为应用 prompt 对输出话术的硬性要求 */}
-              {!block.openuiPart && !isStreaming && block.isLast &&
+              {!block.uiSpecPart && !isStreaming && block.isLast &&
                 messageExtensions?.planConfirm &&
                 messageExtensions.planConfirm.patterns.some((p) => rawContent.includes(p)) && (
                 <div className="no-print mt-3 pt-3 border-t border-border flex items-center justify-between">
@@ -541,8 +541,8 @@ const MessageItem = React.memo(function MessageItem({
                 </div>
               )}
 
-              {/* 流式渐进式渲染 OpenUI Lang 界面 */}
-              {block.openuiPart && (
+              {/* 流式渐进式渲染 UiSpec Lang 界面 */}
+              {block.uiSpecPart && (
                 <div className="mt-5 space-y-4">
                   <div className="no-print flex items-center justify-between text-xs font-semibold text-foreground-faint uppercase tracking-wider">
                       <div className="flex items-center gap-2">
@@ -568,7 +568,7 @@ const MessageItem = React.memo(function MessageItem({
                         <Hint label={isPinned ? "已钉选在右侧画布" : "钉选到右侧画布协同查看"}>
                           <button
                             type="button"
-                            onClick={() => onPinDashboard(msg.id, block.openuiPart)}
+                            onClick={() => onPinDashboard(msg.id, block.uiSpecPart)}
                             disabled={isStreaming}
                             aria-label={isPinned ? `已钉选（消息 ${msg.id}）` : `钉选看板（消息 ${msg.id}）`}
                             className={`flex items-center gap-1 text-[10px] normal-case tracking-normal px-1.5 py-0.5 rounded transition-colors disabled:opacity-40 disabled:pointer-events-none ${
@@ -630,8 +630,8 @@ const MessageItem = React.memo(function MessageItem({
                     </div>
                   </div>
 
-                  <OpenUIRenderer
-                    content={block.openuiPart}
+                  <UiSpecRenderer
+                    content={block.uiSpecPart}
                     isStreaming={isStreaming && block.isLast}
                     onAction={onRendererAction}
                   />
@@ -651,7 +651,7 @@ const MessageItem = React.memo(function MessageItem({
                           type="button"
                           onClick={() =>
                             onRendererAction(
-                              "上面的 ```openui 看板代码由于达到长度上限被截断未闭合。请继续输出未完成的看板代码，确保完整闭合并渲染。"
+                              "上面的 ```ginkgo 看板代码由于达到长度上限被截断未闭合。请继续输出未完成的看板代码，确保完整闭合并渲染。"
                             )
                           }
                           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-foreground text-background hover:bg-foreground-strong transition-colors shadow-2xs cursor-pointer select-none"
@@ -670,7 +670,7 @@ const MessageItem = React.memo(function MessageItem({
 
         {/* 终态闭环兜底（应用声明 messageExtensions.completion）：finish_task 已执行但无看板代码时，
             渲染总结与一键生成按钮；未声明的应用 finish_task 总结直接以消息文本交付 */}
-        {messageExtensions?.completion && !hasOpenuiPart && !isStreaming && finishSummary && (
+        {messageExtensions?.completion && !hasGinkgoPart && !isStreaming && finishSummary && (
           <div className="no-print mt-3 p-3.5 rounded-xl border border-success-border bg-success-soft/30 space-y-2.5">
             <div className="flex items-center gap-2 text-xs font-semibold text-success-fg">
               <CheckCircle2 className="w-4 h-4 text-success-fg shrink-0" />
@@ -872,7 +872,7 @@ export function MessageList({
     if (!hasMessages) return;
     // 首次即刻滚到底部
     scrollToBottom("auto");
-    // 延后微调（等待 Markdown 与 OpenUI 卡片计算高度）
+    // 延后微调（等待 Markdown 与 UiSpec 卡片计算高度）
     const raf = requestAnimationFrame(() => {
       scrollToBottom("auto");
       updateScrollState();
@@ -983,8 +983,8 @@ export function MessageList({
       if (!onFavoriteDashboard) return;
       const idx = messages.findIndex((m) => m.id === msgId);
       if (idx < 0) return;
-      const { openuiPart } = extractOpenUI(messages[idx].content);
-      if (!openuiPart) return;
+      const { uiSpecPart } = extractUiSpec(messages[idx].content);
+      if (!uiSpecPart) return;
 
       // 向前找最近一条用户提问作为「重新分析」种子
       let prompt: string | undefined;
@@ -1011,7 +1011,7 @@ export function MessageList({
           .map((p) => p.toolInvocation);
       }
       const capture = captureDashboardQueries(
-        openuiPart,
+        uiSpecPart,
         toolInvocations,
         activeSources ?? []
       );
@@ -1020,7 +1020,7 @@ export function MessageList({
       setPendingFavoriteId(msgId);
       try {
         const res = await onFavoriteDashboard({
-          dsl: openuiPart,
+          dsl: uiSpecPart,
           prompt,
           sourceNames: activeSources?.map((s) => s.name),
           origin: { messageId: msgId },

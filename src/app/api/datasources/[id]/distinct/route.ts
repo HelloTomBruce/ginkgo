@@ -1,5 +1,5 @@
 import { datasources } from "@/lib/datasources";
-import { getDistinctValues } from "@openui-apps/analytics/server";
+import { getDistinctValues } from "@ginkgo-apps/analytics/server";
 
 /**
  * GET /api/datasources/:id/distinct?field=xxx&table=yyy — 字段去重值（筛选器选项）。

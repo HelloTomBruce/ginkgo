@@ -7,7 +7,7 @@ import {
   DISTINCT_TTL_MS,
   type DistinctGateway,
 } from "./distinctValues";
-import type { DynamicSourceConfig, McpConnection } from "@openui-analytics/datasources";
+import type { DynamicSourceConfig, McpConnection } from "@ginkgo/datasources";
 
 /**
  * distinct 拉取单元测试：TTL 缓存命中/过期、200 封顶哨兵、参数白名单、

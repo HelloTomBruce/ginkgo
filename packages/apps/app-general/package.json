@@ -1,5 +1,5 @@
 {
-  "name": "@openui-apps/general",
+  "name": "@ginkgo-apps/general",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -12,8 +12,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@openui-analytics/app-sdk": "workspace:*",
-    "@openui-analytics/sandbox": "workspace:*"
+    "@ginkgo/app-sdk": "workspace:*",
+    "@ginkgo/sandbox": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5",

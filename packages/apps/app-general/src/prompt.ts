@@ -1,6 +1,6 @@
-import type { AppServerContext } from "@openui-analytics/app-sdk";
+import type { AppServerContext } from "@ginkgo/app-sdk";
 // 子入口 import：主入口 re-export 了含 Node 内置模块的 tools，会污染客户端 bundle
-import { sandboxToolsPromptSection } from "@openui-analytics/sandbox/prompt";
+import { sandboxToolsPromptSection } from "@ginkgo/sandbox/prompt";
 
 /**
  * 通用智能助手自治的系统提示词
@@ -9,7 +9,7 @@ import { sandboxToolsPromptSection } from "@openui-analytics/sandbox/prompt";
  * 1. 纯粹的通用智能助理定位，专注于代码、方案、知识与日常问题解答；
  * 2. 严禁强加数据库探查、SQL 或 BI 图表逻辑；
  * 3. 完美适配 Plan（先出方案规划）与 Build（直接构建交付）双模式。
- * 工具说明段由 openui-sandbox 能力包供给，preset/permission 与 getTools
+ * 工具说明段由 ginkgo-sandbox 能力包供给，preset/permission 与 getTools
  * 装配同源判定（plan → readonly 只读档，execute/direct → full）。
  */
 export function buildGeneralSystemPrompt(ctx?: AppServerContext): string {

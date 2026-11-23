@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { FileSpreadsheet, Loader2, Upload } from "lucide-react";
-import type { FileSourceManifest } from "@openui-analytics/datasources";
+import type { FileSourceManifest } from "@ginkgo/datasources";
 import { authHeaders } from "@/lib/auth";
 import { useDatasourceList } from "./useDatasources";
 

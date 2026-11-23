@@ -16,10 +16,10 @@
  */
 import {
   createParser,
-  jsonToOpenUI,
+  jsonToUiSpec,
   serverLibrary,
-} from "@openui-analytics/components/server";
-import { SOURCE_ID_RE } from "@openui-analytics/chart-spec";
+} from "@ginkgo/components/server";
+import { SOURCE_ID_RE } from "@ginkgo/chart-spec";
 import type { DashboardRecord, DashboardQuery } from "./dashboardStore";
 
 /** 目标源信息（DynamicSourceConfig 的结构子集，便于测试注入） */
@@ -45,7 +45,7 @@ interface SpecNodeLike {
   props?: unknown;
 }
 
-/** 递归替换 DSL 中 SpecChart 的 spec.sourceId（jsonToOpenUI 由调用方序列化回写） */
+/** 递归替换 DSL 中 SpecChart 的 spec.sourceId（jsonToUiSpec 由调用方序列化回写） */
 function rewriteSpecSourceIds(
   root: unknown,
   targetSourceId: string
@@ -125,7 +125,7 @@ export function retargetTemplate(
         const result = rewriteSpecSourceIds(parsed.root, targetSourceId);
         sawSpecChart = result.sawSpecChart;
         if (result.changed) {
-          dsl = jsonToOpenUI(parsed.root, serverLibrary);
+          dsl = jsonToUiSpec(parsed.root, serverLibrary);
         }
       } else {
         dslInvalid = true;
