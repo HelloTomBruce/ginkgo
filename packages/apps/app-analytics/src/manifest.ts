@@ -4,6 +4,7 @@ import { SourcePicker } from "./client/SourcePicker";
 import { resolveMethodologyPresets } from "./client/methodologyPresets";
 import { MethodologyModal } from "./client/MethodologyModal";
 import { ComponentCatalogModal } from "./client/ComponentCatalogModal";
+import { CrossSourceSettings } from "./client/CrossSourceSettings";
 
 export const analyticsManifest: AppManifest = {
   id: "analytics",
@@ -59,6 +60,15 @@ export const analyticsClient: AppClientContract = {
   ],
   // 消息内看板工具条：三项操作全开（general 等其他应用未声明则不渲染操作按钮）
   dashboardToolbar: { title: "动态看板", pin: true, favorite: true, exportPdf: true },
+  // 设置中心应用分区：跨源映射为本应用领域自有配置（平台级数据源/模型配置归宿主）
+  settingsSections: [
+    {
+      key: "cross-source",
+      label: "跨源映射",
+      icon: "Link2",
+      Component: CrossSourceSettings,
+    },
+  ],
   // 消息区扩展：patterns 与 prompt.ts 对模型输出话术的硬性要求同源维护
   messageExtensions: {
     planConfirm: {

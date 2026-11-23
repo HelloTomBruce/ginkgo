@@ -79,6 +79,7 @@ packages/apps/app-<id>/
 | `InputAccessoryComponent` | | 输入栏挂件插槽（如 analytics 的数据源选择器） |
 | `sidebarTabs` | | 侧栏扩展 Tab；不提供 `Component` 时按 key 借用宿主内置面板（`dashboards` 收藏库 / `presets` 推荐），提供则应用完全自治渲染 |
 | `sidebarQuickActions` | | 侧栏底部快捷操作：`onClick` 应用自治；**`Component` 弹层插槽**（`{ open, onClose }`，宿主统一管理 open 状态——方法论查看器等）；内置能力 key `component-catalog` 保持宿主解析 |
+| `settingsSections` | | 设置中心应用分区：宿主在平台 tab（模型/数据源/…）之后按声明追加，仅渲染当前应用的分区；Props 为 `AppSettingsSectionProps`（`appId` + 宿主签发的带鉴权 `request`），内容与持久化应用自治（即时保存语义，不经宿主底部「保存配置」）。平台级、跨应用共享的配置（模型/数据源/MCP）归宿主与能力包，不在此声明 |
 | `dashboardToolbar` | | 消息内看板区块工具条能力声明（`title`/`pin`/`favorite`/`exportPdf`）；未声明的应用不渲染操作按钮 |
 | `messageExtensions` | | 消息区扩展声明：`planConfirm`（patterns 子串匹配 → 确认按钮）/ `completion`（finish_task 后无看板代码的总结卡）/ `toolSettledHint`（工具完成过渡文案）；未声明的应用全部中性渲染 |
 | `hasWorkspace` / `hasInputAccessory` | | 标志位（快速判定，避免取组件判空） |

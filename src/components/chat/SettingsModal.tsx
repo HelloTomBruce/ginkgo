@@ -15,7 +15,10 @@ import {
   Zap,
   ShieldCheck,
   Sparkles,
+  Settings2,
+  icons,
 } from "lucide-react";
+import type { AppSettingsSectionSpec } from "@ginkgo/app-sdk";
 import {
   Select,
   SelectContent,
@@ -42,6 +45,8 @@ import { DatasourceSettings } from "./datasources/DatasourceSettings";
 import { McpSettings } from "./mcp/McpSettings";
 import { EngineSettings } from "./engine/EngineSettings";
 import { GovernanceSettings } from "./governance/GovernanceSettings";
+import { authedFetch } from "@/lib/auth";
+import { DEFAULT_APP_ID } from "@/lib/apps/registry";
 import {
   CUSTOM_PROVIDER_ID,
   LLM_PROVIDER_PRESETS,
@@ -99,6 +104,11 @@ export interface SettingsModalProps {
   onSaveProvider?: (provider: ConfiguredProvider) => void;
   onDeleteProvider?: (id: string) => void;
   onSwitchActiveModel?: (providerId: string, model: string) => void;
+
+  /** 当前应用 ID（应用分区 Props 注入） */
+  appId?: string;
+  /** 当前应用声明的设置分区（client.settingsSections）；空 = 仅平台 tab */
+  appSections?: AppSettingsSectionSpec[];
 }
 
 type SettingsTab = "model" | "datasources" | "mcp" | "engine" | "governance";
@@ -114,6 +124,29 @@ const SETTINGS_TABS: {
   { id: "engine", label: "引擎调度", Icon: Zap },
   { id: "governance", label: "治理观测", Icon: ShieldCheck },
 ];
+
+/**
+ * 设置中心应用分区 tab（client.settingsSections 声明）：id 加 app: 命名空间
+ * 与平台 tab 隔离；icon 为 Lucide 图标名，宿主按名解析（未识别回落 Settings2）。
+ */
+function appSectionTabs(
+  sections: AppSettingsSectionSpec[]
+): { id: string; label: string; Icon: React.ComponentType<{ className?: string }>; section: AppSettingsSectionSpec }[] {
+  return sections.map((section) => {
+    const named =
+      typeof section.icon === "string"
+        ? (icons as Record<string, React.ComponentType<{ className?: string }>>)[
+            section.icon
+          ]
+        : undefined;
+    return {
+      id: `app:${section.key}`,
+      label: section.label,
+      Icon: named ?? Settings2,
+      section,
+    };
+  });
+}
 
 /** 协议 + Base URL 字段 */
 function EndpointFields({
@@ -561,8 +594,12 @@ export function SettingsModal({
   activeModel,
   onSaveProvider,
   onDeleteProvider,
+  /** 当前应用 ID（应用分区 Props 注入） */
+  appId,
+  /** 当前应用声明的设置分区（client.settingsSections）；空 = 仅平台 tab */
+  appSections = [],
 }: SettingsModalProps) {
-  const [activeTab, setActiveTab] = useState<SettingsTab>("model");
+  const [activeTab, setActiveTab] = useState<string>("model");
   const { presets, loading } = useProviderCatalog();
 
   // 是否处于提供商添加 / 编辑状态
@@ -685,11 +722,14 @@ export function SettingsModal({
 
         <Tabs
           value={activeTab}
-          onValueChange={(v) => setActiveTab(v as SettingsTab)}
+          onValueChange={setActiveTab}
           className="gap-4"
         >
           <TabsList className="w-full h-auto p-1 text-xs font-medium bg-muted flex overflow-x-auto no-scrollbar">
-            {SETTINGS_TABS.map(({ id, label, Icon }) => (
+            {[
+              ...SETTINGS_TABS,
+              ...appSectionTabs(appSections),
+            ].map(({ id, label, Icon }) => (
               <TabsTrigger
                 key={id}
                 value={id}
@@ -1299,6 +1339,21 @@ export function SettingsModal({
               onAccessTokenChange={onAccessTokenChange}
             />
           </TabsContent>
+
+          {/* 应用分区（client.settingsSections 声明）：内容与持久化应用自治，
+              即时保存不经底部「保存配置」；请求走宿主签发的带鉴权通道 */}
+          {appSectionTabs(appSections).map(({ id, section }) => (
+            <TabsContent
+              key={id}
+              value={id}
+              className="max-h-[60vh] overflow-y-auto pr-0.5 mt-0"
+            >
+              <section.Component
+                appId={appId ?? DEFAULT_APP_ID}
+                request={authedFetch}
+              />
+            </TabsContent>
+          ))}
         </Tabs>
 
         <div className="flex justify-end gap-2 pt-2 border-t border-border-subtle">

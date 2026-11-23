@@ -100,6 +100,32 @@ export interface AppSidebarQuickActionSpec {
   Component?: ComponentType<{ open: boolean; onClose: () => void }>;
 }
 
+/** 宿主注入给设置中心应用分区的 Props */
+export interface AppSettingsSectionProps {
+  /** 当前应用 ID */
+  appId: string;
+  /**
+   * 宿主签发的请求函数：语义同全局 fetch，并自动附加部署鉴权头
+   * （网关鉴权模式下 /api/* 须携带访问令牌，令牌存储归宿主，应用包不感知）。
+   * 分区的读写请求一律经此发起，勿直接调用 fetch。
+   */
+  request: (path: string, init?: RequestInit) => Promise<Response>;
+  /** 其它扩展 Props */
+  [key: string]: unknown;
+}
+
+/**
+ * 设置中心应用分区声明：宿主设置弹窗在平台 tab 之后按声明追加，仅渲染当前应用的分区。
+ * 分区内容与持久化由应用完全自治（即时保存语义，不经宿主底部「保存配置」）。
+ */
+export interface AppSettingsSectionSpec {
+  key: string;
+  label: string;
+  icon?: string;
+  /** 分区内容组件 */
+  Component: ComponentType<AppSettingsSectionProps>;
+}
+
 /**
  * 画布钉选载荷（平台渲染基建概念）：宿主把消息内看板区块钉选到右侧
  * 工作台时传递的数据，由应用的工作台插槽组件消费。
@@ -194,6 +220,13 @@ export interface AppClientContract {
 
   /** 侧边栏底部操作列表 */
   sidebarQuickActions?: AppSidebarQuickActionSpec[];
+
+  /**
+   * 设置中心应用分区插槽：宿主在平台 tab（模型/数据源/…）之后按声明追加，
+   * 仅渲染当前应用声明的分区。平台级、跨应用共享的配置（模型、数据源、MCP）
+   * 归宿主与能力包，不在此声明；应用领域自有配置（如跨源映射）经此提供界面。
+   */
+  settingsSections?: AppSettingsSectionSpec[];
 
   /**
    * 消息内看板区块的工具条能力声明（能力注入）：

@@ -404,6 +404,13 @@ export {
   handleCreateFromTemplate,
   type DashboardRouteDeps,
 } from "./dashboardRoutes";
+// 跨源映射设置：宿主 /api/cross-source 为薄壳，入参校验与注册表读写在此自治
+export {
+  handleListCrossSource,
+  handleReplaceCrossSource,
+  type CrossSourceRouteDeps,
+  type CrossSourceSettingsPayload,
+} from "./crossSourceRoutes";
 export type {
   DashboardOrigin,
   DashboardQuery,

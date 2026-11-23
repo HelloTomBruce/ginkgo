@@ -1195,6 +1195,9 @@ export default function ChatDashboard() {
           onSaveProvider={saveProvider}
           onDeleteProvider={deleteProvider}
           onSwitchActiveModel={switchActiveModel}
+          // 设置中心应用分区：当前应用经 client.settingsSections 声明（未声明则仅平台 tab）
+          appId={activeAppId}
+          appSections={activeApp.client.settingsSections}
           providerId={providerId}
           apiKey={apiKey}
           baseURL={baseURL}

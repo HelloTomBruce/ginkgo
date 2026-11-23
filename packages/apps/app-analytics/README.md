@@ -5,8 +5,8 @@ Ginkgo 平台的**深度应用**范例：多源数据探查、指标计算、深
 
 ## 包结构
 
-- `src/manifest.ts` — manifest + 客户端插槽声明：AnalysisCanvas 工作台（`workspaceView: "canvas"`）/ SourcePicker 输入挂件 / 看板+推荐侧栏 / 方法论快捷动作（`Component` 弹层）/ `dashboardToolbar`（看板操作能力）/ `messageExtensions`（规划确认 + 终态总结卡 + 过渡文案）/ `resolvePresetQueries`（方法卡合并集）
-- `src/client/` — 插槽组件与自持 UI：AnalysisCanvas / SourcePicker / MethodologyModal / `methodologyPresets.ts`（推荐 resolver，拉 `/api/methodology` 合并卡集）
+- `src/manifest.ts` — manifest + 客户端插槽声明：AnalysisCanvas 工作台（`workspaceView: "canvas"`）/ SourcePicker 输入挂件 / 看板+推荐侧栏 / 方法论快捷动作（`Component` 弹层）/ `settingsSections`（跨源映射设置分区）/ `dashboardToolbar`（看板操作能力）/ `messageExtensions`（规划确认 + 终态总结卡 + 过渡文案）/ `resolvePresetQueries`（方法卡合并集）
+- `src/client/` — 插槽组件与自持 UI：AnalysisCanvas / SourcePicker / MethodologyModal / CrossSourceSettings（设置中心应用分区，读写 `/api/cross-source`） / `methodologyPresets.ts`（推荐 resolver，拉 `/api/methodology` 合并卡集）
 - `src/methodology/` — 方法论资产（自持，原 `packages/ginkgo-methodology` 并入）：`builtinMethodCards` 10 张内置卡 + 用户卡契约 + 注册表合并 + 字节预算受限的 prompt 渲染纯函数
 - `src/isomorphic/` — **client-safe 领域层**（零 node/零 React）：声明式变换管线（transforms）、时间宏引擎（timeMacros）、查询行提取（queryRows）、活看板捕获（dashboardCapture）、快照导入导出（dashboardSnapshot）、记录类型（dashboardTypes）。宿主消息区收藏链路与本包服务端共用
 - `src/server/` — **运行时全量**：`createAnalyticsServer(deps)` 工厂（宿主组合根注入 datasources / methodology / certified / crossSource / artifacts 五类依赖）+ **看板产物域**（收藏存储 dashboardStore / SQL 物化 specMaterialize / 活看板重放 dashboardRefresh / 筛选联动 distinctValues / 模板重绑定 templateRetarget / 厚路由编排 dashboardRoutes）+ 方法卡装配（methodologyLoader）
@@ -21,7 +21,8 @@ Ginkgo 平台的**深度应用**范例：多源数据探查、指标计算、深
 | `server/schemaDigest.ts` | 启用源结构卡摘要（8KB 总预算，按提问相关度展开） |
 | `server/methodSelector.ts` / `planExtractor.ts` | 方法卡详情注入 + plan 轮 PlanReviewCard.methods 提取（pendingPlan 交接） |
 | `server/methodologyLoader.ts` | 用户方法卡运行时装配（`data/methodology/*.json` 合并内置）+ 查看契约组装（`buildMethodologyOverview`，宿主 `/api/methodology` 薄壳消费） |
-| `server/crossSource.ts` | 跨源映射注册表（`config/cross-source-map.json` 驱动）+ `cross_source_link` 工具 |
+| `server/crossSource.ts` | 跨源映射注册表（`config/cross-source-map.json` 驱动，mtime 热加载 + 校验/原子写）+ `cross_source_link` 工具 |
+| `server/crossSourceRoutes.ts` | `/api/cross-source` 厚路由编排（清单读取/整份替换，宿主薄壳转发） |
 | `server/dashboardStore.ts` | 看板收藏存储（单记录单 JSON、原子写入、活看板字段校验） |
 | `server/specMaterialize.ts` / `dashboardRefresh.ts` | ChartSpec 零 LLM 物化 + 活看板查询重放引擎（sql 只读守卫 / tool 只读白名单） |
 | `server/distinctValues.ts` / `templateRetarget.ts` | 筛选联动取数 / 模板换源重绑定 |

@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import React, { useState } from "react";
 import { render, screen, cleanup, fireEvent, waitFor } from "@testing-library/react";
 import { SettingsModal, type SettingsModalProps } from "./SettingsModal";
 import type { ConfiguredProvider } from "@/lib/llmProviders";
+import type { AppSettingsSectionProps, AppSettingsSectionSpec } from "@ginkgo/app-sdk";
 
 // mock /api/datasources 与 /api/mcp
 const fetchMock = vi.fn().mockImplementation(async (url: string) => {
@@ -493,6 +495,95 @@ describe("SettingsModal 多 Provider 管理能力（参考 dsh）", () => {
         ]),
       })
     );
+  });
+});
+
+describe("SettingsModal 应用分区（client.settingsSections 插槽）", () => {
+  /** 最小分区组件：展示注入的 appId，经注入的 request 发一次 PUT */
+  function FakeSection({ appId, request }: AppSettingsSectionProps) {
+    const [status, setStatus] = useState("");
+    return (
+      <div>
+        <span>分区:{appId}</span>
+        <button
+          onClick={() =>
+            void request("/api/cross-source", { method: "PUT", body: "{}" }).then(
+              (r) => setStatus(String(r.status))
+            )
+          }
+        >
+          发请求
+        </button>
+        {status && <span>状态:{status}</span>}
+      </div>
+    );
+  }
+
+  const SECTIONS: AppSettingsSectionSpec[] = [
+    { key: "cross-source", label: "跨源映射", icon: "Link2", Component: FakeSection },
+  ];
+
+  afterEach(() => {
+    localStorage.clear();
+    vi.unstubAllGlobals();
+  });
+
+  it("未声明 appSections 时仅渲染平台 tab，无应用分区", () => {
+    vi.stubGlobal("fetch", fetchMock);
+    renderModal();
+    expect(screen.getByRole("tab", { name: "模型配置" })).toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "跨源映射" })).toBeNull();
+  });
+
+  it("声明后追加应用分区 tab（图标按名解析），切换后渲染分区组件并注入 appId", () => {
+    vi.stubGlobal("fetch", fetchMock);
+    renderModal({ appId: "analytics", appSections: SECTIONS });
+
+    const tab = screen.getByRole("tab", { name: "跨源映射" });
+    fireEvent.mouseDown(tab, { button: 0 });
+    fireEvent.click(tab);
+
+    expect(screen.getByText("分区:analytics")).toBeInTheDocument();
+  });
+
+  it("分区经宿主注入的 request 发请求：未配置令牌时不带鉴权头", async () => {
+    const fetchSpy = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({}),
+    })) as unknown as ReturnType<typeof vi.fn>;
+    vi.stubGlobal("fetch", fetchSpy);
+    renderModal({ appId: "analytics", appSections: SECTIONS });
+
+    const tab = screen.getByRole("tab", { name: "跨源映射" });
+    fireEvent.mouseDown(tab, { button: 0 });
+    fireEvent.click(tab);
+    fireEvent.click(screen.getByRole("button", { name: "发请求" }));
+
+    await waitFor(() => expect(screen.getByText("状态:200")).toBeInTheDocument());
+    const [, init] = fetchSpy.mock.calls.at(-1) as [string, RequestInit];
+    expect(init.method).toBe("PUT");
+    expect(new Headers(init.headers).get("authorization")).toBeNull();
+  });
+
+  it("配置部署鉴权令牌后，分区请求自动附带 Authorization 头", async () => {
+    localStorage.setItem("ginkgo_access_token", "tok-123");
+    const fetchSpy = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({}),
+    })) as unknown as ReturnType<typeof vi.fn>;
+    vi.stubGlobal("fetch", fetchSpy);
+    renderModal({ appId: "analytics", appSections: SECTIONS });
+
+    const tab = screen.getByRole("tab", { name: "跨源映射" });
+    fireEvent.mouseDown(tab, { button: 0 });
+    fireEvent.click(tab);
+    fireEvent.click(screen.getByRole("button", { name: "发请求" }));
+
+    await waitFor(() => expect(screen.getByText("状态:200")).toBeInTheDocument());
+    const [, init] = fetchSpy.mock.calls.at(-1) as [string, RequestInit];
+    expect(new Headers(init.headers).get("authorization")).toBe("Bearer tok-123");
   });
 });
 

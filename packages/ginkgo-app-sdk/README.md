@@ -24,6 +24,7 @@ export const myAppPackage = defineApp({
     InputAccessoryComponent: MyPicker,      // 输入栏挂件插槽
     sidebarTabs: [{ key: "presets", label: "推荐" }],
     sidebarQuickActions: [{ key: "help", label: "帮助", Component: HelpModal }],
+    settingsSections: [{ key: "mapping", label: "跨源映射", Component: MappingSettings }],
     dashboardToolbar: { title: "动态看板", pin: true, favorite: true, exportPdf: true },
     messageExtensions: {
       planConfirm: { patterns: ["请确认以下方案"], label: "开始执行", actionPrompt: "……" },
@@ -57,6 +58,7 @@ export const myAppPackage = defineApp({
 | `InputAccessoryComponent` | 输入栏挂件插槽 |
 | `sidebarTabs` | 扩展 Tab（`Component` 自治渲染，或按 key 借宿主内置面板 dashboards/presets） |
 | `sidebarQuickActions` | 快捷操作：`onClick` 自治 / `Component` 弹层插槽（宿主统一管理 open） |
+| `settingsSections` | 设置中心应用分区（`AppSettingsSectionProps`：appId + 宿主签发的带鉴权 request），即时保存语义；平台级配置归宿主，不在此声明 |
 | `dashboardToolbar` | 消息内看板工具条能力（title/pin/favorite/exportPdf，未声明不渲染操作按钮） |
 | `messageExtensions` | 消息区扩展：`planConfirm`（patterns 子串匹配确认按钮）/ `completion`（finish_task 总结卡）/ `toolSettledHint`（工具完成过渡文案） |
 | `hasWorkspace` / `hasInputAccessory` / `workspaceTitle` | 标志位与文案 |
