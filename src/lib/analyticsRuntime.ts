@@ -3,9 +3,9 @@ import {
   type AnalyticsArtifactServices,
 } from "@openui-apps/analytics/server";
 import { datasources } from "@/lib/datasources";
-import { createAppMethodology } from "@/lib/methodologyLoader";
-import { dashboardStore } from "@/lib/dashboardStore";
-import { refreshDashboard } from "@/lib/dashboardRefresh";
+import { createAppMethodology } from "@openui-apps/analytics/server";
+import { dashboardStore } from "@openui-apps/analytics/server";
+import { refreshDashboard } from "@openui-apps/analytics/server";
 
 /**
  * analytics 运行时服务端单例（宿主组合根）：

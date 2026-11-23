@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, cleanup, fireEvent, act } from "@testing-library/react";
 import { DashboardPreviewModal, type PreviewRefreshResult } from "./DashboardPreviewModal";
-import type { DashboardRecord } from "@/lib/dashboardStore";
+import type { DashboardRecord } from "@openui-apps/analytics/server";
 
 vi.mock("@/components/OpenUIRenderer", () => ({
   OpenUIRenderer: ({
@@ -20,7 +20,7 @@ vi.mock("@/components/OpenUIRenderer", () => ({
 
 vi.mock("@/lib/toast", () => ({ toast: vi.fn() }));
 
-vi.mock("@/lib/dashboardSnapshot", () => ({
+vi.mock("@openui-apps/analytics/isomorphic", () => ({
   downloadDashboardSnapshot: vi.fn(),
 }));
 
@@ -123,7 +123,7 @@ describe("DashboardPreviewModal 只读预览", () => {
   });
 
   it("导出快照：调用下载工具并成功 toast", async () => {
-    const { downloadDashboardSnapshot } = await import("@/lib/dashboardSnapshot");
+    const { downloadDashboardSnapshot } = await import("@openui-apps/analytics/isomorphic");
     vi.mocked(downloadDashboardSnapshot).mockResolvedValueOnce(undefined);
     renderModal();
 

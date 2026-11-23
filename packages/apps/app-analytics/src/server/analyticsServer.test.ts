@@ -12,7 +12,7 @@ import { createAnalyticsServer } from "./index";
 import { reloadCrossSourceMap } from "./crossSource";
 import { extractPlanMethods } from "./planExtractor";
 import { createDatasourceManager, type DatasourceManager } from "@openui-analytics/datasources";
-import { createMethodLibrary, builtinMethodCards } from "@openui-analytics/methodology";
+import { createMethodLibrary, builtinMethodCards } from "../methodology";
 import type { AppServerContext } from "@openui-analytics/app-sdk";
 
 /** 真 manager 读临时配置文件；tools(IO) 覆写为 mock——等价迁移前 handler.test 的 fixture 语义 */

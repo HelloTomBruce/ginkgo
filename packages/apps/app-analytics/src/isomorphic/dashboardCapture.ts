@@ -18,7 +18,7 @@ import { inferTimeMacrosInObject } from "./timeMacros";
 import { extractQueryRows, ROW_PROP_BY_TYPE } from "./queryRows";
 export { extractQueryRows, rowPropFor } from "./queryRows";
 // 仅取类型（编译期擦除，不会把 server-only 的 dashboardStore 打进客户端包）
-import type { DashboardQuery } from "./dashboardStore";
+import type { DashboardQuery } from "./dashboardTypes";
 
 /** execute 轮工具调用记录（AI SDK data stream 附加字段的结构子集） */
 export interface CapturedToolCall {

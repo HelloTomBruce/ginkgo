@@ -2,7 +2,8 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Message } from "@ai-sdk/react";
-import { ArrowDown, ArrowUp, Loader2, Sparkles, FileCode, Printer, Star, GitFork, RotateCcw, Square, Play, Brain, ListOrdered, X, Pin, CheckCircle2, AlertTriangle } from "lucide-react";
+import type { AppMessageExtensions } from "@openui-analytics/app-sdk";
+import { ArrowDown, ArrowUp, Loader2, Sparkles, Printer, Star, GitFork, RotateCcw, Square, Play, Brain, ListOrdered, X, Pin, CheckCircle2, AlertTriangle } from "lucide-react";
 import { OpenUIRenderer } from "@/components/OpenUIRenderer";
 import {
   dedupeContentBlocks,
@@ -16,7 +17,7 @@ import { Hint } from "@/components/ui/hint";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MarkdownContent } from "./MarkdownContent";
 import { extractOpenUI } from "@/lib/extractOpenUI";
-import { captureDashboardQueries } from "@/lib/dashboardCapture";
+import { captureDashboardQueries } from "@openui-apps/analytics/isomorphic/dashboardCapture";
 import { toast } from "@/lib/toast";
 import type { FavoriteDashboardInput, FavoriteResult } from "@/hooks/useDashboards";
 
@@ -70,13 +71,17 @@ interface UIPart {
 interface MessageItemProps {
   msg: Message;
   isStreaming: boolean;
-  showRawLang: boolean;
   /** 当前会话启用源（工具调用归因展示）；memo 靠引用稳定，由父层 useMemo 供给 */
   activeSources?: { id: string; name: string }[];
   onRendererAction: (actionPrompt: string) => void;
   /** 打印导出：目标消息标记与触发回调（见 MessageList 打印状态机） */
   isPrintTarget?: boolean;
   onPrintDashboard?: (id: string) => void;
+  /** 看板工具条标题与导出能力（能力注入：由当前应用声明） */
+  dashboardTitle?: string;
+  dashboardExportEnabled?: boolean;
+  /** 消息区扩展声明（规划确认/终态兜底/过渡文案），宿主零应用语义渲染 */
+  messageExtensions?: AppMessageExtensions;
   /** 看板收藏：该消息是否已收藏（按 origin.messageId 判定）与收藏触发 */
   isFavorited?: boolean;
   isFavoritePending?: boolean;
@@ -89,19 +94,23 @@ interface MessageItemProps {
   onRewindMessage?: (messageId: string) => void;
 }
 
-/** 工具调用徽标：按 <id>_ 前缀归因到源名称，未匹配走通用兜底 */
+/** 工具调用徽标：按 <id>_ 前缀归因到源名称；内部纠错与未知名走通用兜底 */
 function toolBadgeText(
   toolName: string,
   args: Record<string, unknown> | undefined,
   activeSources?: { id: string; name: string }[]
 ): string {
+  // 内部纠错兜底工具（服务端 repair 重定向，模型参数被修复后重试）
+  if (toolName === "__tool_call_feedback__") {
+    return "⚡ 参数纠错";
+  }
   const dyn = activeSources?.find((s) => toolName.startsWith(`${s.id}_`));
   if (dyn) {
     return toolName.endsWith("execute_sql")
       ? `⚡ [${dyn.name}] 执行 SQL: ${args?.sql || ""}`
       : `⚡ [${dyn.name}] 调用: ${toolName}`;
   }
-  return `⚡ [MCP Tool] 调用: ${toolName}`;
+  return `⚡ 工具调用: ${toolName}`;
 }
 
 /**
@@ -227,11 +236,13 @@ const ReasoningViewer = React.memo(function ReasoningViewer({
 const MessageItem = React.memo(function MessageItem({
   msg,
   isStreaming,
-  showRawLang,
   activeSources,
   onRendererAction,
   isPrintTarget = false,
   onPrintDashboard,
+  dashboardTitle,
+  dashboardExportEnabled = false,
+  messageExtensions,
   isFavorited = false,
   isFavoritePending = false,
   onFavoriteDashboard,
@@ -259,6 +270,10 @@ const MessageItem = React.memo(function MessageItem({
 
   // 将消息解析为按真实执行顺序排列的内容块（文本/工具/思考）
   const blocks = useMemo<ContentBlock[]>(() => {
+    // 控制面工具（编排层协议，非业务操作）：不出现在用户可见的工具时间线。
+    // finishSummary 等数据层消费仍走 rawMsg.toolInvocations，不受此渲染过滤影响。
+    const CONTROL_PLANE_TOOLS = new Set(["finish_task"]);
+
     // 1. 若存在 AI SDK 的 parts 数组，按真实执行流构建交错分块
     if (Array.isArray(parts) && parts.length > 0) {
       const result: ContentBlock[] = [];
@@ -279,6 +294,9 @@ const MessageItem = React.memo(function MessageItem({
 
       parts.forEach((part, idx) => {
         if (part.type === "tool-invocation" && part.toolInvocation) {
+          if (CONTROL_PLANE_TOOLS.has(part.toolInvocation.toolName)) {
+            return;
+          }
           if (currentTools.length === 0) {
             currentToolsKey = part.toolInvocation.toolCallId || `tools-${idx}`;
           }
@@ -314,11 +332,14 @@ const MessageItem = React.memo(function MessageItem({
     // 2. 兜底回退：兼容无 parts 消息（历史会话或非流式消息）
     const { textPart, openuiPart, isClosed } = extractOpenUI(rawContent);
     const result: ContentBlock[] = [];
-    if (toolInvocations && toolInvocations.length > 0) {
+    const visibleTools = toolInvocations?.filter(
+      (t) => !CONTROL_PLANE_TOOLS.has(t.toolName)
+    );
+    if (visibleTools && visibleTools.length > 0) {
       result.push({
         type: "tools",
         id: "fallback-tools",
-        tools: toolInvocations,
+        tools: visibleTools,
       });
     }
     if (textPart || openuiPart || !toolInvocations || toolInvocations.length === 0) {
@@ -500,31 +521,23 @@ const MessageItem = React.memo(function MessageItem({
                 </div>
               ) : null}
 
-              {/* 兜底：当模型输出文字规划但遗漏 PlanReviewCard DSL 时，渲染就绪确认按钮，确保用户能一键推进到 execute 阶段 */}
-              {!block.openuiPart && !isStreaming && block.isLast && /(?:请确认以下分析方案|澄清点说明|分析思路确认)/.test(rawContent) && (
+              {/* 规划确认兜底（应用声明 messageExtensions.planConfirm）：模型输出文字规划但遗漏
+                  PlanReviewCard DSL 时渲染确认按钮，patterns 为应用 prompt 对输出话术的硬性要求 */}
+              {!block.openuiPart && !isStreaming && block.isLast &&
+                messageExtensions?.planConfirm &&
+                messageExtensions.planConfirm.patterns.some((p) => rawContent.includes(p)) && (
                 <div className="no-print mt-3 pt-3 border-t border-border flex items-center justify-between">
                   <span className="text-xs text-foreground-subtle">
                     规划已就绪，点击开始执行分析：
                   </span>
                   <button
                     type="button"
-                    onClick={() => onRendererAction("请按上述已确认的分析思路开始执行，产出完整的分析报告与看板。")}
+                    onClick={() => onRendererAction(messageExtensions.planConfirm!.actionPrompt)}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-foreground text-background hover:bg-foreground-strong transition-colors shadow-2xs cursor-pointer select-none"
                   >
                     <Play className="w-3.5 h-3.5 fill-current" />
-                    <span>按此思路开始分析</span>
+                    <span>{messageExtensions.planConfirm.label}</span>
                   </button>
-                </div>
-              )}
-
-              {/* 原始 OpenUI Lang 源代码展示 */}
-              {showRawLang && block.openuiPart && (
-                <div className="no-print mt-3 bg-surface-sunken text-foreground-strong p-3 rounded-lg text-xs font-mono overflow-x-auto border border-border">
-                  <div className="flex items-center gap-1.5 text-[11px] font-semibold text-foreground-subtle mb-1.5">
-                    <FileCode className="w-3.5 h-3.5" />
-                    <span>OpenUI Lang (Model Generated DSL)</span>
-                  </div>
-                  <pre className="whitespace-pre-wrap leading-relaxed">{block.openuiPart}</pre>
                 </div>
               )}
 
@@ -532,9 +545,9 @@ const MessageItem = React.memo(function MessageItem({
               {block.openuiPart && (
                 <div className="mt-5 space-y-4">
                   <div className="no-print flex items-center justify-between text-xs font-semibold text-foreground-faint uppercase tracking-wider">
-                    <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2">
                       <Sparkles className="w-3.5 h-3.5 text-info-fg" />
-                      <span>OpenUI 动态看板</span>
+                      <span>{dashboardTitle ?? "动态看板"}</span>
                       {isStreaming && block.isLast ? (
                         <span className="text-[10px] text-info-fg font-normal lowercase flex items-center gap-1">
                           <span className="w-1.5 h-1.5 rounded-full bg-info-solid animate-ping"></span>
@@ -600,18 +613,20 @@ const MessageItem = React.memo(function MessageItem({
                           <span>{isFavorited ? "已收藏" : "收藏"}</span>
                         </button>
                       )}
-                      <Hint label="打印看板，可在打印对话框中另存为 PDF">
-                        <button
-                          type="button"
-                          onClick={() => onPrintDashboard?.(msg.id)}
-                          disabled={isStreaming}
-                          aria-label={`导出 PDF（消息 ${msg.id}）`}
-                          className="flex items-center gap-1 text-[10px] normal-case tracking-normal text-foreground-faint hover:text-info-fg px-1.5 py-0.5 rounded hover:bg-info-soft disabled:opacity-40 disabled:pointer-events-none transition-colors"
-                        >
-                          <Printer className="w-3 h-3" />
-                          <span>导出 PDF</span>
-                        </button>
-                      </Hint>
+                      {dashboardExportEnabled && (
+                        <Hint label="打印看板，可在打印对话框中另存为 PDF">
+                          <button
+                            type="button"
+                            onClick={() => onPrintDashboard?.(msg.id)}
+                            disabled={isStreaming}
+                            aria-label={`导出 PDF（消息 ${msg.id}）`}
+                            className="flex items-center gap-1 text-[10px] normal-case tracking-normal text-foreground-faint hover:text-info-fg px-1.5 py-0.5 rounded hover:bg-info-soft disabled:opacity-40 disabled:pointer-events-none transition-colors"
+                          >
+                            <Printer className="w-3 h-3" />
+                            <span>导出 PDF</span>
+                          </button>
+                        </Hint>
+                      )}
                     </div>
                   </div>
 
@@ -653,41 +668,40 @@ const MessageItem = React.memo(function MessageItem({
           );
         })}
 
-        {/* 终态闭环兜底：当模型执行了 finish_task 或完成全量取数，但遗漏 ```openui 看板代码块时，渲染数据就绪总结与一键生成看板按钮 */}
-        {!hasOpenuiPart && !isStreaming && finishSummary && (
+        {/* 终态闭环兜底（应用声明 messageExtensions.completion）：finish_task 已执行但无看板代码时，
+            渲染总结与一键生成按钮；未声明的应用 finish_task 总结直接以消息文本交付 */}
+        {messageExtensions?.completion && !hasOpenuiPart && !isStreaming && finishSummary && (
           <div className="no-print mt-3 p-3.5 rounded-xl border border-success-border bg-success-soft/30 space-y-2.5">
             <div className="flex items-center gap-2 text-xs font-semibold text-success-fg">
               <CheckCircle2 className="w-4 h-4 text-success-fg shrink-0" />
-              <span>数据取数与分析计算已全部完成</span>
+              <span>{messageExtensions.completion.title}</span>
             </div>
             <div className="text-xs text-foreground-subtle leading-relaxed">
               {finishSummary}
             </div>
             <div className="pt-2 flex items-center justify-between border-t border-success-border/40">
               <span className="text-[11px] text-foreground-faint">
-                未检测到可视化看板代码，点击一键产出深度分析报告与图表看板：
+                未检测到可视化看板代码，点击一键产出：
               </span>
               <button
                 type="button"
-                onClick={() =>
-                  onRendererAction(
-                    "数据取数与计算已全部完成。请立即基于上述结果，输出完整的 Markdown 深度分析报告以及 ```openui 可视化动态看板代码块。"
-                  )
-                }
+                onClick={() => onRendererAction(messageExtensions.completion!.actionPrompt)}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-foreground text-background hover:bg-foreground-strong transition-colors shadow-2xs cursor-pointer select-none"
               >
                 <Sparkles className="w-3.5 h-3.5" />
-                <span>立即生成报告与看板</span>
+                <span>{messageExtensions.completion.buttonLabel}</span>
               </button>
             </div>
           </div>
         )}
 
-        {/* 如果工具刚执行完，模型正在构思下一段文本/OpenUI组件 */}
+        {/* 如果工具刚执行完，模型正在构思下一段文本/看板（过渡文案由应用声明，缺省中性） */}
         {isWaitingAfterTools && (
           <div className="flex items-center gap-2 text-xs text-foreground-subtle py-1 font-medium animate-pulse">
             <Loader2 className="w-3.5 h-3.5 animate-spin text-info-fg" />
-            <span>数据查询已完成，大模型正在组织分析洞察并构建视觉看板...</span>
+            <span>
+              {messageExtensions?.toolSettledHint ?? "工具执行完成，正在组织回复..."}
+            </span>
           </div>
         )}
 
@@ -755,7 +769,6 @@ interface MessageListProps {
   /** useChat 状态：submitted | streaming | ready | error */
   status: string;
   error: Error | undefined;
-  showRawLang: boolean;
   /** 当前会话启用的数据源（加载提示与工具归因），由父层 useMemo 供给 */
   activeSources?: { id: string; name: string }[];
   onRendererAction: (actionPrompt: string) => void;
@@ -769,6 +782,12 @@ interface MessageListProps {
   /** 画布钉选：当前钉选的消息 ID 与钉选回调 */
   pinnedMessageId?: string | null;
   onPinDashboard?: (messageId: string, dsl: string, title?: string) => void;
+  /** 看板工具条标题（能力注入：由当前应用声明，缺省「动态看板」） */
+  dashboardTitle?: string;
+  /** 看板导出 PDF 能力开关（能力注入：未开启时不渲染导出按钮） */
+  dashboardExportEnabled?: boolean;
+  /** 消息区扩展声明（规划确认/终态兜底/过渡文案），宿主零应用语义渲染 */
+  messageExtensions?: AppMessageExtensions;
   /** 会话操作：从某条消息分叉新会话；回滚到某条用户消息重问 */
   onForkMessage?: (messageId: string) => void;
   onRewindMessage?: (messageId: string) => void;
@@ -784,7 +803,6 @@ export function MessageList({
   messages,
   status,
   error,
-  showRawLang,
   activeSources,
   onRendererAction,
   onReload,
@@ -792,6 +810,9 @@ export function MessageList({
   onFavoriteDashboard,
   pinnedMessageId,
   onPinDashboard,
+  dashboardTitle,
+  dashboardExportEnabled,
+  messageExtensions,
   onForkMessage,
   onRewindMessage,
   onStop,
@@ -1056,7 +1077,6 @@ export function MessageList({
           key={msg.id || `msg-${index}`}
           msg={msg}
           isStreaming={index === messages.length - 1 && status === "streaming"}
-          showRawLang={showRawLang}
           activeSources={activeSources}
           onRendererAction={onRendererAction}
           isPrintTarget={printTargetId === msg.id}
@@ -1065,6 +1085,9 @@ export function MessageList({
           isFavoritePending={pendingFavoriteId === msg.id}
           isPinned={pinnedMessageId === msg.id}
           onPinDashboard={onPinDashboard}
+          dashboardTitle={dashboardTitle}
+          dashboardExportEnabled={dashboardExportEnabled}
+          messageExtensions={messageExtensions}
           onFavoriteDashboard={
             onFavoriteDashboard ? handleFavoriteDashboard : undefined
           }

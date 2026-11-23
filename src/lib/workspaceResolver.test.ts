@@ -49,8 +49,8 @@ describe("workspaceResolver", () => {
 
     it("阻止跨越上级的路径穿越攻击 (../)", () => {
       const root = path.join(tempDir, "root");
-      expect(() => resolveSafeWorkspacePath(root, "../outside.txt")).toThrow("越权访问被阻止");
-      expect(() => resolveSafeWorkspacePath(root, "../../etc/passwd")).toThrow("越权访问被阻止");
+      expect(() => resolveSafeWorkspacePath(root, "../outside.txt")).toThrow("越权访问被拒绝");
+      expect(() => resolveSafeWorkspacePath(root, "../../etc/passwd")).toThrow("越权访问被拒绝");
     });
   });
 });

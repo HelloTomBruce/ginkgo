@@ -1,4 +1,4 @@
-import { dashboardStore, toSummary } from "@/lib/dashboardStore";
+import { dashboardStore, toSummary } from "@openui-apps/analytics/server";
 
 /**
  * POST /api/dashboards/:id/save-as-template — 收藏看板转模板（M3-4）。

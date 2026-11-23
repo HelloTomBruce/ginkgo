@@ -50,7 +50,7 @@ describe("GET /api/workspace", () => {
     const res = await GET(req);
     expect(res.status).toBe(500);
     const data = await res.json();
-    expect(data.error).toContain("越权访问被阻止");
+    expect(data.error).toContain("越权访问被拒绝");
   });
 
   it("自动过滤 node_modules、.next、dist 等目录", async () => {

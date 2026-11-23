@@ -4,6 +4,17 @@ import type { Message } from "@ai-sdk/react";
 import { extractOpenUI } from "@/lib/extractOpenUI";
 import { toast } from "@/lib/toast";
 import { MessageList } from "./MessageList";
+
+/** analytics 应用声明样例（与 manifest.ts 的 messageExtensions 同构） */
+const ANALYTICS_EXTENSIONS = {
+  completion: {
+    title: "数据取数与分析计算已全部完成",
+    buttonLabel: "立即生成报告与看板",
+    actionPrompt:
+      "数据取数与计算已全部完成。请立即基于上述结果，输出完整的 Markdown 深度分析报告以及 ```openui 可视化动态看板代码块。",
+  },
+  toolSettledHint: "数据查询已完成，大模型正在组织分析洞察并构建视觉看板...",
+};
 import type { FavoriteResult } from "@/hooks/useDashboards";
 
 vi.mock("@/lib/extractOpenUI", async (importOriginal) => {
@@ -43,17 +54,17 @@ describe("MessageList 流式重渲染治理", () => {
     vi.clearAllMocks();
   });
 
-  it("动态源前缀工具归因到源名称，未匹配走通用兜底", () => {
+  it("动态源前缀工具归因到源名称，未匹配走通用兜底（不误标 MCP）", () => {
     render(
       <MessageList
         messages={withTools([
           { toolName: "zhaobiao_list_tables" },
           { toolName: "execute_sql", args: { sql: "SELECT 1" } },
           { toolName: "zhaobiao_execute_sql", args: { sql: "SELECT 2" } },
+          { toolName: "__tool_call_feedback__" },
         ])}
         status="ready"
         error={undefined}
-        showRawLang={false}
         activeSources={[
           { id: "zhaobiao", name: "招标平台数据/" },
         ]}
@@ -63,9 +74,11 @@ describe("MessageList 流式重渲染治理", () => {
     );
 
     expect(screen.getByText(/\[招标平台数据\/\] 调用: zhaobiao_list_tables/)).toBeInTheDocument();
-    // 无前缀匹配走通用兜底；同契约动态源按前缀归因
-    expect(screen.getByText(/\[MCP Tool\] 调用: execute_sql/)).toBeInTheDocument();
+    // 无前缀匹配走通用兜底（非 MCP 专属）；同契约动态源按前缀归因
+    expect(screen.getByText(/工具调用: execute_sql/)).toBeInTheDocument();
     expect(screen.getByText(/\[招标平台数据\/\] 执行 SQL: SELECT 2/)).toBeInTheDocument();
+    // 内部纠错兜底工具弱化展示为「参数纠错」
+    expect(screen.getByText(/⚡ 参数纠错/)).toBeInTheDocument();
   });
 
   it("加载提示反映会话启用源，未提供时回落通用文案", () => {
@@ -73,7 +86,6 @@ describe("MessageList 流式重渲染治理", () => {
       messages: [userMsg],
       status: "submitted" as const,
       error: undefined,
-      showRawLang: false,
       onRendererAction: vi.fn(),
       onReload: vi.fn(),
     };
@@ -92,7 +104,6 @@ describe("MessageList 流式重渲染治理", () => {
       messages: [userMsg, aiMsg],
       status: "ready",
       error: undefined,
-      showRawLang: false,
       onRendererAction: vi.fn(),
       onReload: vi.fn(),
     };
@@ -111,7 +122,6 @@ describe("MessageList 流式重渲染治理", () => {
       messages: [userMsg, aiMsg],
       status: "ready",
       error: undefined,
-      showRawLang: false,
       onRendererAction: vi.fn(),
       onReload: vi.fn(),
     };
@@ -129,7 +139,6 @@ describe("MessageList 快捷滚动操作", () => {
     messages: [userMsg, aiMsg],
     status: "ready" as const,
     error: undefined,
-    showRawLang: false,
     onRendererAction: vi.fn(),
     onReload: vi.fn(),
   };
@@ -259,10 +268,11 @@ describe("看板打印导出", () => {
   const baseProps = {
     status: "ready" as const,
     error: undefined,
-    showRawLang: false,
     activeSources: undefined,
     onRendererAction: vi.fn(),
     onReload: vi.fn(),
+    // 能力注入：本组用例模拟声明了导出能力的应用（如 analytics）
+    dashboardExportEnabled: true,
   };
 
   let printSpy: ReturnType<typeof vi.fn<() => void>>;
@@ -330,6 +340,32 @@ describe("看板打印导出", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("能力注入：未声明导出能力的应用不渲染导出按钮", () => {
+    render(
+      <MessageList
+        {...baseProps}
+        dashboardExportEnabled={false}
+        messages={[userMsg, dashboardMsg]}
+      />
+    );
+    // 看板本体与工具条仍渲染，仅操作按钮按能力声明隐藏
+    expect(
+      screen.queryByRole("button", { name: /导出 PDF/ })
+    ).not.toBeInTheDocument();
+  });
+
+  it("能力注入：工具条标题由应用声明注入", () => {
+    render(
+      <MessageList
+        {...baseProps}
+        dashboardTitle="自定义看板标题"
+        messages={[userMsg, dashboardMsg]}
+      />
+    );
+    expect(screen.getByText("自定义看板标题")).toBeInTheDocument();
+    expect(screen.queryByText("OpenUI 动态看板")).not.toBeInTheDocument();
+  });
+
   it("执行步骤与分析文字标记 no-print，仅看板本体导出", () => {
     const msgWithTools = {
       ...dashboardMsg,
@@ -347,7 +383,7 @@ describe("看板打印导出", () => {
 
     // 执行步骤（工具调用指示器）与分析文字均排除在打印范围外
     const toolBadge = screen
-      .getByText(/\[MCP Tool\] 调用: pg_execute_sql/)
+      .getByText(/工具调用: pg_execute_sql/)
       .closest(".no-print");
     expect(toolBadge).not.toBeNull();
     const thinking = screen.getByText("结论如下").closest(".no-print");
@@ -367,7 +403,6 @@ describe("看板收藏", () => {
   const baseProps = {
     status: "ready" as const,
     error: undefined,
-    showRawLang: false,
     activeSources: undefined,
     onRendererAction: vi.fn(),
     onReload: vi.fn(),
@@ -643,7 +678,6 @@ describe("消息内容与工具执行按顺序交错渲染", () => {
   const baseProps = {
     status: "ready" as const,
     error: undefined,
-    showRawLang: false,
     activeSources: [
       { id: "gitlab", name: "GitLab" },
     ],
@@ -752,7 +786,7 @@ describe("消息内容与工具执行按顺序交错渲染", () => {
     expect(t1.closest(".space-y-2")).toBe(t2.closest(".space-y-2"));
   });
 
-  it("流式传输中最后一步工具刚执行完时，展示构思提示与动画", () => {
+  it("流式传输中最后一步工具刚执行完时，按应用能力展示构思提示（看板语义/中性）", () => {
     const streamingMessage = {
       id: "a-streaming",
       role: "assistant",
@@ -770,17 +804,28 @@ describe("消息内容与工具执行按顺序交错渲染", () => {
       ],
     } as unknown as Message;
 
-    render(
+    // 看板应用：analytics 语义文案
+    const { rerender } = render(
+      <MessageList
+        {...baseProps}
+        status="streaming"
+        messageExtensions={ANALYTICS_EXTENSIONS}
+        messages={[userMsg, streamingMessage]}
+      />
+    );
+    expect(
+      screen.getByText("数据查询已完成，大模型正在组织分析洞察并构建视觉看板...")
+    ).toBeInTheDocument();
+
+    // 非看板应用（如 general）：中性文案
+    rerender(
       <MessageList
         {...baseProps}
         status="streaming"
         messages={[userMsg, streamingMessage]}
       />
     );
-
-    expect(
-      screen.getByText("数据查询已完成，大模型正在组织分析洞察并构建视觉看板...")
-    ).toBeInTheDocument();
+    expect(screen.getByText("工具执行完成，正在组织回复...")).toBeInTheDocument();
   });
 
   it("思考过程 reasoning part 正常展示", () => {
@@ -861,7 +906,7 @@ describe("消息内容与工具执行按顺序交错渲染", () => {
     expect(screen.queryByTestId("reasoning-tail-note")).not.toBeInTheDocument();
   });
 
-  it("当模型输出文字规划但遗漏 PlanReviewCard 代码块时，兜底展示按此思路开始分析按钮并可点击触发", () => {
+  it("声明 planConfirm 的应用：模型遗漏 PlanReviewCard 时按声明渲染确认按钮并可点击触发", () => {
     const onRendererAction = vi.fn();
     const textPlanMsg = {
       id: "a-text-plan",
@@ -870,14 +915,32 @@ describe("消息内容与工具执行按顺序交错渲染", () => {
         "## 🔍 分析思路\n1. 活跃度排名\n\n## ❓ 澄清点说明\n\n请确认以下分析方案（点击卡片中的选项后一键确认）：",
     } as unknown as Message;
 
-    render(
+    // 未声明 messageExtensions：不渲染兜底按钮（general 行为）
+    const { rerender } = render(
       <MessageList
         {...baseProps}
         messages={[userMsg, textPlanMsg]}
         onRendererAction={onRendererAction}
       />
     );
+    expect(screen.queryByRole("button", { name: "按此思路开始分析" })).not.toBeInTheDocument();
 
+    // analytics 声明 planConfirm：patterns 命中 → 渲染声明文案按钮
+    rerender(
+      <MessageList
+        {...baseProps}
+        messageExtensions={{
+          planConfirm: {
+            patterns: ["请确认以下分析方案", "澄清点说明", "分析思路确认"],
+            label: "按此思路开始分析",
+            actionPrompt:
+              "请按上述已确认的分析思路开始执行，产出完整的分析报告与看板。",
+          },
+        }}
+        messages={[userMsg, textPlanMsg]}
+        onRendererAction={onRendererAction}
+      />
+    );
     const btn = screen.getByRole("button", { name: "按此思路开始分析" });
     expect(btn).toBeInTheDocument();
     fireEvent.click(btn);
@@ -934,6 +997,7 @@ describe("消息内容与工具执行按顺序交错渲染", () => {
     render(
       <MessageList
         {...baseProps}
+        messageExtensions={ANALYTICS_EXTENSIONS}
         messages={[userMsg, finishTaskMsg]}
         onRendererAction={onRendererAction}
       />
@@ -1018,7 +1082,7 @@ describe("消息内容与工具执行按顺序交错渲染", () => {
     );
 
     // 看板标题栏仅出现 1 次，绝不重复出现 2 个看板
-    const openuiHeaders = screen.getAllByText("OpenUI 动态看板");
+    const openuiHeaders = screen.getAllByText("动态看板");
     expect(openuiHeaders).toHaveLength(1);
     expect(screen.getByText("已就绪")).toBeInTheDocument();
   });
@@ -1084,5 +1148,93 @@ describe("消息内容与工具执行按顺序交错渲染", () => {
     expect(fallbackBadge).toHaveTextContent("deepseek-reasoner");
     expect(fallbackBadge).toHaveTextContent("rate_limit");
     expect(fallbackBadge).toHaveTextContent("deepseek-chat");
+  });
+});
+
+
+describe("控制面工具与应用能力注入", () => {
+  afterEach(() => {
+    cleanup();
+    vi.clearAllMocks();
+  });
+
+  const baseProps = {
+    status: "ready" as const,
+    error: undefined,
+    onRendererAction: vi.fn(),
+    onReload: vi.fn(),
+  };
+
+  /** finish_task（编排层终态协议）+ 普通工具的交错 parts 消息（AI SDK 中 toolInvocations 与 parts 并存） */
+  const finishTaskMsg = {
+    id: "a-finish",
+    role: "assistant",
+    content: "",
+    parts: [
+      {
+        type: "tool-invocation",
+        toolInvocation: {
+          toolCallId: "call-sql",
+          toolName: "pg_execute_sql",
+          state: "result",
+          args: { sql: "SELECT 1" },
+        },
+      },
+      { type: "text", text: "分析结论已完整输出。" },
+      {
+        type: "tool-invocation",
+        toolInvocation: {
+          toolCallId: "call-finish",
+          toolName: "finish_task",
+          state: "result",
+          args: { status: "completed", summary: "路由权限链路取数与分析完成" },
+        },
+      },
+    ],
+    toolInvocations: [
+      {
+        toolCallId: "call-sql",
+        toolName: "pg_execute_sql",
+        state: "result",
+        args: { sql: "SELECT 1" },
+      },
+      {
+        toolCallId: "call-finish",
+        toolName: "finish_task",
+        state: "result",
+        args: { status: "completed", summary: "路由权限链路取数与分析完成" },
+      },
+    ],
+  } as unknown as Message;
+
+  it("finish_task 是控制面工具：不渲染为用户可见的工具条", () => {
+    render(<MessageList {...baseProps} messages={[userMsg, finishTaskMsg]} />);
+
+    // 业务工具正常渲染；控制面工具不出现
+    expect(screen.getByText(/工具调用: pg_execute_sql/)).toBeInTheDocument();
+    expect(screen.queryByText(/工具调用: finish_task/)).not.toBeInTheDocument();
+  });
+
+  it("未声明看板能力的应用（general）：不渲染一键产出看板的终态兜底卡片", () => {
+    render(
+      <MessageList {...baseProps} messages={[userMsg, finishTaskMsg]} />
+    );
+
+    expect(screen.queryByText("数据取数与分析计算已全部完成")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /立即生成报告与看板/ })).not.toBeInTheDocument();
+  });
+
+  it("声明看板能力的应用（analytics）：finish_task 无看板代码时渲染终态兜底卡片", () => {
+    render(
+      <MessageList
+        {...baseProps}
+        messageExtensions={ANALYTICS_EXTENSIONS}
+        messages={[userMsg, finishTaskMsg]}
+      />
+    );
+
+    expect(screen.getByText("数据取数与分析计算已全部完成")).toBeInTheDocument();
+    expect(screen.getByText(/路由权限链路取数与分析完成/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /立即生成报告与看板/ })).toBeInTheDocument();
   });
 });

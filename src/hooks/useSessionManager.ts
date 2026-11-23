@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Message } from "@ai-sdk/react";
+import { DEFAULT_APP_ID } from "@/lib/apps/registry";
 import type {
   SessionRecord,
   SessionSummary,
@@ -20,25 +21,20 @@ import {
   buildWelcomeMessage,
   generateSessionTitle,
 } from "@/lib/sessionStorage";
-import type { CapabilityContext } from "@/lib/capabilities";
 import { toast } from "@/lib/toast";
 
 export type SetMessagesFn = (messages: Message[]) => void;
 
 export interface UseSessionManagerOptions {
   /**
-   * 所属应用 ID（缺省为 "analytics"）
+   * 所属应用 ID（缺省取平台默认应用）
    */
   appId?: string;
   /**
-   * 自定义欢迎语文本（优先于通用能力欢迎语）
+   * 应用自治欢迎语（AppClientContract.welcomeMessage，defineApp 必填，
+   * 优先于宿主兜底欢迎语）
    */
   welcomeMessage?: string;
-  /**
-   * 生成新会话欢迎语时读取能力上下文（数据源 + 服务端特性开关，
-   * 见 src/lib/capabilities.ts）。缺省只保留无条件能力（保守宣称）。
-   */
-  getWelcomeContext?: () => CapabilityContext;
 }
 
 /** 这些标题视为「未命名」，首条用户消息到达时自动按内容生成标题 */
@@ -52,7 +48,7 @@ const DEFAULT_TITLES = new Set([
 function toSummaryLocal(record: SessionRecord): SessionSummary {
   return {
     id: record.id,
-    appId: record.appId ?? "analytics",
+    appId: record.appId ?? DEFAULT_APP_ID,
     ...(record.workspaceId !== undefined ? { workspaceId: record.workspaceId } : {}),
     title: record.title,
     createdAt: record.createdAt,
@@ -83,7 +79,7 @@ function sortSummaries(list: SessionSummary[]): SessionSummary[] {
  *   bootstrap/切换会话拿到完整消息后经它同步进消息流
  */
 export function useSessionManager(options?: UseSessionManagerOptions) {
-  const currentAppId = options?.appId ?? "analytics";
+  const currentAppId = options?.appId ?? DEFAULT_APP_ID;
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [currentSessionId, setCurrentSessionIdState] = useState<string>("");
   // bootstrap 完成前 ChatDashboard 显示加载态（会话数据未到，禁止输入）
@@ -120,11 +116,9 @@ export function useSessionManager(options?: UseSessionManagerOptions) {
   // 会话切换竞态守卫：快速连点时只应用最后一次切换拉到的消息
   const switchSeqRef = useRef(0);
 
-  // 欢迎语上下文读取器收进 ref：四个创建点共用稳定回调，避免 options 依赖扩散
-  const getWelcomeContextRef = useRef(options?.getWelcomeContext);
+  // 欢迎语读取器收进 ref：各创建点共用稳定回调，避免 options 依赖扩散
   const welcomeMessageRef = useRef(options?.welcomeMessage);
   useEffect(() => {
-    getWelcomeContextRef.current = options?.getWelcomeContext;
     welcomeMessageRef.current = options?.welcomeMessage;
   });
   const buildWelcome = useCallback(() => {
@@ -135,7 +129,8 @@ export function useSessionManager(options?: UseSessionManagerOptions) {
         content: welcomeMessageRef.current,
       };
     }
-    return buildWelcomeMessage(getWelcomeContextRef.current?.() ?? {});
+    // 兜底：registry 异常形态（welcomeMessage 为 defineApp 必填，正常不可达）
+    return buildWelcomeMessage();
   }, []);
 
   // sessions 的最新快照（异步回调内读取，避免闭包过期）

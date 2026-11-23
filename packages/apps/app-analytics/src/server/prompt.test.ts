@@ -248,7 +248,7 @@ describe("方法论注入（三模式）", () => {
       DETAIL_BUDGET_BYTES,
       renderMethodIndex,
       builtinMethodCards,
-    } = await import("@openui-analytics/methodology");
+    } = await import("../methodology");
     expect({
       index: INDEX_BUDGET_BYTES,
       detail: DETAIL_BUDGET_BYTES,

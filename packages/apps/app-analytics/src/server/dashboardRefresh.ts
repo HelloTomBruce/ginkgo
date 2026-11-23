@@ -19,15 +19,15 @@ import {
   jsonToOpenUI,
   serverLibrary,
 } from "@openui-analytics/components/server";
-import { extractQueryRows, rowPropFor } from "./queryRows";
+import { extractQueryRows, rowPropFor } from "@openui-apps/analytics/isomorphic";
 import { materializeSpecRows } from "./specMaterialize";
 import { parseChartSpec, type ChartSpec } from "@openui-analytics/chart-spec";
 import {
   applyTransform,
   isValidTransformSpec,
   type TransformSpec,
-} from "./transforms";
-import { evaluateTimeMacros } from "./timeMacros";
+} from "@openui-apps/analytics/isomorphic";
+import { evaluateTimeMacros } from "@openui-apps/analytics/isomorphic";
 import type { DashboardRecord, DashboardQuery } from "./dashboardStore";
 
 /** 数据源网关（datasource manager 的结构子集，便于测试注入） */

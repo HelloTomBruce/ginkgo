@@ -1,4 +1,4 @@
-import { dashboardStore, toSummary, DEFAULT_DASHBOARD_APP_ID } from "@/lib/dashboardStore";
+import { dashboardStore, toSummary, DEFAULT_DASHBOARD_APP_ID } from "@openui-apps/analytics/server";
 import { resolveRuntimeServer } from "@/lib/apps/runtimeServers";
 
 /**

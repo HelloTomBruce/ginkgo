@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { DEFAULT_APP_ID } from "@/lib/apps/registry";
 
 /**
  * 会话存储层（server-only：依赖 node:fs，禁止在客户端组件引入）。
@@ -26,8 +27,6 @@ export const SESSION_MESSAGES_PAYLOAD_MAX = 8 * 1024 * 1024;
 export const SESSION_MESSAGE_ID_MAX = 200;
 /** 上下文摘要上限（64KB，TASK-033 摘要缓存） */
 export const SESSION_CONTEXT_SUMMARY_MAX = 64 * 1024;
-/** 默认主应用 ID（向后兼容存量会话） */
-export const DEFAULT_APP_ID = "analytics";
 /** 应用 ID 命名规则：1~64 位字母、数字、下划线、中划线 */
 export const APP_ID_RE = /^[a-z0-9_-]{1,64}$/i;
 /** 源 id 规则与数据源配置层一致（packages/openui-datasources SOURCE_ID_PATTERN） */

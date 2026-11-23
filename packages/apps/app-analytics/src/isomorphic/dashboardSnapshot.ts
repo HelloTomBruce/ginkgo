@@ -5,7 +5,7 @@
  * v0.1 旧快照无这些字段 → 缺省只读收藏，导入不报错。深层校验以服务端为准。
  */
 // 仅取类型（编译期擦除，不把 server-only 存储层打进客户端包）
-import type { DashboardQuery, DashboardRecord } from "./dashboardStore";
+import type { DashboardQuery, DashboardRecord } from "./dashboardTypes";
 
 export const SNAPSHOT_EXTENSION = ".openui.json";
 

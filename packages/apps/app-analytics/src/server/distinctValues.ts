@@ -11,7 +11,7 @@
 import type { DynamicSourceConfig, McpConnection } from "@openui-analytics/datasources";
 import { parseMcpToolResult } from "@openui-analytics/datasources/parseToolResult";
 import { SOURCE_ID_RE } from "@openui-analytics/chart-spec";
-import { extractQueryRows } from "./queryRows";
+import { extractQueryRows } from "@openui-apps/analytics/isomorphic";
 import { TABLE_RE } from "./specMaterialize";
 
 export const DISTINCT_VALUES_CAP = 200;

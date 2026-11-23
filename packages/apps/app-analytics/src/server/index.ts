@@ -13,7 +13,7 @@ import {
   createMethodLibrary,
   renderMethodIndex,
   type MethodLibrary,
-} from "@openui-analytics/methodology";
+} from "../methodology";
 import type { CoreMessage } from "ai";
 import type {
   AppDeliverableContract,
@@ -379,3 +379,38 @@ export function createAnalyticsServer(deps: AnalyticsServerDeps) {
 }
 
 export type AnalyticsServer = ReturnType<typeof createAnalyticsServer>;
+
+// 方法卡运行时装配（用户卡目录 + 合并）经 ./server 子入口暴露，宿主 API 薄壳消费
+export * from "./methodologyLoader";
+
+// ===== 看板产物域（收藏存储 / SQL 物化 / 活看板重放 / 筛选联动 / 模板重绑定）=====
+// 宿主 /api/dashboards 六条路由为薄壳：拆包转发到本入口，业务校验与编排在此自治
+export {
+  dashboardStore,
+  toSummary,
+  validateDashboardFields,
+  DEFAULT_DASHBOARD_APP_ID,
+  DASHBOARD_DSL_MAX,
+} from "./dashboardStore";
+export {
+  materializeSpecRows,
+  TABLE_RE,
+} from "./specMaterialize";
+export { refreshDashboard } from "./dashboardRefresh";
+export { getDistinctValues, clearDistinctCache } from "./distinctValues";
+export { retargetTemplate } from "./templateRetarget";
+export {
+  handlePreviewQuery,
+  handleCreateFromTemplate,
+  type DashboardRouteDeps,
+} from "./dashboardRoutes";
+export type {
+  DashboardOrigin,
+  DashboardQuery,
+  DashboardKind,
+  TemplateSlot,
+  TemplateMeta,
+  DashboardRecord,
+  DashboardSummary,
+} from "./dashboardStore";
+export { createDashboardStore } from "./dashboardStore";

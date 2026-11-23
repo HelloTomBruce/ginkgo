@@ -80,7 +80,7 @@ export function renderComponentKitDocumentation(
   customGuides: Record<string, string> = DEFAULT_COMPONENT_PROMPT_GUIDES
 ): string {
   const lines: string[] = [
-    "## Visual Component Kit (OpenUI Lang):",
+    "## Visual Component Kit (Dashboard DSL):",
     "You have a rich set of declarative components available:",
   ];
 

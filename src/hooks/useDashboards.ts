@@ -7,7 +7,7 @@ import type {
   DashboardQuery,
   DashboardRecord,
   DashboardSummary,
-} from "@/lib/dashboardStore";
+} from "@openui-apps/analytics/server";
 
 /**
  * 看板收藏库客户端状态：列表 / 收藏 / 重命名 / 删除。
@@ -27,7 +27,7 @@ export interface FavoriteDashboardInput {
   queries?: DashboardQuery[];
   bindings?: Record<string, string>;
   /** 派生变换绑定（transform 推测 + 一致性验证通过）；键必 ⊆ bindings 键 */
-  transforms?: Record<string, import("@/lib/transforms").TransformSpec>;
+  transforms?: Record<string, import("@openui-apps/analytics/isomorphic").TransformSpec>;
 }
 
 export type FavoriteResult = { ok: true } | { ok: false; error: string };

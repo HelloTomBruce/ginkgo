@@ -70,9 +70,10 @@ describe("setSessionEnabledSources", () => {
   });
 });
 
-describe("欢迎语 v3", () => {
-  it("引导设置→数据源，不含内置概念", () => {
-    expect(DEFAULT_WELCOME_MESSAGE.content).toContain("设置 → 数据源");
-    expect(DEFAULT_WELCOME_MESSAGE.content).not.toContain("内置");
+describe("欢迎语兜底", () => {
+  it("领域中立占位：不承载任何应用领域宣称（应用欢迎语由 client.welcomeMessage 自治）", () => {
+    expect(DEFAULT_WELCOME_MESSAGE.content).toContain("智能助手");
+    expect(DEFAULT_WELCOME_MESSAGE.content).not.toContain("数据分析");
+    expect(DEFAULT_WELCOME_MESSAGE.content).not.toContain("数据源");
   });
 });

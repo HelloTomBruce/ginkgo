@@ -7,7 +7,7 @@ import {
   type CardValidationIssue,
   type MethodCard,
   type MethodLibrary,
-} from "@openui-analytics/methodology";
+} from "../methodology";
 
 /**
  * 用户方法卡运行时加载（三级扩展的第三级）：
@@ -72,5 +72,55 @@ export function createAppMethodology(
     ...createMethodLibrary({ builtin: builtinMethodCards, custom: cards }),
     skipped,
     userIds: new Set(cards.map((c) => c.id)),
+  };
+}
+
+/** createAppMethodology 的返回形态（注入位类型引用） */
+type MethodologyAssembly = ReturnType<typeof createAppMethodology>;
+
+/**
+ * 查看契约组装（GET /api/methodology 的响应体）：与 selectMethodCards 注入
+ * prompt 的卡集同源；executeGuidance 是 LLM 内部件不进查看契约。
+ * assemble 可注入（测试用 fixture 装配；缺省真实读取用户卡目录）。
+ */
+export function buildMethodologyOverview(
+  assemble: () => MethodologyAssembly = createAppMethodology
+): {
+  cards: Array<{
+    id: string;
+    name: string;
+    when: string;
+    steps: unknown;
+    chartPairing: unknown;
+    presetQuery?: string;
+    source: "user" | "builtin";
+  }>;
+  counts: { builtin: number; user: number; overridden: number };
+  skipped: CardValidationIssue[];
+} {
+  const { library, skipped, userIds } = assemble();
+  const builtinIds = new Set(builtinMethodCards.map((c) => c.id));
+  let overridden = 0;
+  for (const id of userIds) {
+    if (builtinIds.has(id)) overridden++;
+  }
+  return {
+    cards: library.cards.map(
+      ({ id, name, when, steps, chartPairing, presetQuery }) => ({
+        id,
+        name,
+        when,
+        steps,
+        chartPairing,
+        ...(presetQuery !== undefined ? { presetQuery } : {}),
+        source: userIds.has(id) ? ("user" as const) : ("builtin" as const),
+      })
+    ),
+    counts: {
+      builtin: builtinMethodCards.length,
+      user: userIds.size,
+      overridden,
+    },
+    skipped,
   };
 }

@@ -4,8 +4,8 @@ import { toCsvContent, downloadCsv } from "@openui-analytics/components";
 import { toast } from "@/lib/toast";
 
 /**
- * OpenUI 客户端本地工具集合 (Client Tool Provider)
- * 允许大模型生成的 OpenUI 界面直接调用浏览器端本地 API，无需往返服务端
+ * 看板客户端本地工具集合 (Client Tool Provider)
+ * 允许生成的看板界面直接调用浏览器端本地 API，无需往返服务端
  */
 export const clientTools: Record<string, (args: Record<string, unknown>) => Promise<unknown>> = {
   /**

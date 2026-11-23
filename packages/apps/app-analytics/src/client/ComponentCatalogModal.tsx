@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import { LayoutGrid, ChevronDown } from "lucide-react";
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogTitle } from "@openui-analytics/components/ui/dialog";
 import { Renderer } from "@openuidev/react-lang";
 import {
   componentCatalog,

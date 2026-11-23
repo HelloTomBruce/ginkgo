@@ -1,6 +1,6 @@
 # 平台生态路线图：能力包扩展与第三方应用分发
 
-> 定位：本仓库从「自带两个应用的产品」演进为「OpenUI 智能体应用平台 + 应用生态」的架构路线。
+> 定位：本仓库从「自带两个应用的产品」演进为「Ginkgo 智能体应用平台 + 应用生态」的架构路线。
 > 上游文档：[应用接入规范](app-integration-guide.md)（单个应用如何接入）；本文回答**平台侧**
 > 要长出哪些能力包、第三方应用如何分发安装。
 > 状态：设计定稿（2026-11）；各阶段标注优先级与前置依赖，实施前逐阶段出实施方案。
@@ -39,9 +39,9 @@
 | # | 能力包 | 解决什么 | 优先级 | 现有锚点 |
 | --- | --- | --- | --- | --- |
 | ① | **openui-memory** 记忆/知识 | 跨会话记忆、用户偏好、轻量知识库（RAG）——general/客服/研究类应用共同刚需 | ★★★ | `sessions` 通道（pendingPlan 同模式扩展）；harness tokenizer 做记忆预算 |
-| ② | **文档交付物**（components 扩展 + document-spec） | OpenUI Lang 目前是看板中心；补文档原语（章节/表格/导出）解锁第二类应用（app-sdk 注释已预留「文档写作包提供 DocumentEditor」） | ★★★ | `CATALOG_GROUPS` 单一注册源 + `serverLibrary` 同构扩展；产物协议 `type:"document"` 已预留 |
+| ② | **文档交付物**（components 扩展 + document-spec） | 看板 DSL 目前是看板中心；补文档原语（章节/表格/导出）解锁第二类应用（app-sdk 注释已预留「文档写作包提供 DocumentEditor」） | ★★★ | `CATALOG_GROUPS` 单一注册源 + `serverLibrary` 同构扩展；产物协议 `type:"document"` 已预留 |
 | ③ | **openui-scheduler** 定时任务/订阅 | 看板定时刷新、日报周报订阅推送；产物协议的放大器 | ★★ | `refreshArtifact` 已 compute-only 化，调度层只需定时调它；harness 遥测观测 |
-| ④ | **openui-executor** 沙箱执行 | 受限代码执行（资源限额/超时/网络策略），devops/模拟器/数据科学类刚需 | ★★ | `workspaceResolver` 边界已有；general 的 `run_command` 是雏形，升级为 worker/vm 隔离 + 权限声明 |
+| ④ | **openui-executor** 沙箱执行 | 受限代码执行（资源限额/超时/网络策略），devops/模拟器/数据科学类刚需 | ★★ | **基础层已落地**：`openui-sandbox` 能力包（atomic/explorer 预设 + full/readonly 权限档 + env 白名单，general 已消费）；本条目剩余演进 = worker/vm 隔离 + 声明式权限 + 审批边缘 |
 | ⑤ | **文件理解**（openui-ingest 扩展） | PDF/Word/JSON 等非结构化入库 | ★★ | `fileStore.ingestFiles` 的 staging→原子替换管线直接复用 |
 | ⑥ | **openui-share** 分享/导出 | 分享链接、PDF/图片导出、iframe embed——产物传播闭环 | ★ | `.openui.json` 快照已有；DashboardPreviewModal 只读渲染可复用 |
 | ⑦ | **应用级配额**（harness-core 扩展） | appId 维度的计量/限额/计费——第三方上架后的商业化基础 | ★（随分发做） | `CostLedger.record` 增加 appId 字段，向下兼容 |

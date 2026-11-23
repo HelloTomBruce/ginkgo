@@ -1,14 +1,13 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, cleanup, fireEvent } from "@testing-library/react";
 import { ChatSidebar } from "./ChatSidebar";
-import type { DashboardSummary } from "@/lib/dashboardStore";
+import type { DashboardSummary } from "@openui-apps/analytics/server";
 
 const baseProps = {
   sessions: [],
   currentSessionId: "s1",
   editingSessionId: null,
   editingTitleText: "",
-  showRawLang: false,
   dashboards: [] as DashboardSummary[],
   onPreviewDashboard: vi.fn(),
   onReanalyzeDashboard: vi.fn(),
@@ -25,13 +24,12 @@ const baseProps = {
   onCancelEdit: vi.fn(),
   onPresetSelect: vi.fn(),
   presetQueries: [
-    { id: "trend", name: "趋势与同比环比", query: "核心指标走势如何？" },
+    { id: "trend", title: "趋势与同比环比", query: "核心指标走势如何？" },
   ],
   onToggleRawLang: vi.fn(),
   onToggleDashboardTemplate: vi.fn(),
   onCreateDashboardFromTemplate: vi.fn(),
-  onOpenMethodology: vi.fn(),
-  onOpenComponentCatalog: vi.fn(),
+  onOpenAction: vi.fn(),
 };
 
 const SUMMARY: DashboardSummary = {
@@ -205,20 +203,12 @@ describe("ChatSidebar 看板库 tab", () => {
 });
 
 describe("ChatSidebar 底部功能栏", () => {
-  it("「分析方法论」按钮触发 onOpenMethodology", () => {
+  it("「分析方法论」按钮触发 onOpenAction(methodology)（Component 弹层交宿主管理）", () => {
     const props = { ...baseProps };
     render(<ChatSidebar {...props} />);
 
     fireEvent.click(screen.getByRole("button", { name: "分析方法论" }));
-    expect(props.onOpenMethodology).toHaveBeenCalledTimes(1);
-  });
-
-  it("「可视化组件」按钮触发 onOpenComponentCatalog", () => {
-    const props = { ...baseProps };
-    render(<ChatSidebar {...props} />);
-
-    fireEvent.click(screen.getByRole("button", { name: "可视化组件" }));
-    expect(props.onOpenComponentCatalog).toHaveBeenCalledTimes(1);
+    expect(props.onOpenAction).toHaveBeenCalledWith("methodology");
   });
 
   it("当 activeAppId 为通用助手 general 时，隐藏数据分析特有的看板 Tab 与方法论入口", () => {
@@ -230,8 +220,15 @@ describe("ChatSidebar 底部功能栏", () => {
     expect(screen.getByText("通用智能助手")).toBeDefined();
   });
 
-  it("通用智能助手展示自治的推荐预设指令与描述", () => {
-    const props = { ...baseProps, activeAppId: "general" };
+  it("通用智能助手展示自治的推荐预设指令与描述（推荐列表由宿主组装后传入）", () => {
+    const props = {
+      ...baseProps,
+      activeAppId: "general",
+      // 宿主已按 general 声明的 presetQueries 组装（本组件零应用语义）
+      presetQueries: [
+        { id: "preset-0", title: "代码工程", query: "帮我审查并重构一段代码，提升可维护性" },
+      ],
+    };
     render(<ChatSidebar {...props} />);
 
     fireEvent.click(screen.getByRole("button", { name: /推荐/ }));

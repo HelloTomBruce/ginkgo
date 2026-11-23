@@ -1,7 +1,7 @@
 import {
   renderCardDetail,
   type MethodLibrary,
-} from "@openui-analytics/methodology";
+} from "../methodology";
 
 /**
  * execute 模式方法提取（WS-4 结构化交接的降级兜底）：从消息历史**最近一条 assistant 消息**（即待执行的

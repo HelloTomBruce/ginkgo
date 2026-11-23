@@ -1,6 +1,7 @@
 "use client";
 
 import { authHeaders } from "@/lib/auth";
+import { DEFAULT_APP_ID } from "@/lib/apps/registry";
 // 仅取类型（编译期擦除，不会把 server-only 的 sessionStore 打进客户端包）
 import type {
   SessionContextMeta,
@@ -294,7 +295,7 @@ export function ensureSessionsReady(
           sessions: [
             {
               id: created.id,
-              appId: created.appId ?? "analytics",
+              appId: created.appId ?? DEFAULT_APP_ID,
               title: created.title,
               createdAt: created.createdAt,
               updatedAt: created.updatedAt,

@@ -378,14 +378,14 @@ export const serverActionButton = defineComponent({
     variant: z.enum(["primary", "secondary", "outline", "success", "danger"]).optional().describe("按钮样式主题"),
     icon: z.enum(["play", "download", "copy", "link", "zap"]).optional().describe("图标类型"),
     prompt: z.string().optional().describe("点击后向 AI 发送的分析提问"),
-    action: z.any().optional().describe("OpenUI 结构化动作流配置"),
+    action: z.any().optional().describe("结构化动作流配置"),
   }),
   component: () => null,
 });
 
 export const serverReactiveSimulator = defineComponent({
   name: "ReactiveSimulator",
-  description: "响应式预算模拟与本地实时试算器，集成 OpenUI 响应式状态绑定、表单约束校验与客户端一键导出",
+  description: "响应式预算模拟与本地实时试算器，集成响应式状态绑定、表单约束校验与客户端一键导出",
   props: z.object({
     title: z.string().optional().describe("试算器标题"),
     defaultBudget: z.number().optional().describe("默认模拟预算金额"),

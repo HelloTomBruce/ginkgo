@@ -11,7 +11,7 @@ import {
   builtinMethodCards,
   renderMethodIndex,
   renderCardDetail,
-} from "@openui-analytics/methodology";
+} from "../methodology";
 
 let dir: string;
 

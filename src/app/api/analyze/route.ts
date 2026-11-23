@@ -9,7 +9,6 @@ import { sessionStore } from "@/lib/sessionStore";
 import { DEFAULT_APP_ID } from "@/lib/apps/registry";
 import { resolveWorkspaceContext } from "@/lib/workspaceResolver";
 import { workspaceStore } from "@/lib/workspaceStore";
-import { getGeneralTools } from "@openui-apps/general/server";
 import {
   analyticsDeliverable,
   analyticsNoApiKeyMessage,
@@ -51,13 +50,12 @@ async function resolveWorkspaceForSession(appId: string, sessionId?: string) {
   }
 }
 
-/** 是否需要为该应用解析工作区（无沙箱语义的应用跳过，避免无谓建目录） */
-const APP_NEEDS_WORKSPACE = new Set(["general"]);
-
 /**
  * 薄壳：LLM 编排在 @openui-analytics/llm（领域中立），应用 prompt/工具全部经
- * resolveAppPrompt / resolveAppTools 接缝注入；analytics 的深度编排（schema 摘要、
- * 方法卡、认证口径、跨源工具）在 @openui-apps/analytics 服务端自治。
+ * resolveAppPrompt / resolveAppTools 接缝注入（无 appId 特判：general 的沙箱
+ * 工具在应用包内消费 openui-sandbox 能力包装配，宿主只按 needsWorkspace 声明
+ * 注入会话沙箱）；analytics 的深度编排（schema 摘要、方法卡、认证口径、跨源
+ * 工具）在 @openui-apps/analytics 服务端自治。
  * telemetry：NDJSON console（可 grep）+ 进程内指标聚合双写；接 OTel 时换
  * compositeSink(console, otelSink, metrics.sink)。
  */
@@ -83,7 +81,7 @@ export const POST = createAnalyzeHandler({
   resolveAppPrompt: async (appId, ctx) => {
     const server = resolveRuntimeServer(appId);
     if (!server?.buildSystemPrompt) return undefined;
-    const workspace = APP_NEEDS_WORKSPACE.has(appId)
+    const workspace = server.needsWorkspace
       ? await resolveWorkspaceForSession(appId, ctx.sessionId)
       : undefined;
     return server.buildSystemPrompt({
@@ -99,21 +97,15 @@ export const POST = createAnalyzeHandler({
     });
   },
   resolveAppTools: async (appId, ctx) => {
-    if (appId === "general") {
-      const workspace = await resolveWorkspaceForSession(appId, ctx.sessionId);
-      return getGeneralTools({
-        appId,
-        sessionId: ctx.sessionId,
-        workspace,
-        mode: ctx.mode,
-        messages: ctx.messages,
-      });
-    }
     const server = resolveRuntimeServer(appId);
     if (!server?.getTools) return undefined;
+    const workspace = server.needsWorkspace
+      ? await resolveWorkspaceForSession(appId, ctx.sessionId)
+      : undefined;
     const tools = await server.getTools({
       appId,
       sessionId: ctx.sessionId,
+      ...(workspace ? { workspace } : {}),
       mode: ctx.mode,
       messages: ctx.messages,
       userQuery: ctx.userQuery,

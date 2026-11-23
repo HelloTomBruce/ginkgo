@@ -1,6 +1,6 @@
 # @openui-analytics/datasources
 
-OpenUI Analytics 结构化数据源连接、工具装配、安全查询网关与语义层底座：原生直连标准关系型数据库与本地分析文件（DuckDB），并在执行路径上深度集成词法与方言双重只读守卫、LRU 结果集缓存、EXPLAIN 成本熔断、Schema Card 结构探查及 Certified Queries 业务语义层。
+Ginkgo 结构化数据源连接、工具装配、安全查询网关与语义层底座：原生直连标准关系型数据库与本地分析文件（DuckDB），并在执行路径上深度集成词法与方言双重只读守卫、LRU 结果集缓存、EXPLAIN 成本熔断、Schema Card 结构探查及 Certified Queries 业务语义层。
 
 > [!NOTE]
 > **关于 MCP 职责边界划分**：
@@ -9,7 +9,7 @@ OpenUI Analytics 结构化数据源连接、工具装配、安全查询网关与
 
 ## 包定位
 
-- **原生结构化数据源连接器**：直连关系型数仓与分析数据库（PostgreSQL、MySQL、SQLite、ClickHouse）以及基于 DuckDB 的本地结构化分析文件（CSV、Excel、Parquet、JSON），统一封装为带有源 ID 前缀隔离的数据源工具集（`DatasourceToolBinding`）。
+- **原生结构化数据源连接器**：直连关系型与 OLAP 数据库（PostgreSQL、MySQL、SQLite、ClickHouse）以及基于 DuckDB 的本地结构化文件（CSV、Excel、Parquet、JSON），统一封装为带有源 ID 前缀隔离的数据源工具集（`DatasourceToolBinding`）。
 - **查询安全网关与成本防线（QueryGateway）**：承担所有数据查询的安全防护职责，杜绝任何非授权数据修改、高危 DDL、多语句注入或超大查询引发的计算资源耗尽。
 - **与兄弟包的依赖关系**：
   - 作为独立底层数据包，不依赖其他 workspace 包；

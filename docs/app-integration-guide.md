@@ -1,7 +1,7 @@
-# OpenUI 平台应用接入规范
+# Ginkgo 平台应用接入规范
 
 > 适用版本：平台化收敛（llm 领域中立化 + 产物协议）之后。
-> 本文是新增/接入一个 OpenUI 平台应用的**唯一规范入口**，以 analytics（深度应用）与
+> 本文是新增/接入一个 Ginkgo 平台应用的**唯一规范入口**，以 analytics（深度应用）与
 > general（轻应用）为双实例讲解。协议类型唯一事实来源：`packages/openui-app-sdk/src/types.ts`。
 > 平台侧能力包扩展与第三方应用分发的演进路线见
 > [平台生态路线图](platform-ecosystem-roadmap.md)。
@@ -25,8 +25,8 @@
 │ ② 数据语义层：openui-datasources（requiresDataTools 应用可复用）    │
 │ ③ 声明式渲染：openui-components（analyticsLibrary + serverLibrary  │
 │    + OpenUIRenderer + DSL 校验器）                                │
-│ ④ 方法论资产：openui-methodology                                   │
-│ ⑤ 工作区沙箱：workspaceStore / workspaceResolver                  │
+│ ④ 沙箱原子工具：openui-sandbox（preset × permission 双维度）        │
+│ ⑤ 工作区沙箱解析：workspaceStore / workspaceResolver              │
 │ ⑥ 产物协议：AppArtifactItem / listArtifacts / refreshArtifact     │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -69,19 +69,28 @@ packages/apps/app-<id>/
 
 | 字段 | 必填 | 说明 |
 | --- | --- | --- |
-| `welcomeMessage` | ✓ | 新会话默认欢迎语 |
-| `presetQueries` | ✓ | 推荐问题列表（侧栏「推荐」面板） |
+| `welcomeMessage` | ✓ | 新会话欢迎语（应用自治；宿主兜底文案领域中立） |
+| `presetQueries` | ✓ | 静态推荐问题列表（声明 `resolvePresetQueries` 时作解析失败兜底） |
+| `resolvePresetQueries` | | 推荐列表运行时解析插槽（`async () => AppPresetQuery[]`，如方法卡合并集）；宿主在 effect 中按应用条件调用 |
 | `defaultInteractionMode` | | `"plan"`（先出思路，默认）/ `"build"`（直出） |
 | `WorkspaceComponent` | | 右侧工作台插槽组件（不提供则纯对话布局） |
+| `workspaceView` | | 工作区视图语义：`"canvas"`（分析画布，canvas-only 需先钉选看板）/ `"files"`（文件产物，缺省） |
+| `workspaceMount` | | 会话支持挂载本地文件夹（侧栏「选择文件夹」按钮渲染开关） |
 | `InputAccessoryComponent` | | 输入栏挂件插槽（如 analytics 的数据源选择器） |
 | `sidebarTabs` | | 侧栏扩展 Tab；不提供 `Component` 时按 key 借用宿主内置面板（`dashboards` 收藏库 / `presets` 推荐），提供则应用完全自治渲染 |
-| `sidebarQuickActions` | | 侧栏底部快捷操作（通用渲染：`label`/`icon` 生效；`onClick` 缺省解析宿主内置能力 `methodology` / `component-catalog`） |
+| `sidebarQuickActions` | | 侧栏底部快捷操作：`onClick` 应用自治；**`Component` 弹层插槽**（`{ open, onClose }`，宿主统一管理 open 状态——方法论查看器等）；内置能力 key `component-catalog` 保持宿主解析 |
+| `dashboardToolbar` | | 消息内看板区块工具条能力声明（`title`/`pin`/`favorite`/`exportPdf`）；未声明的应用不渲染操作按钮 |
+| `messageExtensions` | | 消息区扩展声明：`planConfirm`（patterns 子串匹配 → 确认按钮）/ `completion`（finish_task 后无看板代码的总结卡）/ `toolSettledHint`（工具完成过渡文案）；未声明的应用全部中性渲染 |
 | `hasWorkspace` / `hasInputAccessory` | | 标志位（快速判定，避免取组件判空） |
 
-插槽组件 Props 契约见 `AppWorkspaceProps` / `AppInputAccessoryProps` / `AppSidebarTabProps`。
-渲染基建（`OpenUIRenderer`、`DashboardScopeProvider`、`filterBus`、组件 Def）统一从
-`@openui-analytics/components` 取——客户端本地工具经宿主挂载的
-`<OpenUIToolProvider>` 自动生效，无需逐层透传。
+**语义声明化红线**：宿主区分应用的判断只能消费上表的声明数据（布尔/枚举/子串
+pattern），禁止在宿主组件里写 appId 比较、话术正则或硬编码文案。新交互扩展一律
+先加契约字段、再让宿主按声明渲染。
+
+插槽组件 Props 契约见 `AppWorkspaceProps` / `AppInputAccessoryProps` / `AppSidebarTabProps`；
+画布钉选载荷类型为协议层 `AppCanvasData`。渲染基建（`OpenUIRenderer`、
+`DashboardScopeProvider`、`filterBus`、组件 Def）统一从 `@openui-analytics/components`
+取——客户端本地工具经宿主挂载的 `<OpenUIToolProvider>` 自动生效，无需逐层透传。
 
 ## 4. 服务端契约（AppServerContract）
 
@@ -90,11 +99,19 @@ interface AppServerContract {
   buildSystemPrompt?(ctx: AppServerContext): Promise<string> | string;
   getTools?(ctx: AppServerContext): Promise<Record<string, unknown>> | Record<string, unknown>;
   requiresDataTools?: boolean;
+  /** 声明需要会话沙箱（宿主解析 workspace 并注入 AppServerContext.workspace） */
+  needsWorkspace?: boolean;
   requiredCapabilities?: string[];
   listArtifacts?(ctx: AppWorkspaceContext): Promise<AppArtifactItem[]>;
   refreshArtifact?(input: { artifactId: string }): Promise<AppArtifactRefreshVerdict>;
 }
 ```
+
+沙箱文件/shell 工具不要自研：消费 `@openui-analytics/sandbox` 能力包的
+`createSandboxTools({ sandboxDir, preset: "atomic" | "explorer", permission: "full" | "readonly" })`
+——preset 是丰富度维度（atomic = read/edit/write/bash 四原子工具；explorer 追加
+list_dir），permission 是权限维度（readonly 只装配只读工具）；工具说明 prompt 片段
+用 `sandboxToolsPromptSection(preset, permission)` 与装配同源拼接。
 
 ### 4.1 AppServerContext 字段全景
 

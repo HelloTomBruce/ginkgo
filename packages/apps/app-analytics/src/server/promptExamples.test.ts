@@ -120,7 +120,7 @@ describe("prompt 示例与组件库 schema 一致性", () => {
 describe("内置方法卡 ↔ 组件库一致性（methodology 三级扩展守护）", () => {
   it("全部内置卡的 chartPairing 组件存在于 serverLibrary", async () => {
     const { builtinMethodCards, validateCards } = await import(
-      "@openui-analytics/methodology"
+      "../methodology"
     );
     // 组件名全集直接取自 serverLibrary schema（新增/改名组件时此处同步）
     const schema = serverLibrary.toJSONSchema() as { properties?: Record<string, unknown> };

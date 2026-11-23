@@ -24,12 +24,12 @@ import {
   type McpConnection,
 } from "@openui-analytics/datasources";
 import { parseMcpToolResult } from "@openui-analytics/datasources/parseToolResult";
-import { extractQueryRows } from "./queryRows";
+import { extractQueryRows } from "@openui-apps/analytics/isomorphic";
 import {
   applyTransform,
   isValidTransformSpec,
   type TransformSpec,
-} from "./transforms";
+} from "@openui-apps/analytics/isomorphic";
 
 // ===== 常量与标识符规则 =====
 

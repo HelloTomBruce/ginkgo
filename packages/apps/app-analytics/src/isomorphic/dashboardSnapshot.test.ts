@@ -1,4 +1,5 @@
-// download 依赖 DOM（Blob/URL/document），本文件走默认 jsdom 环境（注意勿在首行写环境 pragma）
+// @vitest-environment jsdom
+// download 依赖 DOM（Blob/URL/document）：文件级标注 jsdom（包默认 node）
 import { describe, it, expect, vi, afterEach } from "vitest";
 import {
   parseDashboardSnapshot,
@@ -6,7 +7,7 @@ import {
   downloadDashboardSnapshot,
   SNAPSHOT_EXTENSION,
 } from "./dashboardSnapshot";
-import type { DashboardRecord } from "./dashboardStore";
+import type { DashboardRecord } from "./dashboardTypes";
 
 afterEach(() => {
   vi.restoreAllMocks();

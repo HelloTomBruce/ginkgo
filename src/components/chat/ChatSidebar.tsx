@@ -32,14 +32,20 @@ import type { SessionSummary } from "@/lib/sessionStore";
 import type { WorkspaceRecord } from "@/lib/workspaceStore";
 import { toast } from "@/lib/toast";
 // 仅取类型（编译期擦除）
-import type { DashboardSummary } from "@/lib/dashboardStore";
-import type { PresetQuery } from "./useMethodologyPresets";
+import type { DashboardSummary } from "@openui-apps/analytics/server";
 import { SessionListItem, formatSessionTime } from "./SessionListItem";
 import { AppSwitcher } from "./AppSwitcher";
-import { appRegistry } from "@/lib/apps/registry";
+import { appRegistry, DEFAULT_APP_ID } from "@/lib/apps/registry";
+
+/** 侧栏推荐项视图模型：由宿主按应用声明（resolvePresetQueries / presetQueries）组装 */
+interface PresetQuery {
+  id: string;
+  title: string;
+  query: string;
+}
 
 interface ChatSidebarProps {
-  /** 当前应用 ID（缺省为 "analytics"） */
+  /** 当前应用 ID（缺省取平台默认应用） */
   activeAppId?: string;
   /** 切换应用回调 */
   onSwitchApp?: (appId: string) => void;
@@ -47,7 +53,6 @@ interface ChatSidebarProps {
   currentSessionId: string;
   editingSessionId: string | null;
   editingTitleText: string;
-  showRawLang: boolean;
   /** 看板收藏库（服务端存储，跨浏览器可用） */
   dashboards: DashboardSummary[];
   onPreviewDashboard: (id: string) => void;
@@ -71,23 +76,20 @@ interface ChatSidebarProps {
   onEditTitleChange: (text: string) => void;
   onCancelEdit: () => void;
   onPresetSelect: (preset: string) => void;
-  /** 推荐列表：方法卡 presetQuery 生成（内置兜底 + /api/methodology 合并卡集） */
+  /** 推荐列表：宿主按应用声明组装（resolvePresetQueries 插槽或静态 presetQueries） */
   presetQueries: PresetQuery[];
-  onToggleRawLang: () => void;
-  /** 打开分析方法论查看弹窗 */
-  onOpenMethodology: () => void;
+  /** 打开应用自治弹层（sidebarQuickActions 声明 Component 的动作，宿主按 key 管理 open） */
+  onOpenAction: (key: string) => void;
   /** 打开可视化组件查看弹窗 */
-  onOpenComponentCatalog: () => void;
 }
 
 export function ChatSidebar({
-  activeAppId = "analytics",
+  activeAppId = DEFAULT_APP_ID,
   onSwitchApp,
   sessions,
   currentSessionId,
   editingSessionId,
   editingTitleText,
-  showRawLang,
   dashboards,
   onPreviewDashboard,
   onReanalyzeDashboard,
@@ -106,9 +108,7 @@ export function ChatSidebar({
   onCancelEdit,
   onPresetSelect,
   presetQueries,
-  onToggleRawLang,
-  onOpenMethodology,
-  onOpenComponentCatalog,
+  onOpenAction,
 }: ChatSidebarProps) {
   const currentApp = useMemo(
     () => appRegistry.getOrDefault(activeAppId),
@@ -128,21 +128,8 @@ export function ChatSidebar({
 
   const activeTabSpec = appTabs.find((t) => t.key === effectiveTab);
 
-  // 解析当前应用可用的推荐项（数据分析走方法卡，通用应用走自治 presetQueries）
-  const appPresets = useMemo(() => {
-    if (activeAppId === "analytics" && presetQueries.length > 0) {
-      return presetQueries.map((p) => ({
-        id: p.id,
-        title: p.name,
-        query: p.query,
-      }));
-    }
-    return (currentApp.client.presetQueries ?? []).map((p, idx) => ({
-      id: p.id ?? `preset-${idx}`,
-      title: p.category ?? "推荐",
-      query: p.text,
-    }));
-  }, [activeAppId, presetQueries, currentApp.client.presetQueries]);
+  // 推荐列表由宿主按应用声明组装后传入（resolvePresetQueries 插槽或静态
+  // presetQueries），本组件零应用语义、纯渲染
 
   const [sessionSearch, setSessionSearch] = useState("");
   // 快照导入：隐藏 file input（选择后清空 value，允许重复导入同一文件）
@@ -295,7 +282,7 @@ export function ChatSidebar({
           <Plus className="w-4 h-4" />
           <span>新建会话</span>
         </button>
-        {activeAppId !== "analytics" && (
+        {currentApp.client.workspaceMount && (
           <button
             onClick={handlePickFolder}
             disabled={isPickingFolder}
@@ -532,7 +519,7 @@ export function ChatSidebar({
             <div className="text-[11px] font-semibold text-foreground-faint uppercase tracking-wider truncate">
               收藏的看板（服务端存储）
             </div>
-            <Hint label="导入 .openui.json 快照文件">
+            <Hint label="导入看板快照文件">
               <button
                 onClick={() => importFileRef.current?.click()}
                 aria-label="导入看板快照"
@@ -586,12 +573,12 @@ export function ChatSidebar({
           <div className="text-[11px] font-semibold text-foreground-faint uppercase tracking-wider px-1 pb-1">
             {activeTabSpec?.description || "推荐场景与指令"}
           </div>
-          {appPresets.length === 0 ? (
+          {presetQueries.length === 0 ? (
             <div className="text-center py-8 text-xs text-foreground-faint">
               当前应用暂无推荐场景
             </div>
           ) : (
-            appPresets.map((preset) => (
+            presetQueries.map((preset) => (
               <button
                 key={preset.id}
                 onClick={() => onPresetSelect(preset.query)}
@@ -610,26 +597,12 @@ export function ChatSidebar({
 
       {/* 底部功能栏 */}
       <div className="p-3 border-t border-border-subtle space-y-1.5 bg-surface-sunken/50">
-        <button
-          onClick={onToggleRawLang}
-          className={`w-full text-xs p-2 rounded-lg border transition-colors flex items-center gap-2 ${
-            showRawLang
-              ? "bg-info-soft border-info-border text-info-fg font-medium"
-              : "border-border text-foreground-subtle hover:bg-muted"
-          }`}
-        >
-          <FileCode className="w-3.5 h-3.5" />
-          <span>{showRawLang ? "隐藏 OpenUI 源码" : "查看 OpenUI Lang 源码"}</span>
-        </button>
-        {/* 应用声明的快捷操作：通用渲染（label/icon 生效；onClick 缺省解析宿主内置能力） */}
+        {/* 应用声明的快捷动作：Component 弹层经 onOpenAction 交宿主统一管理，
+            onClick 应用自治——零宿主内置 key 解析 */}
         {(currentApp.client.sidebarQuickActions ?? []).map((action) => {
-          const hostHandler =
-            action.key === "methodology"
-              ? onOpenMethodology
-              : action.key === "component-catalog"
-                ? onOpenComponentCatalog
-                : undefined;
-          const handler = action.onClick ?? hostHandler;
+          const handler =
+            action.onClick ??
+            (action.Component ? () => onOpenAction(action.key) : undefined);
           if (!handler) return null;
           const ActionIcon =
             action.icon === "BookOpen"
@@ -650,13 +623,6 @@ export function ChatSidebar({
             </button>
           );
         })}
-        <button
-          onClick={onOpenComponentCatalog}
-          className="w-full text-xs p-2 rounded-lg border border-border text-foreground-subtle hover:bg-muted transition-colors flex items-center gap-2"
-        >
-          <LayoutGrid className="w-3.5 h-3.5" />
-          <span>可视化组件</span>
-        </button>
       </div>
     </aside>
   );

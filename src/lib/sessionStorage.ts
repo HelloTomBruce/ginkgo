@@ -1,5 +1,4 @@
 import type { Message } from "@ai-sdk/react";
-import { buildCapabilitySection, type CapabilityContext } from "@/lib/capabilities";
 
 export interface ChatSession {
   id: string;
@@ -34,19 +33,19 @@ export function clearLegacySessions(): void {
 }
 
 /**
- * 生成新会话欢迎语。能力清单由注册表按能力上下文过滤生成
- * （src/lib/capabilities.ts）——依赖数据源配置的能力（如跨源联合分析）
- * 在服务端正开关关闭时不出现在欢迎语里，不做不成立的能力宣称。
+ * 兜底欢迎语（领域中立占位）：仅当应用未提供 client.welcomeMessage 时使用——
+ * welcomeMessage 是 defineApp 必填项，正常路径永远走应用自治欢迎语，
+ * 本兜底只防御 registry 异常形态，不承载任何应用领域宣称。
  */
-export function buildWelcomeMessage(ctx: CapabilityContext = {}): Message {
+export function buildWelcomeMessage(): Message {
   return {
     id: "welcome",
     role: "assistant",
-    content: `👋 你好！我是基于 **Vercel AI SDK**、**OpenUI 完整生态规范** 与 **动态配置的多数据源 MCP 生态（HTTP MCP / 数据库 / 本地 CLI）** 构建的对话式数据分析助手。在「设置 → 数据源」添加你的数据源后即可开始分析。\n\n${buildCapabilitySection(ctx)}`,
+    content: "👋 你好！我是本平台的智能助手，有什么可以帮你的？",
   };
 }
 
-/** 未知数据源语境下的兜底欢迎语（首屏占位/测试用），不含有条件能力 */
+/** 首屏初始占位（领域中立），进入会话后被应用欢迎语覆盖 */
 export const DEFAULT_WELCOME_MESSAGE: Message = buildWelcomeMessage();
 
 /**

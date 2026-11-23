@@ -9,7 +9,7 @@ import {
   DASHBOARD_DSL_MAX,
   type DashboardRecord,
 } from "./dashboardStore";
-import { captureDashboardQueries } from "./dashboardCapture";
+import { captureDashboardQueries } from "@openui-apps/analytics/isomorphic/dashboardCapture";
 
 let dir: string;
 let store: ReturnType<typeof createDashboardStore>;

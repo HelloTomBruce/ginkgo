@@ -6,9 +6,9 @@ import { OpenUIRenderer } from "@/components/OpenUIRenderer";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Hint } from "@/components/ui/hint";
 // 仅取类型（编译期擦除）
-import type { DashboardRecord } from "@/lib/dashboardStore";
+import type { DashboardRecord } from "@openui-apps/analytics/server";
 import { toast } from "@/lib/toast";
-import { downloadDashboardSnapshot } from "@/lib/dashboardSnapshot";
+import { downloadDashboardSnapshot } from "@openui-apps/analytics/isomorphic";
 import { formatSessionTime } from "./SessionListItem";
 
 /** 预览内刷新结果：成功附刷新后的完整记录与 stale 组件列表（由父层接线 get+refresh） */
@@ -119,7 +119,7 @@ export function DashboardPreviewModal({
     }
   };
 
-  // 复制 DSL：剪贴板（可粘贴到 DevTools 沙盒预览）
+  // 复制 DSL：剪贴板（可粘贴到任意编辑器留存）
   const handleCopyDsl = async () => {
     try {
       await navigator.clipboard.writeText(dashboard.dsl);
@@ -258,7 +258,7 @@ export function DashboardPreviewModal({
                 </button>
               </Hint>
             )}
-            <Hint label="下载 .openui.json 快照文件（可导入分享）">
+            <Hint label="下载看板快照文件（可导入分享）">
               <button
                 onClick={handleExportSnapshot}
                 aria-label="导出快照"
@@ -267,7 +267,7 @@ export function DashboardPreviewModal({
                 <Download className="w-4 h-4" />
               </button>
             </Hint>
-            <Hint label="复制 OpenUI DSL 到剪贴板（可粘贴到 DevTools 沙盒）">
+            <Hint label="复制看板 DSL 到剪贴板">
               <button
                 onClick={handleCopyDsl}
                 aria-label="复制 DSL"

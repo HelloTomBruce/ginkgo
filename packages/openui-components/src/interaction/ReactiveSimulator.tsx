@@ -97,7 +97,7 @@ export const ReactiveSimulator: React.FC<ReactiveSimulatorProps> = ({
             <span>{title}</span>
           </h3>
           <p className="text-xs text-foreground-faint mt-0.5">
-            OpenUI 响应式状态（Reactive State）+ 校验约束（Validation）+ 客户端工具（Client Tools）
+            响应式状态（Reactive State）+ 校验约束（Validation）+ 客户端工具（Client Tools）
           </p>
         </div>
         <span className="text-[10px] bg-indigo-soft text-indigo-fg px-2.5 py-1 rounded-full font-semibold border border-indigo-border">
@@ -227,7 +227,7 @@ export const ReactiveSimulator: React.FC<ReactiveSimulatorProps> = ({
 // ===== OpenUI 组件库定义 =====
 export const ReactiveSimulatorDef = defineComponent({
   name: "ReactiveSimulator",
-  description: "响应式预算模拟与本地实时试算器，集成 OpenUI 响应式状态绑定、表单约束校验与客户端一键导出",
+  description: "响应式预算模拟与本地实时试算器，集成响应式状态绑定、表单约束校验与客户端一键导出",
   props: z.object({
     title: z.any().optional().describe("试算器标题"),
     defaultBudget: z.any().optional().describe("默认模拟预算金额"),

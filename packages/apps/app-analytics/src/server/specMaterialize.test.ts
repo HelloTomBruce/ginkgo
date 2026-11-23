@@ -204,7 +204,7 @@ import {
   rowPassesSpecFilters,
   specToTransformSpec,
 } from "./specMaterialize";
-import { isValidTransformSpec, applyTransform } from "./transforms";
+import { isValidTransformSpec, applyTransform } from "@openui-apps/analytics/isomorphic";
 
 describe("rowMatchesSpecFilter 行级谓词", () => {
   const row = { channel: "TikTok Ads", spend: 120, title: "某告警事件", score: "3.5" };

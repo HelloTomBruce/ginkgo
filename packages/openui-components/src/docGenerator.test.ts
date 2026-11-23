@@ -42,7 +42,7 @@ describe("docGenerator 组件文档自动派生", () => {
     expect(docWithCustom).toContain("- **MetricCard(title, value, trend?)**: 自定义卡片描述");
 
     const docDefault = renderComponentKitDocumentation(lib);
-    expect(docDefault).toContain("## Visual Component Kit (OpenUI Lang):");
+    expect(docDefault).toContain("## Visual Component Kit (Dashboard DSL):");
     expect(docDefault).toContain("- **MetricCard(title, value, trend?)**: KPI stats card with optional sparkline micro trend.");
     expect(docDefault).not.toContain("- **Root");
   });

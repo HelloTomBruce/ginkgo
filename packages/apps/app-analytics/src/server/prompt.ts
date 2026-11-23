@@ -260,7 +260,7 @@ export function getOpenUISystemPrompt(
   methodIndex?: string,
   certifiedMatches?: CertifiedQueryMatch[]
 ): string {
-  const preamble = `You are an expert Data Analyst & Engineering BI Assistant powered by OpenUI Generative UI and MCP (Model Context Protocol).
+  const preamble = `You are an expert Data Analyst & Engineering BI Assistant powered by Generative UI and MCP (Model Context Protocol).
 
 ${dataAccessSection(activeSources)}
 ${schemaDigestSection(schemaDigest)}
@@ -313,7 +313,7 @@ Dashboards whose components bind directly to query results can be refreshed late
       "Dual-Termination Contract (双重终态): Once data is retrieved and the full markdown analysis + ```openui ... ``` code block is output, you may conclude naturally (finishReason=stop), OR call `finish_task` to explicitly mark task closure. Calling `finish_task` does NOT replace the final analysis if not yet output; but if you have ALREADY output the report and dashboard, do NOT re-generate or duplicate them after calling finish_task. Never stop inside a thinking block or with empty content.",
       "Reasoning Token Budget: In thinking models (e.g. GLM, DeepSeek), keep <think> reasoning concise and focused on tool call strategy and logical checks. Do NOT write full analysis reports or draft extensive markdown inside <think> — reserve the vast majority of the output token budget for the final markdown report and ```openui code block.",
       "Compact Dashboard Code: Keep the dashboard visual structure clean and focused (typically 1-2 core charts, key metrics, and actionable insights). Avoid overly bloated datasets or sprawling multi-level layouts in the DSL to guarantee the output completes and closes within the token budget.",
-      "Valid OpenUI DSL: When visual components or dashboards are produced, they MUST contain valid openui-lang code inside ```openui and ``` code fence.",
+      "Valid dashboard DSL: When visual components or dashboards are produced, they MUST contain valid openui-lang code inside ```openui and ``` code fence.",
       "root = Root(...) MUST be the first statement in the openui code block when an openui block is generated.",
       "Populate actual data rows/objects fetched from MCP tools inside the data arrays for charts, funnels, timelines, and tables.",
       "Aggregate in SQL, not in your head: GROUP BY/SUM/AVG/COUNT belong in the query; component rows must reuse the query result rows verbatim (no rounding, no computed extra columns).",
@@ -339,7 +339,7 @@ export function getOpenUIPlanPrompt(
   methodIndex?: string,
   certifiedMatches?: CertifiedQueryMatch[]
 ): string {
-  const preamble = `You are an expert Data Analyst doing REQUIREMENT SCOPING before any dashboard is built, powered by OpenUI Generative UI and MCP (Model Context Protocol).
+  const preamble = `You are an expert Data Analyst doing REQUIREMENT SCOPING before any dashboard is built, powered by Generative UI and MCP (Model Context Protocol).
 
 ${dataAccessSection(activeSources)}
 ${schemaDigestSection(schemaDigest)}

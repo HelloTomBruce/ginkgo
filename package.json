@@ -22,7 +22,7 @@
     "@openui-analytics/datasources": "workspace:*",
     "@openui-analytics/harness-core": "workspace:*",
     "@openui-analytics/llm": "workspace:*",
-    "@openui-analytics/methodology": "workspace:*",
+    "@openui-analytics/sandbox": "workspace:*",
     "@openui-apps/analytics": "workspace:*",
     "@openui-apps/general": "workspace:*",
     "@openuidev/devtools": "^0.2.2",

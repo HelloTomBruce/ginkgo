@@ -72,7 +72,7 @@ describe("ChatDashboard 守护测试（重构行为锁定）", () => {
     render(<ChatDashboard />);
     // 会话 bootstrap 完成后 MessageList 才挂载（异步）
     expect(
-      await screen.findByText(/对话式数据分析助手/, { exact: false })
+      await screen.findByText(/我是本平台的智能助手/, { exact: false })
     ).toBeInTheDocument();
   });
 
@@ -172,7 +172,7 @@ describe("ChatDashboard 守护测试（重构行为锁定）", () => {
 
   it("上下文用量条：onFinish 实测 promptTokens 渲染百分比", async () => {
     render(<ChatDashboard />);
-    await screen.findByText(/对话式数据分析助手/, { exact: false });
+    await screen.findByText(/我是本平台的智能助手/, { exact: false });
 
     // 拿到 useChat 的 onFinish 回调，模拟一次带 usage 的流式结束
     const config = vi.mocked(useChat).mock.calls.at(-1)?.[0] as {

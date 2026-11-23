@@ -242,7 +242,7 @@ export function EngineSettings({
           <div className="flex items-start justify-between gap-3">
             <div>
               <div className="font-medium text-foreground">
-                启用看板 DSL 语法自愈（OpenUI Spec Self-Healing）
+                启用看板 DSL 语法自愈
               </div>
               <p className="text-[11px] text-foreground-subtle mt-0.5">
                 当大模型生成的图表 JSON 或前端看板代码出现语法微瑕、字段拼写错误或类型中断时，Harness 会自动携带错误调用专用自愈通道纠错，无需重新全量生成。
