@@ -32,6 +32,7 @@ describe("DesignStudioViewer", () => {
                 },
               ],
               previewUrl: "http://127.0.0.1:4791/design/mock/",
+              systemPreviewUrl: "http://127.0.0.1:4792/system/mock/",
               hasDesignSystem: true,
               designSystem: { colors: { primary: "#38bdf8" } },
             }),
@@ -99,11 +100,20 @@ describe("DesignStudioViewer", () => {
     fireEvent.click(desktopBtn);
   });
 
-  it("支持切换到设计系统 Tab 并展示 Tokens", async () => {
+  it("支持切换到设计系统 Tab 并默认展示交互预览 iframe，支持切到体检与 Tokens", async () => {
     render(<DesignStudioViewer sessionId="sess-viewer-test" appId="design" />);
 
     const dsTabBtn = screen.getByRole("button", { name: /设计系统/ });
     fireEvent.click(dsTabBtn);
+
+    // 默认展示交互预览 iframe
+    const dsIframe = await screen.findByTitle("Ginkgo Design System Preview") as HTMLIFrameElement;
+    expect(dsIframe).toBeInTheDocument();
+    expect(dsIframe.src).toBe("http://127.0.0.1:4792/system/mock/");
+
+    // 切换到体检与 Tokens 模式
+    const auditBtn = screen.getByText("体检与 Tokens");
+    fireEvent.click(auditBtn);
 
     expect(screen.getByText("Design Token 合规性体检")).toBeInTheDocument();
     expect(screen.getByText("全局 Design Tokens 概览")).toBeInTheDocument();
@@ -147,10 +157,14 @@ describe("DesignStudioViewer", () => {
       expect(screen.getByText(/1200×800px/)).toBeInTheDocument();
     });
 
+    const iframe = screen.getByTitle("Ginkgo Design Canvas Preview") as HTMLIFrameElement;
+    expect(iframe.src).toBe("http://127.0.0.1:4791/design/mock/project/Components.dc.html");
+
     // 切回全景画布
     const allBoardBtn = screen.getByText(/全景画布/);
     fireEvent.click(allBoardBtn);
     expect(screen.queryByText(/聚焦画板：组件画廊/)).not.toBeInTheDocument();
+    expect(iframe.src).toBe("http://127.0.0.1:4791/design/mock/");
   });
 
   it("支持切换到数据看板 Tab 并展示 Claude Data 实例", async () => {

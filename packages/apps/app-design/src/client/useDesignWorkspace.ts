@@ -12,6 +12,7 @@ interface DesignStatusData {
   boardsDetail?: BoardDetail[];
   dashboards?: DashboardArtifact[];
   previewUrl?: string;
+  systemPreviewUrl?: string;
   hasDesignSystem?: boolean;
   designSystem?: Record<string, unknown>;
 }
@@ -44,6 +45,7 @@ export interface UseDesignWorkspaceOptions {
  */
 export function useDesignWorkspace({ sessionId, appId, activeTab }: UseDesignWorkspaceOptions) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [systemPreviewUrl, setSystemPreviewUrl] = useState<string | null>(null);
   const [canvasTitle, setCanvasTitle] = useState<string>("画板");
   const [boardCount, setBoardCount] = useState<number>(0);
   const [boardsDetail, setBoardsDetail] = useState<BoardDetail[]>([]);
@@ -107,6 +109,7 @@ export function useDesignWorkspace({ sessionId, appId, activeTab }: UseDesignWor
         }
       }
       if (data.previewUrl) setPreviewUrl(data.previewUrl);
+      if (data.systemPreviewUrl) setSystemPreviewUrl(data.systemPreviewUrl);
       setHasDesignSystem(Boolean(data.hasDesignSystem));
       if (data.designSystem) setDesignSystemData(data.designSystem);
     } catch (err) {
@@ -229,9 +232,12 @@ export function useDesignWorkspace({ sessionId, appId, activeTab }: UseDesignWor
     };
   }, [activeDashboard, loadFileContent]);
 
-  // 智能探活轮询：处于画板 Tab 且 previewUrl 为空时，定时探测服务是否由 Agent 或后台启动
+  // 智能探活轮询：处于画板或规范 Tab 且对应服务 URL 为空时，定时探测服务是否由 Agent 或后台启动
   useEffect(() => {
-    if (activeTab !== "canvas" || previewUrl) {
+    const needsCanvasPoll = activeTab === "canvas" && !previewUrl;
+    const needsSystemPoll = activeTab === "system" && hasDesignSystem && !systemPreviewUrl;
+
+    if (!needsCanvasPoll && !needsSystemPoll) {
       pollTriesRef.current = 0;
       return;
     }
@@ -245,9 +251,9 @@ export function useDesignWorkspace({ sessionId, appId, activeTab }: UseDesignWor
       void loadDesignStatus();
     }, 2500);
     return () => clearInterval(interval);
-  }, [activeTab, previewUrl, loadDesignStatus]);
+  }, [activeTab, previewUrl, systemPreviewUrl, hasDesignSystem, loadDesignStatus]);
 
-  // 4. 启动预览服务
+  // 4. 启动画板预览服务
   const handleStartServe = useCallback(async () => {
     try {
       setIsLoading(true);
@@ -262,7 +268,7 @@ export function useDesignWorkspace({ sessionId, appId, activeTab }: UseDesignWor
     }
   }, [sendAppAction]);
 
-  // 5. 停止预览服务
+  // 5. 停止画板预览服务
   const handleStopServe = useCallback(async () => {
     try {
       setIsLoading(true);
@@ -275,7 +281,35 @@ export function useDesignWorkspace({ sessionId, appId, activeTab }: UseDesignWor
     }
   }, [sendAppAction]);
 
-  // 6. 执行设计系统 Token 审查
+  // 6. 启动设计系统预览服务 (claude-design-system open)
+  const handleStartSystemServe = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      const data = await sendAppAction("serve_system");
+      if (typeof data.url === "string") {
+        setSystemPreviewUrl(data.url);
+      }
+    } catch (err) {
+      console.error("Failed to start system serve:", err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [sendAppAction]);
+
+  // 7. 停止设计系统预览服务 (claude-design-system stop)
+  const handleStopSystemServe = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      await sendAppAction("stop_system");
+      setSystemPreviewUrl(null);
+    } catch (err) {
+      console.error("Failed to stop system serve:", err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [sendAppAction]);
+
+  // 8. 执行设计系统 Token 审查
   const handleRunAudit = useCallback(async () => {
     try {
       setIsLoading(true);
@@ -295,6 +329,7 @@ export function useDesignWorkspace({ sessionId, appId, activeTab }: UseDesignWor
   return {
     // 数据
     previewUrl,
+    systemPreviewUrl,
     canvasTitle,
     boardCount,
     boardsDetail,
@@ -321,6 +356,8 @@ export function useDesignWorkspace({ sessionId, appId, activeTab }: UseDesignWor
     setSelectedFile,
     handleStartServe,
     handleStopServe,
+    handleStartSystemServe,
+    handleStopSystemServe,
     handleRunAudit,
   };
 }

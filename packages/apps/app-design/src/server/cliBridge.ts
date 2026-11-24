@@ -179,7 +179,24 @@ export class CliBridge {
         pid: json.pid,
       };
     } catch {
-      return { error: res.stderr || res.stdout };
+      if (res.code === 0 && res.stdout.includes("http://")) {
+        const match = res.stdout.match(/https?:\/\/[^\s]+/);
+        return { url: match ? match[0] : undefined };
+      }
+      return { error: res.stderr || res.stdout || "启动设计系统服务失败" };
+    }
+  }
+
+  /**
+   * 停止设计系统本地服务 (claude-design-system stop <root>)
+   */
+  static async stopDesignSystem(workspaceDir: string): Promise<{ stopped: boolean }> {
+    const res = await this.runCommand("claude-design-system", ["stop", workspaceDir], workspaceDir);
+    try {
+      const json = JSON.parse(res.stdout);
+      return { stopped: Boolean(json.stopped) };
+    } catch {
+      return { stopped: res.code === 0 };
     }
   }
 

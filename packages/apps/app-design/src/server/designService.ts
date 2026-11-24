@@ -10,6 +10,7 @@ export interface DesignStatusResponse {
   dashboards?: DashboardArtifact[];
   hasClaudeData?: boolean;
   previewUrl?: string;
+  systemPreviewUrl?: string;
   workspacePath?: string;
   hasDesignSystem: boolean;
   designSystem?: Record<string, unknown>;
@@ -42,6 +43,15 @@ export class DesignService {
       }
     }
 
+    let systemPreviewUrl: string | undefined;
+    if (meta.hasDesignSystem) {
+      // 尝试启动或获取现有 Design System 编辑器服务的 url
+      const serveDsRes = await CliBridge.serveDesignSystem(workspaceDir);
+      if (serveDsRes.url) {
+        systemPreviewUrl = serveDsRes.url;
+      }
+    }
+
     return {
       hasCanvas: meta.hasCanvas,
       canvasTitle: typeof meta.canvasJson?.title === "string" ? meta.canvasJson.title : undefined,
@@ -51,6 +61,7 @@ export class DesignService {
       dashboards: meta.dashboards,
       hasClaudeData: meta.dashboards.length > 0,
       previewUrl,
+      systemPreviewUrl,
       workspacePath: workspaceDir,
       hasDesignSystem: meta.hasDesignSystem,
       designSystem: meta.designSystemJson,
@@ -122,6 +133,17 @@ export class DesignService {
 
   static async stop(workspaceDir: string) {
     return CliBridge.stopCanvas(workspaceDir);
+  }
+
+  /**
+   * 手动控制设计系统服务
+   */
+  static async serveSystem(workspaceDir: string) {
+    return CliBridge.serveDesignSystem(workspaceDir);
+  }
+
+  static async stopSystem(workspaceDir: string) {
+    return CliBridge.stopDesignSystem(workspaceDir);
   }
 
   /**

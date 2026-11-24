@@ -8,6 +8,8 @@ vi.mock("./designService", () => ({
     listArtifacts: vi.fn(async () => []),
     serve: vi.fn(async () => ({ url: "http://127.0.0.1:4791/design/mock/" })),
     stop: vi.fn(async () => ({ stopped: true })),
+    serveSystem: vi.fn(async () => ({ url: "http://127.0.0.1:4792/system/mock/" })),
+    stopSystem: vi.fn(async () => ({ stopped: true })),
     audit: vi.fn(async () => ({ report: "审查通过", passed: true })),
   },
 }));
@@ -31,6 +33,12 @@ describe("dispatchDesignAction", () => {
 
     await dispatchDesignAction("stop", {}, ctx);
     expect(DesignService.stop).toHaveBeenCalledWith("/tmp/sandbox");
+
+    await dispatchDesignAction("serve_system", {}, ctx);
+    expect(DesignService.serveSystem).toHaveBeenCalledWith("/tmp/sandbox");
+
+    await dispatchDesignAction("stop_system", {}, ctx);
+    expect(DesignService.stopSystem).toHaveBeenCalledWith("/tmp/sandbox");
   });
 
   it("audit 忽略 payload 中客户端透传的 targetDir，恒用可信沙箱路径（防路径注入）", async () => {

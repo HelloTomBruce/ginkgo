@@ -29,6 +29,12 @@ export async function dispatchDesignAction(
     case "stop": {
       return await DesignService.stop(workspaceDir);
     }
+    case "serve_system": {
+      return await DesignService.serveSystem(workspaceDir);
+    }
+    case "stop_system": {
+      return await DesignService.stopSystem(workspaceDir);
+    }
     case "audit": {
       return await DesignService.audit(workspaceDir);
     }

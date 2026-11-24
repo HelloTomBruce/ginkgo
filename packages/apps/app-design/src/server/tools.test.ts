@@ -52,6 +52,8 @@ describe("createDesignTools", () => {
     expect(tools.design_canvas_init).toBeUndefined();
     expect(tools.design_canvas_serve).toBeUndefined();
     expect(tools.design_canvas_stop).toBeUndefined();
+    expect(tools.design_system_serve).toBeUndefined();
+    expect(tools.design_system_stop).toBeUndefined();
     expect((tools as Record<string, unknown>).write_file).toBeUndefined();
     expect((tools as Record<string, unknown>).edit_file).toBeUndefined();
 

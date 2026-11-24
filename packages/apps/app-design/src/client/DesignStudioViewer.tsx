@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useMemo } from "react";
 import {
   Palette,
   Laptop,
@@ -144,6 +144,8 @@ export function DesignStudioViewer({
   // ===== UI 本地状态（纯视图，不涉取数） =====
   const [activeTab, setActiveTab] = useState<DesignStudioTab>("canvas");
   const [viewportWidth, setViewportWidth] = useState<string>("100%");
+  const [systemViewportWidth, setSystemViewportWidth] = useState<string>("100%");
+  const [systemViewMode, setSystemViewMode] = useState<"preview" | "audit">("preview");
   const [selectedBoardKey, setSelectedBoardKey] = useState<string | null>(null);
   const [collapsedDirs, setCollapsedDirs] = useState<Record<string, boolean>>({});
 
@@ -154,6 +156,7 @@ export function DesignStudioViewer({
   // ===== 数据域（状态 / 网关调用 / 加载 / 探活轮询全部收拢在 Hook 内） =====
   const {
     previewUrl,
+    systemPreviewUrl,
     canvasTitle,
     boardCount,
     boardsDetail,
@@ -176,6 +179,8 @@ export function DesignStudioViewer({
     setSelectedFile,
     handleStartServe,
     handleStopServe,
+    handleStartSystemServe,
+    handleStopSystemServe,
     handleRunAudit,
   } = useDesignWorkspace({ sessionId, appId, activeTab });
 
@@ -183,6 +188,14 @@ export function DesignStudioViewer({
   const currentBoard = selectedBoardKey
     ? boardsDetail.find((b) => b.key === selectedBoardKey) || null
     : null;
+
+  // 依据当前选中的画板动态计算预览地址：未选时为全景大画布，选中时直达单画板页面
+  const effectivePreviewUrl = useMemo(() => {
+    if (!previewUrl) return null;
+    if (!selectedBoardKey) return previewUrl;
+    const base = previewUrl.endsWith("/") ? previewUrl : `${previewUrl}/`;
+    return `${base}project/${selectedBoardKey}`;
+  }, [previewUrl, selectedBoardKey]);
 
   return (
     <aside
@@ -214,20 +227,20 @@ export function DesignStudioViewer({
           </div>
         </div>
 
-        {/* 顶部 L1 产物大类 Tab 切换器：精简 Icon 模式，隐藏冗长文案，消除挤压 */}
+        {/* 顶部 L1 产物大类 Tab 切换器：响应式紧凑模式（大屏展示 2 字标签，窄屏纯 Icon，消除挤压） */}
         <nav aria-label="产物类别切换" className="flex items-center bg-muted/60 p-0.5 rounded-lg border border-border shrink-0">
           <button
             onClick={() => setActiveTab("canvas")}
             title={`视觉画板${boardCount > 0 ? ` (${boardCount})` : ""}`}
             aria-label="视觉画板"
-            className={`flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-medium transition-all ${
+            className={`flex items-center justify-center gap-1.5 px-2 sm:px-2.5 py-1.5 rounded-md text-xs font-medium transition-all ${
               activeTab === "canvas"
                 ? "bg-card text-foreground shadow-xs"
                 : "text-foreground-subtle hover:text-foreground hover:bg-muted/40"
             }`}
           >
-            <Layers className="w-4 h-4 shrink-0" />
-            <span className="sr-only">视觉画板</span>
+            <Layers className="w-3.5 h-3.5 shrink-0" />
+            <span className="hidden sm:inline">画板</span>
             {boardCount > 0 && (
               <span className="px-1 rounded-full text-[10px] font-mono bg-surface-sunken text-foreground-subtle leading-tight">
                 {boardCount}
@@ -239,14 +252,14 @@ export function DesignStudioViewer({
             onClick={() => setActiveTab("data")}
             title={`数据看板 (Claude Data)${dashboards.length > 0 ? ` (${dashboards.length})` : ""}`}
             aria-label="数据看板"
-            className={`flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-medium transition-all ${
+            className={`flex items-center justify-center gap-1.5 px-2 sm:px-2.5 py-1.5 rounded-md text-xs font-medium transition-all ${
               activeTab === "data"
                 ? "bg-card text-foreground shadow-xs"
                 : "text-foreground-subtle hover:text-foreground hover:bg-muted/40"
             }`}
           >
-            <BarChart3 className="w-4 h-4 shrink-0" />
-            <span className="sr-only">数据看板</span>
+            <BarChart3 className="w-3.5 h-3.5 shrink-0" />
+            <span className="hidden sm:inline">数据</span>
             {dashboards.length > 0 && (
               <span className="px-1 rounded-full text-[10px] font-mono bg-primary/10 text-brand-fg font-medium leading-tight">
                 {dashboards.length}
@@ -258,28 +271,28 @@ export function DesignStudioViewer({
             onClick={() => setActiveTab("system")}
             title="设计系统 (Tokens 与体检)"
             aria-label="设计系统"
-            className={`flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-medium transition-all ${
+            className={`flex items-center justify-center gap-1.5 px-2 sm:px-2.5 py-1.5 rounded-md text-xs font-medium transition-all ${
               activeTab === "system"
                 ? "bg-card text-foreground shadow-xs"
                 : "text-foreground-subtle hover:text-foreground hover:bg-muted/40"
             }`}
           >
-            <ShieldCheck className="w-4 h-4 shrink-0" />
-            <span className="sr-only">设计系统</span>
+            <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
+            <span className="hidden sm:inline">规范</span>
           </button>
 
           <button
             onClick={() => setActiveTab("files")}
             title={`源码与文件 (${files.length})`}
             aria-label="源码与文件"
-            className={`flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-medium transition-all ${
+            className={`flex items-center justify-center gap-1.5 px-2 sm:px-2.5 py-1.5 rounded-md text-xs font-medium transition-all ${
               activeTab === "files"
                 ? "bg-card text-foreground shadow-xs"
                 : "text-foreground-subtle hover:text-foreground hover:bg-muted/40"
             }`}
           >
-            <FileCode className="w-4 h-4 shrink-0" />
-            <span className="sr-only">源码与文件</span>
+            <FileCode className="w-3.5 h-3.5 shrink-0" />
+            <span className="hidden sm:inline">文件</span>
           </button>
         </nav>
 
@@ -416,7 +429,7 @@ export function DesignStudioViewer({
                         <span>刷新</span>
                       </button>
                       <a
-                        href={previewUrl}
+                        href={effectivePreviewUrl || previewUrl}
                         target="_blank"
                         rel="noreferrer"
                         className="flex items-center gap-1 px-2 py-0.5 text-[11px] rounded text-info-fg hover:bg-info-soft"
@@ -479,10 +492,11 @@ export function DesignStudioViewer({
                   )}
 
                   {/* 预览服务运行在独立本地端口（与宿主不同源），allow-same-origin
-                      仅保留其自身 origin 的脚本能力，用于画板编辑器内部交互 */}
+                      仅保留其自身 origin 的脚本能力，用于画板编辑器内部交互。
+                      选中单板时直达单画板页面，未选中时展示全景大画布 */}
                   <iframe
                     title="Ginkgo Design Canvas Preview"
-                    src={previewUrl}
+                    src={effectivePreviewUrl || previewUrl}
                     className="w-full h-full border-0 bg-transparent flex-1"
                     sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
                   />
@@ -620,93 +634,245 @@ export function DesignStudioViewer({
 
         {/* ===================== TAB 3: 设计系统 (Design System) ===================== */}
         {activeTab === "system" && (
-          <div className="flex-1 flex flex-col h-full overflow-y-auto p-4 space-y-6">
-            {/* 设计规范审查 */}
-            <div className="rounded-xl border border-border bg-card p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h4 className="font-semibold text-xs text-foreground flex items-center gap-1.5">
-                    <ShieldCheck className="w-4 h-4 text-info-fg" />
-                    <span>Design Token 合规性体检</span>
-                  </h4>
-                  <p className="text-[11px] text-foreground-subtle mt-0.5">
-                    扫描工作区代码，确保无硬编码色值，严格遵循 Design Token 语义类。
-                  </p>
+          <div className="flex-1 flex flex-col h-full overflow-hidden bg-background">
+            {/* 顶部二级控制栏：服务控制、视口切换与视图模式切换 */}
+            <div className="px-3 py-2 border-b border-border bg-surface-raised flex items-center justify-between gap-2 shrink-0">
+              <div className="flex items-center gap-2">
+                {/* 视图模式胶囊切换 */}
+                <div className="flex items-center bg-muted/60 p-0.5 rounded-lg border border-border">
+                  <button
+                    onClick={() => setSystemViewMode("preview")}
+                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-all ${
+                      systemViewMode === "preview"
+                        ? "bg-card text-foreground shadow-xs"
+                        : "text-foreground-subtle hover:text-foreground"
+                    }`}
+                  >
+                    <Eye className="w-3.5 h-3.5" />
+                    <span>交互预览</span>
+                  </button>
+                  <button
+                    onClick={() => setSystemViewMode("audit")}
+                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-all ${
+                      systemViewMode === "audit"
+                        ? "bg-card text-foreground shadow-xs"
+                        : "text-foreground-subtle hover:text-foreground"
+                    }`}
+                  >
+                    <ShieldCheck className="w-3.5 h-3.5" />
+                    <span>体检与 Tokens</span>
+                  </button>
                 </div>
-                <button
-                  onClick={handleRunAudit}
-                  disabled={isLoading}
-                  className="px-3 py-1 text-xs font-medium rounded-lg bg-info-soft text-info-fg hover:bg-info/20 transition-colors"
-                >
-                  {isLoading ? "审查中..." : "重新运行 Audit 审查"}
-                </button>
-              </div>
 
-              {auditReport ? (
-                <div
-                  className={`p-3 rounded-lg border text-xs font-mono whitespace-pre-wrap max-h-60 overflow-y-auto ${
-                    auditPassed
-                      ? "bg-success-soft/30 border-success-soft text-success-fg"
-                      : "bg-surface-sunken border-border text-foreground"
-                  }`}
-                >
-                  <div className="flex items-center gap-1.5 mb-2 font-semibold">
-                    {auditPassed ? (
-                      <>
-                        <CheckCircle2 className="w-4 h-4 text-success-fg" />
-                        <span>审计通过：无硬编码样式违规</span>
-                      </>
-                    ) : (
-                      <>
-                        <AlertCircle className="w-4 h-4 text-warning-fg" />
-                        <span>发现样式违规或存在硬编码项：</span>
-                      </>
-                    )}
+                {systemPreviewUrl && systemViewMode === "preview" && (
+                  <div className="hidden md:flex items-center gap-1 pl-2 border-l border-border">
+                    <span className="text-[11px] text-foreground-subtle mr-1">视口:</span>
+                    <button
+                      onClick={() => setSystemViewportWidth("100%")}
+                      className={`flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
+                        systemViewportWidth === "100%"
+                          ? "bg-card text-foreground shadow-xs border border-border"
+                          : "text-foreground-subtle hover:text-foreground"
+                      }`}
+                      title="自适应桌面视口 (100%)"
+                    >
+                      <Laptop className="w-3 h-3" />
+                      <span>桌面</span>
+                    </button>
+                    <button
+                      onClick={() => setSystemViewportWidth("768px")}
+                      className={`flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
+                        systemViewportWidth === "768px"
+                          ? "bg-card text-foreground shadow-xs border border-border"
+                          : "text-foreground-subtle hover:text-foreground"
+                      }`}
+                      title="平板设备视口 (768px)"
+                    >
+                      <Tablet className="w-3 h-3" />
+                      <span>平板</span>
+                    </button>
                   </div>
-                  {auditReport}
-                </div>
-              ) : (
-                <div className="p-4 text-center rounded-lg border border-dashed border-border bg-surface-sunken/40">
-                  <p className="text-xs text-foreground-subtle">
-                    点击右上角「重新运行 Audit 审查」按钮，将深度扫描工作区是否存在硬编码色值。
-                  </p>
-                </div>
-              )}
-            </div>
-
-            {/* Design Tokens 可视化展示 */}
-            <div className="rounded-xl border border-border bg-card p-4 space-y-4">
-              <div className="flex items-center justify-between">
-                <h4 className="font-semibold text-xs text-foreground flex items-center gap-1.5">
-                  <Palette className="w-4 h-4 text-primary" />
-                  <span>全局 Design Tokens 概览</span>
-                </h4>
-                {hasDesignSystem && (
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-info-soft text-info-fg font-medium">
-                    已加载 design-system.json
-                  </span>
                 )}
               </div>
 
-              {hasDesignSystem && designSystemData ? (
-                <div className="space-y-4">
-                  <div className="bg-surface-sunken p-3 rounded-lg border border-border">
-                    <span className="text-xs font-medium text-foreground block mb-2">Token 数据概览</span>
-                    <pre className="text-[11px] font-mono text-foreground-subtle max-h-72 overflow-y-auto">
-                      {JSON.stringify(designSystemData, null, 2)}
-                    </pre>
-                  </div>
-                </div>
-              ) : (
-                <div className="p-6 text-center rounded-lg border border-dashed border-border bg-surface-sunken/40">
-                  <Palette className="w-8 h-8 text-foreground-subtle mx-auto mb-2 opacity-50" />
-                  <p className="text-xs text-foreground font-medium mb-1">未检测到 design-system.json</p>
-                  <p className="text-[11px] text-foreground-subtle">
-                    在左侧与 Agent 沟通创建全局 Tokens，Agent 将在此生成结构化样式规范。
-                  </p>
-                </div>
-              )}
+              {/* 服务状态与启停控制 */}
+              <div className="flex items-center gap-1.5">
+                {systemPreviewUrl ? (
+                  <>
+                    <button
+                      onClick={loadDesignStatus}
+                      className="flex items-center gap-1 px-2 py-0.5 text-[11px] rounded text-foreground-subtle hover:text-foreground hover:bg-muted"
+                      title="刷新设计系统状态"
+                    >
+                      <RotateCw className="w-3 h-3" />
+                      <span>刷新</span>
+                    </button>
+                    <a
+                      href={systemPreviewUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="flex items-center gap-1 px-2 py-0.5 text-[11px] rounded text-info-fg hover:bg-info-soft"
+                      title="在外部全屏浏览器标签页打开设计系统"
+                    >
+                      <ExternalLink className="w-3 h-3" />
+                      <span>新标签打开</span>
+                    </a>
+                    <button
+                      onClick={handleStopSystemServe}
+                      className="flex items-center gap-1 px-2 py-0.5 text-[11px] rounded text-danger-fg hover:bg-danger-soft"
+                      title="停止设计系统服务"
+                    >
+                      <Square className="w-3 h-3" />
+                      <span>停止</span>
+                    </button>
+                  </>
+                ) : (
+                  hasDesignSystem && (
+                    <button
+                      onClick={handleStartSystemServe}
+                      disabled={isLoading}
+                      className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-lg bg-primary text-primary-foreground hover:opacity-90 transition-opacity shadow-xs"
+                    >
+                      <Play className="w-3 h-3 fill-current" />
+                      <span>{isLoading ? "正在启动..." : "启动设计系统服务"}</span>
+                    </button>
+                  )
+                )}
+              </div>
             </div>
+
+            {/* 内容区 */}
+            {systemViewMode === "preview" ? (
+              <div className="flex-1 bg-surface-sunken p-4 overflow-auto flex items-center justify-center relative">
+                {systemPreviewUrl ? (
+                  <div
+                    className="h-full bg-card rounded-xl shadow-lg border border-border overflow-hidden transition-all duration-300 flex flex-col relative"
+                    style={{ width: systemViewportWidth, maxWidth: "100%" }}
+                  >
+                    <iframe
+                      title="Ginkgo Design System Preview"
+                      src={systemPreviewUrl}
+                      className="w-full h-full border-0 bg-transparent flex-1"
+                      sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+                    />
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center text-center max-w-md p-8 rounded-2xl border border-dashed border-border bg-card">
+                    <div className="w-12 h-12 rounded-xl bg-info-soft text-info-fg flex items-center justify-center mb-4">
+                      <ShieldCheck className="w-6 h-6" />
+                    </div>
+                    <h3 className="font-semibold text-sm text-foreground mb-1">
+                      {hasDesignSystem ? "设计系统规范已就绪" : "未检测到 design-system.json"}
+                    </h3>
+                    <p className="text-xs text-foreground-subtle leading-relaxed mb-4">
+                      {hasDesignSystem
+                        ? "已在 project/ 目录下发现设计系统规范文件。点击下方按钮立即唤醒本地 Design System 编辑器服务，浏览组件库、Tokens 与文档。"
+                        : "在左侧与 Agent 沟通规划设计系统与全局规范，Agent 将在 project/ 目录下自动生成规范并启动交互式预览。"}
+                    </p>
+                    {hasDesignSystem && (
+                      <button
+                        onClick={handleStartSystemServe}
+                        disabled={isLoading}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-primary text-primary-foreground hover:opacity-90 transition-opacity shadow-xs"
+                      >
+                        <Play className="w-3.5 h-3.5 fill-current" />
+                        <span>{isLoading ? "正在启动..." : "立即启动设计系统服务"}</span>
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            ) : (
+              /* 体检与 Tokens 视图 */
+              <div className="flex-1 overflow-y-auto p-4 space-y-6">
+                {/* 设计规范审查 */}
+                <div className="rounded-xl border border-border bg-card p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="font-semibold text-xs text-foreground flex items-center gap-1.5">
+                        <ShieldCheck className="w-4 h-4 text-info-fg" />
+                        <span>Design Token 合规性体检</span>
+                      </h4>
+                      <p className="text-[11px] text-foreground-subtle mt-0.5">
+                        扫描工作区代码，确保无硬编码色值，严格遵循 Design Token 语义类。
+                      </p>
+                    </div>
+                    <button
+                      onClick={handleRunAudit}
+                      disabled={isLoading}
+                      className="px-3 py-1 text-xs font-medium rounded-lg bg-info-soft text-info-fg hover:bg-info/20 transition-colors"
+                    >
+                      {isLoading ? "审查中..." : "重新运行 Audit 审查"}
+                    </button>
+                  </div>
+
+                  {auditReport ? (
+                    <div
+                      className={`p-3 rounded-lg border text-xs font-mono whitespace-pre-wrap max-h-60 overflow-y-auto ${
+                        auditPassed
+                          ? "bg-success-soft/30 border-success-soft text-success-fg"
+                          : "bg-surface-sunken border-border text-foreground"
+                      }`}
+                    >
+                      <div className="flex items-center gap-1.5 mb-2 font-semibold">
+                        {auditPassed ? (
+                          <>
+                            <CheckCircle2 className="w-4 h-4 text-success-fg" />
+                            <span>审计通过：无硬编码样式违规</span>
+                          </>
+                        ) : (
+                          <>
+                            <AlertCircle className="w-4 h-4 text-warning-fg" />
+                            <span>发现样式违规或存在硬编码项：</span>
+                          </>
+                        )}
+                      </div>
+                      {auditReport}
+                    </div>
+                  ) : (
+                    <div className="p-4 text-center rounded-lg border border-dashed border-border bg-surface-sunken/40">
+                      <p className="text-xs text-foreground-subtle">
+                        点击右上角「重新运行 Audit 审查」按钮，将深度扫描工作区是否存在硬编码色值。
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Design Tokens 可视化展示 */}
+                <div className="rounded-xl border border-border bg-card p-4 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h4 className="font-semibold text-xs text-foreground flex items-center gap-1.5">
+                      <Palette className="w-4 h-4 text-primary" />
+                      <span>全局 Design Tokens 概览</span>
+                    </h4>
+                    {hasDesignSystem && (
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-info-soft text-info-fg font-medium">
+                        已加载 design-system.json
+                      </span>
+                    )}
+                  </div>
+
+                  {hasDesignSystem && designSystemData ? (
+                    <div className="space-y-4">
+                      <div className="bg-surface-sunken p-3 rounded-lg border border-border">
+                        <span className="text-xs font-medium text-foreground block mb-2">Token 数据概览</span>
+                        <pre className="text-[11px] font-mono text-foreground-subtle max-h-72 overflow-y-auto">
+                          {JSON.stringify(designSystemData, null, 2)}
+                        </pre>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="p-6 text-center rounded-lg border border-dashed border-border bg-surface-sunken/40">
+                      <Palette className="w-8 h-8 text-foreground-subtle mx-auto mb-2 opacity-50" />
+                      <p className="text-xs text-foreground font-medium mb-1">未检测到 design-system.json</p>
+                      <p className="text-[11px] text-foreground-subtle">
+                        在左侧与 Agent 沟通创建全局 Tokens，Agent 将在此生成结构化样式规范。
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         )}
 

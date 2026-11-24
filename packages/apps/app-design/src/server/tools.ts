@@ -17,6 +17,8 @@ export type DesignTools = ReturnType<typeof createSandboxTools> & {
   design_canvas_check: ReturnType<typeof zodTool>;
   design_canvas_serve?: ReturnType<typeof zodTool>;
   design_canvas_stop?: ReturnType<typeof zodTool>;
+  design_system_serve?: ReturnType<typeof zodTool>;
+  design_system_stop?: ReturnType<typeof zodTool>;
   design_system_audit: ReturnType<typeof zodTool>;
 };
 
@@ -155,6 +157,24 @@ class Component extends DCLogic {
     },
   });
 
+  const design_system_serve = zodTool({
+    description: "启动或查询当前设计系统 (Design System) 的本地交互式预览编辑器服务 (claude-design-system open)，返回本地 URL 供在右侧工作坊呈现规范、组件与 Tokens",
+    parameters: z.object({}),
+    execute: async () => {
+      const result = await CliBridge.serveDesignSystem(workspaceDir);
+      return result;
+    },
+  });
+
+  const design_system_stop = zodTool({
+    description: "停止当前工作区正在运行的设计系统本地预览服务",
+    parameters: z.object({}),
+    execute: async () => {
+      const result = await CliBridge.stopDesignSystem(workspaceDir);
+      return result;
+    },
+  });
+
   const design_system_audit = zodTool({
     description: "调用 claude-design-system audit 扫描指定目录的前端源码，检查是否硬编码颜色或违规使用样式 Token",
     parameters: z.object({
@@ -182,6 +202,8 @@ class Component extends DCLogic {
     design_canvas_check,
     design_canvas_serve,
     design_canvas_stop,
+    design_system_serve,
+    design_system_stop,
     design_system_audit,
   };
 }
