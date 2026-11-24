@@ -334,6 +334,47 @@ function buildListDirTool({ workspaceDir }: SandboxToolDeps) {
   });
 }
 
+/** 模式提权审批工具（在 Plan 规划只读模式下向用户申请切入 Build 模式） */
+export function buildRequestBuildPermissionTool(): CoreTool {
+  return zodTool({
+    description:
+      "当处于 Plan 规划模式（只读）且当前任务需要修改代码、创建文件、安装依赖或执行命令时，" +
+      "调用此工具向用户申请切换至 Build 模式的执行权限，并向用户展示拟修改方案清单与风险评估。",
+    parameters: z.object({
+      summary: z.string().describe("技术方案摘要与本次申请提权的原因"),
+      changes: z
+        .array(
+          z.object({
+            type: z
+              .enum(["file_create", "file_modify", "dependency_install", "command", "database"])
+              .describe("变更类型"),
+            target: z.string().describe("变更目标路径或名称，例如 'src/components/Login.tsx'"),
+            description: z.string().optional().describe("变更简要说明"),
+          })
+        )
+        .optional()
+        .describe("拟变更内容清单"),
+      riskLevel: z
+        .enum(["low", "medium", "high"])
+        .optional()
+        .default("medium")
+        .describe("变更风险等级：low/medium/high"),
+      actionPrompt: z
+        .string()
+        .optional()
+        .describe("用户批准后自动发送给大模型的启动指令（缺省将自动根据方案生成）"),
+    }),
+    execute: async (args) => {
+      return {
+        ok: true,
+        status: "pending_approval",
+        message: "已向用户发起 Build 模式权限申请与变更清单展示，等待用户确认...",
+        payload: args,
+      };
+    },
+  });
+}
+
 /**
  * 沙箱工作区能力包工厂：为应用提供会话沙箱内的原子文件/shell 工具集。
  * 能力包不感知具体应用——消费方（应用包）在自己的 getTools 接缝内实例化，
@@ -360,6 +401,9 @@ export function createSandboxTools(opts: {
     tools.write_file = buildWriteFileTool(deps);
     tools.edit_file = buildEditFileTool(deps);
     tools.run_command = buildRunCommandTool(deps);
+  } else {
+    // 只读规划模式下，装配模式提权审批工具供模型主动申请构建权限
+    tools.request_build_permission = buildRequestBuildPermissionTool();
   }
   if (opts.preset === "explorer") {
     tools.list_dir = buildListDirTool(deps);

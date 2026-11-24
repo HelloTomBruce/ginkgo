@@ -49,6 +49,7 @@ import {
   createTerminationTool,
   composeToolInterceptors,
   createTelemetryInterceptor,
+  type ToolInterceptor,
   zodTool,
   type RunId,
   type MCPClientManager,
@@ -83,7 +84,33 @@ function envPositiveNumber(name: string): number | undefined {
   return Number.isFinite(n) && n > 0 ? n : undefined;
 }
 
-/** 工具执行遥测切面包装 */
+/** 平台内核只读守卫切面：Plan 模式下拦截副作用写工具 */
+function createReadonlyGuardInterceptor(mode?: string): ToolInterceptor {
+  return async (args, ctx, next) => {
+    if (mode === "plan") {
+      const name = ctx.toolName.toLowerCase();
+      const isWriteLike =
+        name.startsWith("write_") ||
+        name.startsWith("edit_") ||
+        name.startsWith("delete_") ||
+        name.startsWith("drop_") ||
+        name.startsWith("init_") ||
+        name.includes("_init") ||
+        name === "bash" ||
+        name === "run_command";
+
+      if (isWriteLike) {
+        return {
+          isError: true,
+          error: `【平台只读安全守卫拦截】当前处于 Plan 规划模式（只读），严禁执行修改或执行类工具 [${ctx.toolName}]。若任务需要写文件或执行命令，请调用 request_build_permission 工具向用户展示拟修改清单并申请切换至 Build 模式。`,
+        };
+      }
+    }
+    return next(args);
+  };
+}
+
+/** 工具执行遥测切面与只读守卫包装 */
 function instrumentTools(
   tools: Record<string, CoreTool>,
   ctx: {
@@ -91,10 +118,12 @@ function instrumentTools(
     sessionId?: string;
     sourceId?: string;
     telemetry: TelemetrySink;
+    mode?: string;
   }
 ): Record<string, CoreTool> {
   const telemetryAspect = createTelemetryInterceptor(ctx);
-  return composeToolInterceptors(tools, [telemetryAspect]);
+  const readonlyAspect = createReadonlyGuardInterceptor(ctx.mode);
+  return composeToolInterceptors(tools, [telemetryAspect, readonlyAspect]);
 }
 
 /**
@@ -713,24 +742,33 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
       const mode =
         clientMode === "plan" || clientMode === "execute" ? clientMode : "direct";
 
-      // 步数预算（maxSteps 熔断上限）：客户端透传优先，其次环境变量 LLM_PLAN_MAX_STEPS / LLM_MAX_STEPS，
-      // 缺省时默认 25 步（防死循环熔断上限；双重终态机制保证模型在目标达成时通过 finish_task 或自然 stop 主动提前结束）
+      // 步数预算（maxSteps 熔断上限）：客户端透传优先，其次环境变量 LLM_PLAN_MAX_STEPS / LLM_BUILD_MAX_STEPS / LLM_MAX_STEPS，
+      // 缺省时默认：execute/direct 为 50 步，plan 为 25 步（防死循环熔断上限；双重终态机制保证模型在目标达成时通过 finish_task 或自然 stop 主动提前结束）
       const parsedClientMaxSteps = Number(clientMaxSteps);
       const envMaxSteps = Number(process.env.LLM_MAX_STEPS);
       const envPlanMaxSteps = Number(process.env.LLM_PLAN_MAX_STEPS);
-      const baseDefaultMaxSteps =
-        Number.isFinite(envMaxSteps) && envMaxSteps > 0 ? envMaxSteps : 25;
+      const envBuildMaxSteps = Number(
+        process.env.LLM_BUILD_MAX_STEPS ?? process.env.LLM_EXECUTE_MAX_STEPS
+      );
+
       const defaultMaxSteps =
         mode === "plan"
           ? Number.isFinite(envPlanMaxSteps) && envPlanMaxSteps > 0
             ? envPlanMaxSteps
-            : baseDefaultMaxSteps
-          : baseDefaultMaxSteps;
+            : Number.isFinite(envMaxSteps) && envMaxSteps > 0
+              ? envMaxSteps
+              : 25
+          : Number.isFinite(envBuildMaxSteps) && envBuildMaxSteps > 0
+            ? envBuildMaxSteps
+            : Number.isFinite(envMaxSteps) && envMaxSteps > 0
+              ? envMaxSteps
+              : 50;
+
       const rawMaxSteps =
         Number.isFinite(parsedClientMaxSteps) && parsedClientMaxSteps > 0
           ? parsedClientMaxSteps
           : defaultMaxSteps;
-      const maxSteps = Math.min(Math.max(Math.round(rawMaxSteps), 1), 100);
+      const maxSteps = Math.min(Math.max(Math.round(rawMaxSteps), 1), 150);
 
       // WS-3 任务累计 token 预算(prompt+completion 总和):超限即终态+中止,防成本敞口失控
       const envTokenBudget = Number(process.env.LLM_TASK_TOKEN_BUDGET);
@@ -894,6 +932,7 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
                       sessionId: sessionIdForEvents,
                       sourceId: server.id,
                       telemetry,
+                      mode,
                     }),
                     server.id
                   );
@@ -966,6 +1005,7 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
                 sessionId: sessionIdForEvents,
                 sourceId: `app:${clientAppId}`,
                 telemetry,
+                mode,
               }),
               `app:${clientAppId}`
             );
@@ -1128,6 +1168,17 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
 
       const rawResponse = createDataStreamResponse({
         execute: async (dataStream) => {
+          // 平台通用流式心跳保活（Keep-Alive SSE）：每 15 秒向流中下发一条心跳分块，
+          // 确保模型长思考或工具长耗时执行期间 TCP 管道与 HTTP 代理始终活跃，彻底防御 Socket 空闲断开
+          const keepAliveTimer = setInterval(() => {
+            try {
+              dataStream.writeData({ type: "keep_alive", ts: Date.now() });
+            } catch {
+              // 流若已关闭，忽略写入异常
+            }
+          }, 15000);
+
+          try {
           // 双重终态机制：显式终态工具 finish_task（基于 @ginkgo/harness-core 终态契约）
           const finishTaskTool = createTerminationTool({
             toolName: "finish_task",
@@ -1347,6 +1398,18 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
                     } else if (lastStepFinishReason === "length") {
                       termination = "step_limit_reached";
                       status = "truncated";
+                    } else if (lastStepFinishReason === "tool-calls") {
+                      // 关键修复：模型在最后一步声明调用工具，但流已终结（说明达到 maxSteps 步数上限或工具未能执行）
+                      // 属于异常截断，诚实对齐为 step_limit_reached / truncated，绝不粉饰为 completed
+                      termination = "step_limit_reached";
+                      status = "truncated";
+                      telemetry.emit({
+                        type: "warn",
+                        runId,
+                        sessionId: sessionIdForEvents,
+                        code: "EMPTY_OR_UNEXECUTED_TOOL_CALLS",
+                        detail: `最后一步 finishReason 为 tool-calls 但流已终结，判定为步数上限到达或未执行工具截断`,
+                      });
                     } else {
                       termination = lastStepFinishReason ?? "unknown";
                       status = "completed";
@@ -1567,6 +1630,9 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
               attemptSystem = nextProjection.system;
               attemptMessages = nextProjection.messages;
             }
+          }
+          } finally {
+            clearInterval(keepAliveTimer);
           }
         },
         onError: (err: unknown) => {

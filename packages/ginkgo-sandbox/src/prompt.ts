@@ -15,7 +15,7 @@ export function sandboxToolsPromptSection(
     lines.push(
       "当前处于规划阶段，工作区只读：仅提供 `read_file`（大文件用 startLine/endLine 切片）" +
         (preset === "explorer" ? "与 `list_dir` 目录浏览" : "") +
-        "。此阶段请聚焦产出方案，不要尝试写入或执行命令；方案经用户确认后，写入与命令执行能力会自动解锁。"
+        "。此阶段请聚焦产出方案。若当前任务必须落地写文件、安装依赖或执行命令，请调用 `request_build_permission` 向用户申请切换至 Build 模式的执行权限，切勿直接尝试写文件或要求用户手动找开关；方案经用户确认批准后，写入与命令执行能力会自动解锁。"
     );
     return lines.join("\n");
   }

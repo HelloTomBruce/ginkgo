@@ -20,6 +20,7 @@ export const analyticsManifest: AppManifest = {
 export const analyticsClient: AppClientContract = {
   welcomeMessage:
     "你好！我是智能数据分析师。我可以连接你的数据库与数据源，通过自然语言生成指标看板、归因漏斗与业务复盘报告。请问你想分析什么？",
+  defaultSessionTitle: "营销获客与商业分析会话",
   presetQueries: [
     { text: "分析近 30 天核心业务指标与异常波动", category: "探索分析" },
     { text: "按渠道复盘获客成本与转化漏斗", category: "获客转化" },

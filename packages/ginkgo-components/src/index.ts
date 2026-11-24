@@ -293,6 +293,10 @@ export {
   type ApprovalCardProps,
 } from "./tools/ApprovalCard";
 export {
+  ModeApprovalCard,
+  type ModeApprovalCardProps,
+} from "./tools/ModeApprovalCard";
+export {
   TerminalViewer,
   type TerminalViewerProps,
 } from "./tools/TerminalViewer";

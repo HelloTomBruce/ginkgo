@@ -100,10 +100,11 @@ export function setActiveSessionId(id: string): void {
  */
 export function generateSessionTitle(firstUserContent: string): string {
   if (!firstUserContent) return "新分析会话";
-  // 过滤掉 markdown 或前缀标签
+  // 过滤掉 markdown 或前缀标签，规范化空白与换行
   const clean = firstUserContent
     .replace(/[#*`_~]/g, "")
     .replace(/^【.*?】/, "")
+    .replace(/\s+/g, " ")
     .trim();
   if (!clean) return "新分析会话";
   return clean.length > 20 ? `${clean.slice(0, 20)}...` : clean;

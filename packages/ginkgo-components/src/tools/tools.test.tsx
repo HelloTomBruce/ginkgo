@@ -3,6 +3,7 @@ import React from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { DiffViewer, computeLineDiff, parseUnifiedDiff } from "./DiffViewer";
 import { ApprovalCard } from "./ApprovalCard";
+import { ModeApprovalCard } from "./ModeApprovalCard";
 import { TerminalViewer } from "./TerminalViewer";
 
 describe("DiffViewer 差异计算与渲染", () => {
@@ -97,5 +98,73 @@ describe("TerminalViewer 终端命令行卡", () => {
     expect(screen.getByText("npm run build")).toBeDefined();
     expect(screen.getByText("Compiled successfully")).toBeDefined();
     expect(screen.getByText("成功")).toBeDefined();
+  });
+});
+
+describe("ModeApprovalCard 模式提权审批卡", () => {
+  const samplePayload = {
+    targetMode: "build" as const,
+    summary: "设计方案已规划就绪，申请切换至构建模式创建画板",
+    changes: [
+      {
+        type: "file_create" as const,
+        target: "project/canvas.json",
+        description: "画板配置文件",
+      },
+      {
+        type: "command" as const,
+        target: "claude-design serve",
+        description: "启动预览服务",
+      },
+    ],
+    riskLevel: "medium" as const,
+  };
+
+  it("渲染待审批状态、摘要、拟变更列表，点击批准触发回调", () => {
+    let approvedPayload: unknown = null;
+    render(
+      <ModeApprovalCard
+        payload={samplePayload}
+        onApprove={(p) => {
+          approvedPayload = p;
+        }}
+      />
+    );
+
+    expect(screen.getByText("申请切换至构建模式 (Build)")).toBeDefined();
+    expect(screen.getByText(samplePayload.summary)).toBeDefined();
+    expect(screen.getByText("project/canvas.json")).toBeDefined();
+    expect(screen.getByText("claude-design serve")).toBeDefined();
+
+    const approveBtn = screen.getByText("批准并开始构建");
+    fireEvent.click(approveBtn);
+    expect(approvedPayload).toEqual(samplePayload);
+    expect(screen.getByText("已批准切换至构建模式 (Build)")).toBeDefined();
+  });
+
+  it("支持展开反馈输入框并提交拒绝调整建议", () => {
+    let rejectFeedback: string | undefined = undefined;
+    render(
+      <ModeApprovalCard
+        payload={samplePayload}
+        onReject={(feedback) => {
+          rejectFeedback = feedback;
+        }}
+      />
+    );
+
+    const rejectBtn = screen.getByText("调整方案 / 暂不构建");
+    fireEvent.click(rejectBtn);
+
+    const textarea = screen.getByPlaceholderText(
+      "例如：先不要修改样式，只调整画板结构；或者暂不安装该依赖..."
+    );
+    fireEvent.change(textarea, { target: { value: "暂不要启动服务，先写好代码" } });
+
+    const confirmBtn = screen.getByText("保持 Plan 并提交调整建议");
+    fireEvent.click(confirmBtn);
+
+    expect(rejectFeedback).toBe("暂不要启动服务，先写好代码");
+    expect(screen.getByText("已保持规划")).toBeDefined();
   });
 });

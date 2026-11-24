@@ -10,6 +10,7 @@ import {
   Layers,
 } from "lucide-react";
 import { UiSpecRenderer, DashboardScopeProvider } from "@ginkgo/components";
+import type { AppWorkspaceProps } from "@ginkgo/app-sdk";
 import { Hint } from "./ui/hint";
 
 export interface CanvasDashboardData {
@@ -19,16 +20,12 @@ export interface CanvasDashboardData {
   isLive?: boolean;
 }
 
-export interface AnalysisCanvasProps {
-  data: CanvasDashboardData | unknown | null;
-  onClose: () => void;
-  onAction?: (actionPrompt: string) => void;
-  onRefresh?: (id: string) => Promise<void>;
-  onPrint?: (id: string) => void;
-  isExpanded?: boolean;
-  onToggleExpand?: () => void;
-  [key: string]: unknown;
-}
+/**
+ * 数据分析画布工作台 Props：
+ * 直接复用平台插槽契约 AppWorkspaceProps（组合根以 AppWorkspaceProps 注入，
+ * 自定义较窄签名会造成契约漂移），不再本地重复声明同名字段。
+ */
+export type AnalysisCanvasProps = AppWorkspaceProps;
 
 export function AnalysisCanvas({
   data: rawData,

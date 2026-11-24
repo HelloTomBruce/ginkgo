@@ -35,14 +35,38 @@ export interface AppPresetQuery {
   id?: string;
 }
 
+/** 工作区上下文详细信息（由宿主注入给插槽组件） */
+export interface AppWorkspaceContextInfo {
+  /** 工作区 ID */
+  id?: string;
+  /** 工作区显示名称 */
+  name?: string;
+  /** 本地绑定工程物理路径（若绑定外部目录） */
+  path?: string;
+  /** 实际沙箱物理根目录（绝对路径） */
+  sandboxDir: string;
+  /** 是否为 Git 仓库 */
+  isGitRepo?: boolean;
+}
+
 /** 宿主注入给右侧工作台插槽的 Props */
 export interface AppWorkspaceProps {
   /** 当前工作区的数据产物（如看板 DSL、文档内容、沙箱代码等） */
   data: unknown;
+  /** 当前会话 ID */
+  sessionId?: string;
+  /** 当前应用 ID */
+  appId?: string;
+  /** 宿主统一注入的工作区上下文 */
+  workspace?: AppWorkspaceContextInfo;
   /** 关闭工作台回到纯对话流 */
   onClose: () => void;
   /** 交互动作回调（如点击操作建议按钮反馈给模型） */
   onAction?: (actionPrompt: string) => void;
+  /** 刷新画布/产物回调 */
+  onRefresh?: (id?: string) => void | Promise<void>;
+  /** 打印/导出回调（可携带目标产物 ID，宿主可忽略参数） */
+  onPrint?: (id?: string) => void;
   /** 是否全屏最大化展示 */
   isExpanded?: boolean;
   /** 切换全屏/还原 */
@@ -144,9 +168,26 @@ export interface AppCanvasData {
  * 平台内置的通用展示渲染器类型
  * - "diff": 代码/文本差异比对视图（支持 unified / split 切换、折叠、高亮）
  * - "terminal": 终端命令执行与输出卡片（仿终端样式、命令回显、退出码、输出折叠）
+ * - "approval": 权限与高危操作人机审批卡
  * - "json": 格式化 JSON 树形折叠预览
  */
-export type BuiltinToolRendererType = "diff" | "terminal" | "json";
+export type BuiltinToolRendererType = "diff" | "terminal" | "approval" | "json";
+
+/** 模式提权拟变更项目 */
+export interface ModeEscalationChangeItem {
+  type: "file_create" | "file_modify" | "dependency_install" | "command" | "database";
+  target: string;
+  description?: string;
+}
+
+/** 模式提权申请载荷 */
+export interface ModeEscalationPayload {
+  targetMode: "build";
+  summary: string;
+  changes?: ModeEscalationChangeItem[];
+  riskLevel?: "low" | "medium" | "high";
+  actionPrompt?: string;
+}
 
 /** 工具调用展示渲染器声明 */
 export interface AppToolRendererSpec {
@@ -224,6 +265,8 @@ export type InteractionMode = "plan" | "build";
 export interface AppClientContract {
   /** 新会话默认欢迎语 */
   welcomeMessage: string;
+  /** 新会话默认标题（未声明时宿主兜底为「新建会话」） */
+  defaultSessionTitle?: string;
   /** 推荐场景问题列表 */
   presetQueries: AppPresetQuery[];
   /** 默认交互模式（未指定时默认为 "plan"） */
@@ -429,6 +472,19 @@ export interface AppDeliverableContract {
   evidenceMarkers?: string[];
 }
 
+export interface AppActionContext {
+  /** 当前应用 ID */
+  appId: string;
+  /** 会话 ID */
+  sessionId: string;
+  /** 经平台安全归一化后的工作区根目录（绝对路径） */
+  workspaceDir: string;
+  /** 调用方身份（可选，多租户/网关鉴权模式） */
+  principal?: string;
+  /** 租户 ID（可选） */
+  tenantId?: string;
+}
+
 export interface AppServerContract {
   /**
    * 应用自治的 System Prompt 生成器。
@@ -454,6 +510,19 @@ export interface AppServerContract {
    * 不产生无谓的目录创建）。
    */
   needsWorkspace?: boolean;
+
+  /**
+   * 应用自治动作分发网关（RPC 通道，可选）：
+   * 承接右侧工作台、自定义设置分区、插件扩展等发起的前后端专用交互指令
+   * （如画板服务启停、Token 审查、复杂数据重算等）。
+   * 宿主通过通用网关 /api/apps/[appId]/action 自动校验并转发到此，
+   * 彻底杜绝在宿主基座为每个应用手写业务 API 路由。
+   */
+  dispatchAction?(
+    action: string,
+    payload: Record<string, unknown>,
+    ctx: AppActionContext
+  ): Promise<unknown>;
 
   /**
    * 产物列表（可选）：应用自治枚举其产物（看板/文档/文件等）为统一的

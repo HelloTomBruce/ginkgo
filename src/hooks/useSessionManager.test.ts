@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { renderHook, act, waitFor } from "@testing-library/react";
 import type { Message } from "@ai-sdk/react";
-import { useSessionManager } from "./useSessionManager";
+import { useSessionManager, isDefaultSessionTitle } from "./useSessionManager";
 import {
   installSessionServer,
   makeSessionRecord,
@@ -15,7 +15,10 @@ const userMessage: Message = { id: "m1", role: "user", content: "分析一下上
 let server: SessionServer;
 
 async function renderLoaded() {
-  const utils = renderHook(() => useSessionManager());
+  // 模拟宿主 ChatDashboard 装配：传入应用声明的 defaultSessionTitle（analytics 声明值）
+  const utils = renderHook(() =>
+    useSessionManager({ defaultSessionTitle: "营销获客与商业分析会话" })
+  );
   await waitFor(() => expect(utils.result.current.loaded).toBe(true));
   return utils;
 }
@@ -117,8 +120,13 @@ describe("bootstrap 初始化", () => {
   });
 
   it("并发 bootstrap（StrictMode 双调用）：初始会话只创建一次", async () => {
-    const a = renderHook(() => useSessionManager());
-    const b = renderHook(() => useSessionManager());
+    // 同 renderLoaded：模拟宿主传入应用声明的默认标题
+    const a = renderHook(() =>
+      useSessionManager({ defaultSessionTitle: "营销获客与商业分析会话" })
+    );
+    const b = renderHook(() =>
+      useSessionManager({ defaultSessionTitle: "营销获客与商业分析会话" })
+    );
     await waitFor(() => {
       expect(a.result.current.loaded).toBe(true);
       expect(b.result.current.loaded).toBe(true);
@@ -207,6 +215,25 @@ describe("会话增删改", () => {
   });
 });
 
+describe("isDefaultSessionTitle 判定", () => {
+  it("空值与默认标题识别为 default", () => {
+    expect(isDefaultSessionTitle("")).toBe(true);
+    expect(isDefaultSessionTitle(null)).toBe(true);
+    expect(isDefaultSessionTitle("新建会话")).toBe(true);
+    expect(isDefaultSessionTitle("新会话")).toBe(true);
+    expect(isDefaultSessionTitle("新建分析会话")).toBe(true);
+    expect(isDefaultSessionTitle("营销获客与商业分析会话")).toBe(true);
+    expect(isDefaultSessionTitle("Untitled")).toBe(true);
+    expect(isDefaultSessionTitle("Untitled 2")).toBe(true);
+    expect(isDefaultSessionTitle("New Chat")).toBe(true);
+  });
+
+  it("用户自定义标题不判定为 default", () => {
+    expect(isDefaultSessionTitle("我的电商数据分析")).toBe(false);
+    expect(isDefaultSessionTitle("新建用户中心方案架构设计")).toBe(false);
+  });
+});
+
 describe("消息保存", () => {
   it("保存消息：写回服务端、标题由首条用户消息生成、列表按 updatedAt 排序", async () => {
     const { result } = await renderLoaded();
@@ -224,6 +251,56 @@ describe("消息保存", () => {
       const record = server.records.get(id);
       expect(record?.messages).toHaveLength(2);
       expect(record?.title).toBe("分析一下上月营收");
+    });
+  });
+
+  it("点击「新建会话」后的新会话，首条用户提问到达时自动重命名", async () => {
+    const { result } = await renderLoaded();
+    await act(async () => {
+      await result.current.handleCreateNewChat();
+    });
+    const newId = result.current.currentSessionId;
+    expect(result.current.sessions.find((s) => s.id === newId)?.title).toBe("新建会话");
+
+    act(() => {
+      result.current.saveCurrentSessionMessages(
+        [
+          { id: "w", role: "assistant", content: "你好" },
+          { id: "u1", role: "user", content: "设计一个高保真仪表盘" },
+        ],
+        newId
+      );
+    });
+
+    expect(result.current.sessions.find((s) => s.id === newId)?.title).toBe("设计一个高保真仪表盘");
+    await waitFor(() => {
+      expect(server.records.get(newId)?.title).toBe("设计一个高保真仪表盘");
+    });
+  });
+
+  it("已手动自定义标题的会话，新消息保存时不覆盖自定义标题", async () => {
+    const { result } = await renderLoaded();
+    const id = result.current.currentSessionId;
+
+    act(() => result.current.handleStartRename(fakeEvent, result.current.sessions[0]));
+    act(() => result.current.setEditingTitleText("自定义核心报表"));
+    act(() => result.current.handleSaveRename(id));
+
+    expect(result.current.sessions.find((s) => s.id === id)?.title).toBe("自定义核心报表");
+
+    act(() => {
+      result.current.saveCurrentSessionMessages(
+        [
+          { id: "w", role: "assistant", content: "欢迎" },
+          { id: "u2", role: "user", content: "查询最新转化率" },
+        ],
+        id
+      );
+    });
+
+    expect(result.current.sessions.find((s) => s.id === id)?.title).toBe("自定义核心报表");
+    await waitFor(() => {
+      expect(server.records.get(id)?.title).toBe("自定义核心报表");
     });
   });
 
@@ -495,5 +572,31 @@ describe("会话切换与消息快照", () => {
     // general 应用初始化出属于自己的初始会话
     expect(result.current.sessions.length).toBe(1);
     expect(result.current.sessions[0].appId).toBe("general");
+  });
+
+  it("首挂载 bootstrap 时按 options.appId 隔离会话，全局 activeId 属于其他应用时不产生串显", async () => {
+    // 预置两个不同应用的会话，且全局活跃指针指向 design 会话
+    const analyticsSession = makeSessionRecord({
+      appId: "analytics",
+      title: "商业数据分析",
+      updatedAt: 1000,
+    });
+    const designSession = makeSessionRecord({
+      appId: "design",
+      title: "画板视觉设计",
+      updatedAt: 2000,
+    });
+    server.seed([analyticsSession, designSession], designSession.id);
+
+    // 挂载 analytics 应用
+    const { result } = renderHook(() =>
+      useSessionManager({ appId: "analytics" })
+    );
+    await waitFor(() => expect(result.current.loaded).toBe(true));
+
+    // 会话列表必须只包含 analytics 会话
+    expect(result.current.sessions.map((s) => s.id)).toEqual([analyticsSession.id]);
+    // 活跃会话必须安全对齐到 analytics 会话，而非 designSession.id
+    expect(result.current.currentSessionId).toBe(analyticsSession.id);
   });
 });

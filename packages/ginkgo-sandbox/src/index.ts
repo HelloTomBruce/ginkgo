@@ -1,5 +1,6 @@
 export {
   createSandboxTools,
+  buildRequestBuildPermissionTool,
   assertSafePath,
   type SandboxToolsPreset,
   type SandboxPermission,

@@ -3,6 +3,8 @@ import path from "node:path";
 import type { AppWorkspaceContext } from "@ginkgo/app-sdk";
 // 路径守卫唯一实现在 ginkgo-sandbox 能力包（沙箱语义的所有者），宿主 re-export
 import { assertSafePath } from "@ginkgo/sandbox";
+import { sessionStore } from "@/lib/sessionStore";
+import { workspaceStore } from "@/lib/workspaceStore";
 
 export const DEFAULT_WORKSPACES_ROOT = path.join(process.cwd(), "data", "workspaces");
 
@@ -37,6 +39,29 @@ export async function resolveWorkspaceContext(
     sandboxDir,
     customRootDir,
   };
+}
+
+/**
+ * 解析会话绑定的工作区（带自动降级与外部工程路径关联）
+ */
+export async function resolveWorkspaceForSession(
+  appId: string,
+  sessionId?: string
+): Promise<AppWorkspaceContext> {
+  let customRootDir: string | undefined;
+  if (sessionId) {
+    const sRecord = await sessionStore.get(sessionId);
+    if (sRecord?.workspaceId) {
+      const ws = await workspaceStore.get(sRecord.workspaceId);
+      if (ws?.path) customRootDir = ws.path;
+    }
+  }
+  try {
+    return await resolveWorkspaceContext({ appId, sessionId, customRootDir });
+  } catch (wsErr) {
+    console.warn("[WorkspaceResolver] 解析工作区异常，回退至默认沙箱:", wsErr);
+    return await resolveWorkspaceContext({ appId, sessionId });
+  }
 }
 
 /**

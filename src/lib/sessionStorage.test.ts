@@ -25,6 +25,11 @@ describe("generateSessionTitle", () => {
   it("空内容返回默认标题", () => {
     expect(generateSessionTitle("")).toBe("新分析会话");
   });
+
+  it("多行内容换行规范化为单空格", () => {
+    const multiLine = "设计首页导航栏\n并包含轮播图\n以及底栏";
+    expect(generateSessionTitle(multiLine)).toBe("设计首页导航栏 并包含轮播图 以及底栏");
+  });
 });
 
 describe("createNewSession", () => {

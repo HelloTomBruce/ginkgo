@@ -36,7 +36,7 @@ const DEFAULT_TEMPERATURE = "0.2";
 const DEFAULT_REASONING_EFFORT = "medium";
 // 留空 → 服务端默认 16384（Anthropic 协议端点必须显式带 max_tokens，避免 finishReason=length 静默截断）
 const DEFAULT_MAX_TOKENS = "";
-// 留空 → 服务端默认 25 步（双重终态机制保证适时退出，最高100）
+// 留空 → 服务端默认执行 50 步 / 规划 25 步（双重终态机制保证适时退出，最高150）
 const DEFAULT_MAX_STEPS = "";
 // 留空 → 根据模型自动推断（如 128k/1000k），支持用户显式指定（如 1024000）
 const DEFAULT_CONTEXT_WINDOW = "";

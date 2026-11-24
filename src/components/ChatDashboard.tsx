@@ -10,6 +10,7 @@ import { useLlmSettings } from "@/hooks/useLlmSettings";
 import { useSessionManager } from "@/hooks/useSessionManager";
 import { useDashboards, type FavoriteDashboardInput } from "@/hooks/useDashboards";
 import { DashboardPreviewModal } from "@/components/chat/DashboardPreviewModal";
+import { WorkspaceErrorBoundary } from "@/components/chat/WorkspaceErrorBoundary";
 // 仅取类型（编译期擦除）
 import type { DashboardRecord } from "@ginkgo-apps/analytics/server";
 import {
@@ -24,9 +25,18 @@ import { SettingsModal } from "@/components/chat/SettingsModal";
 import { ModelSwitcher } from "@/components/chat/ModelSwitcher";
 import { ReasoningEffortSwitcher } from "@/components/chat/ReasoningEffortSwitcher";
 import { ContextUsageIndicator } from "@/components/chat/ContextUsageIndicator";
-import type { AppCanvasData } from "@ginkgo/app-sdk";
+import type { AppCanvasData, ModeEscalationPayload } from "@ginkgo/app-sdk";
 import { extractUiSpec } from "@/lib/extractUiSpec";
-import { appRegistry, DEFAULT_APP_ID } from "@/lib/apps/registry";
+import { appRegistry } from "@/lib/apps/registry";
+import { getInitialAppId, saveActiveAppId } from "@/lib/activeAppStorage";
+import {
+  type ChatRequestMetadata,
+  buildStreamErrorMessage,
+  createChatStreamFetch,
+  diagnoseChatStreamError,
+  isAbortError,
+  resolveStreamMeta,
+} from "@/lib/chatStreamDiagnostics";
 import { UiSpecToolProvider } from "@ginkgo/components";
 import { clientTools } from "@/lib/clientTools";
 import { Toaster } from "@/components/Toaster";
@@ -40,6 +50,7 @@ import { toast } from "@/lib/toast";
  * 组合层：唯一接线点。
  * 状态在 useLlmSettings / useSessionManager 中管理，展示在 chat/ 下的专注子组件中。
  */
+
 /** 上下文用量派生（纯函数，组件外定义以兼容 React Compiler 手动记忆化） */
 function deriveContextUsage(
   data: unknown,
@@ -77,8 +88,15 @@ function deriveContextUsage(
   }
   return { promptTokens: 0, window: windowSize };
 }
+
 export default function ChatDashboard() {
-  const [activeAppId, setActiveAppId] = useState<string>(DEFAULT_APP_ID);
+  const [activeAppId, setActiveAppId] = useState<string>(getInitialAppId);
+
+  const handleSwitchApp = useCallback((appId: string) => {
+    if (!appRegistry.has(appId)) return;
+    setActiveAppId(appId);
+    saveActiveAppId(appId);
+  }, []);
   const activeApp = useMemo(
     () => appRegistry.getOrDefault(activeAppId),
     [activeAppId]
@@ -143,6 +161,8 @@ export default function ChatDashboard() {
   // 经 registerSetMessages 注入（构造顺序环解法，见 hook 注释）。
   // 发起请求时的会话 id：流式期间用户可能切换会话，onFinish 须写回发起会话
   const streamingSessionIdRef = useRef<string | null>(null);
+  // 当前正在进行的会话流请求元数据（用于在流中断/异常时进行高精度故障排查与耗时诊断）
+  const chatRequestMetaRef = useRef<ChatRequestMetadata | null>(null);
   // 数据源列表（输入区插槽选择与请求体 sources 组装共用）
   const { sources: allDatasources } = useDatasourceList();
   const {
@@ -173,36 +193,45 @@ export default function ChatDashboard() {
   } = useSessionManager({
     appId: activeAppId,
     welcomeMessage: activeApp.client.welcomeMessage,
+    defaultSessionTitle: activeApp.client.defaultSessionTitle,
   });
-  const handleChatError = useCallback((err: Error) => {
-    if (process.env.NODE_ENV !== "test") {
-      console.warn("[ChatDashboard] 会话流异常:", err);
-    }
-    // 1. 容错落盘：确保当前提问及已有生成内容不会丢失，会话不中断
-    const targetId = streamingSessionIdRef.current;
-    if (targetId) {
-      try {
-        const msgs = getMessages();
-        if (msgs && msgs.length > 0) {
-          saveCurrentSessionMessages(msgs, targetId, { silent: true });
+  const handleChatError = useCallback(
+    (err: Error) => {
+      // 1. 控制台结构化诊断（归因/排查指引/存活探测，test 环境静默）
+      const { meta, elapsedMs } = resolveStreamMeta(err, chatRequestMetaRef.current);
+      diagnoseChatStreamError(
+        err,
+        {
+          fallbackSessionId: streamingSessionIdRef.current || currentSessionId,
+          fallbackAppId: activeAppId,
+          fallbackModel: model,
+        },
+        meta,
+        elapsedMs
+      );
+
+      // 2. 容错落盘：确保当前提问及已有生成内容不会丢失，会话不中断
+      const targetId = streamingSessionIdRef.current;
+      if (targetId) {
+        try {
+          const msgs = getMessages();
+          if (msgs && msgs.length > 0) {
+            saveCurrentSessionMessages(msgs, targetId, { silent: true });
+          }
+        } catch (saveErr) {
+          console.error("[ChatDashboard] 错误态紧急保存会话失败:", saveErr);
         }
-      } catch (saveErr) {
-        console.error("[ChatDashboard] 错误态紧急保存会话失败:", saveErr);
       }
-    }
-    // 2. 用户主动暂停/终止请求不弹报错提示
-    if (err.name === "AbortError" || err.message?.includes("aborted")) {
-      return;
-    }
-    const isGeneric =
-      !err.message ||
-      err.message === "An error occurred." ||
-      err.message.includes("Failed to fetch");
-    const message = isGeneric
-      ? "网络响应中断，已自动保存当前进度，您可以继续提问或点击重试"
-      : `响应异常：${err.message}`;
-    toast(message, "error");
-  }, [getMessages, saveCurrentSessionMessages]);
+
+      // 3. 用户主动暂停/终止请求不弹报错提示
+      if (isAbortError(err)) {
+        return;
+      }
+
+      toast(buildStreamErrorMessage(err, elapsedMs), "error");
+    },
+    [activeAppId, currentSessionId, getMessages, model, saveCurrentSessionMessages]
+  );
   // 看板收藏库：列表/收藏/重命名/删除（列表同时驱动侧栏看板库）
   const {
     summaries: dashboardSummaries,
@@ -271,6 +300,22 @@ export default function ChatDashboard() {
       : enabledPickerSources;
     return list.map((s) => ({ id: s.id, name: s.name }));
   }, [activeApp.client.hasInputAccessory, enabledPickerSources, activeSession?.enabledSources]);
+  // 增强型流请求 Fetch：耗时记录 / HTTP 错误拦截 / 全链路排查元数据（实现见 chatStreamDiagnostics）
+  const customFetch = useCallback(
+    (input: RequestInfo | URL, init?: RequestInit) =>
+      createChatStreamFetch({
+        getContext: () => ({
+          sessionId: streamingSessionIdRef.current || currentSessionId || undefined,
+          appId: activeAppId,
+          model,
+        }),
+        onMeta: (meta) => {
+          chatRequestMetaRef.current = meta;
+        },
+      })(input, init),
+    [activeAppId, currentSessionId, model]
+  );
+
   // 使用 Next.js 官方 Vercel AI SDK 的 useChat Hook
   const {
     messages,
@@ -291,6 +336,7 @@ export default function ChatDashboard() {
     api: "/api/analyze",
     body: chatBodyWithSources,
     headers: authHeaders(),
+    fetch: customFetch,
     onError: handleChatError,
     initialMessages: [DEFAULT_WELCOME_MESSAGE],
     // 流式渲染合批：SSE 增量频率远超人眼可辨（推理模型思考流尤甚），
@@ -528,6 +574,23 @@ export default function ChatDashboard() {
     },
     [append, currentSessionId, nextModeBody]
   );
+  // 模式提权主动审批处理（Plan -> Build 一键切换并无缝启动执行）
+  const handleApproveEscalation = useCallback(
+    (payload: ModeEscalationPayload) => {
+      // 1. 原子持久化：切换当前会话为 build 模式
+      setPlanMode(false);
+      // 2. 自动启动执行流：指定 mode="execute"，发送启动指令
+      const actionPrompt =
+        payload.actionPrompt ||
+        `我已确认并批准权限申请，请切换至 Build 模式并严格按照规划方案执行落地：${payload.summary}`;
+      streamingSessionIdRef.current = currentSessionId;
+      append(
+        { role: "user", content: actionPrompt },
+        { body: { mode: "execute" } }
+      );
+    },
+    [setPlanMode, append, currentSessionId]
+  );
   // 在途流的两种处置：
   // - 脱钩（切换/新建会话，默认）：仅中止客户端订阅并落盘进度——服务端 StreamHub
   //   任务继续后台生成，回切时由重连探测无缝续接（页面刷新恢复同构）；
@@ -686,10 +749,16 @@ export default function ChatDashboard() {
     [getDashboard]
   );
   const handleCanvasRefresh = useCallback(
-    async (id: string) => {
-      const res = await refreshDashboardData(id);
+    async (id?: string) => {
+      // 未显式指定时回退当前画布看板 ID（错误边界重置等场景只知"刷新当前"）
+      const targetId = id || canvasData?.id;
+      if (!targetId) {
+        toast("当前画布暂无看板数据，无需刷新", "info");
+        return;
+      }
+      const res = await refreshDashboardData(targetId);
       if (res.ok) {
-        const rec = await getDashboard(id);
+        const rec = await getDashboard(targetId);
         if (rec) {
           setCanvasData({
             id: rec.id,
@@ -703,7 +772,7 @@ export default function ChatDashboard() {
         toast(res.error || "当前看板暂不支持自动重放刷新", "info");
       }
     },
-    [refreshDashboardData, getDashboard]
+    [refreshDashboardData, getDashboard, canvasData?.id]
   );
   const handleCanvasPrint = useCallback(() => {
     window.print();
@@ -910,7 +979,7 @@ export default function ChatDashboard() {
       <UiSpecToolProvider tools={clientTools}>
       <ChatSidebar
         activeAppId={activeAppId}
-        onSwitchApp={setActiveAppId}
+        onSwitchApp={handleSwitchApp}
         sessions={sessions}
         currentSessionId={currentSessionId}
         editingSessionId={editingSessionId}
@@ -1038,6 +1107,7 @@ export default function ChatDashboard() {
                   error={error}
                             activeSources={sessionSources}
                   onRendererAction={handleRendererAction}
+                  onApproveEscalation={handleApproveEscalation}
                   onReload={reload}
                   onStop={handleStop}
                   // 看板工具条能力注入：操作项与标题由当前应用声明（未声明则全部不出现）
@@ -1131,21 +1201,28 @@ export default function ChatDashboard() {
                 viewMode === "canvas-only" ? "w-full" : "hidden md:flex flex-1"
               }`}
             >
-              <WorkspaceComponent
-                data={canvasData}
-                sessionId={currentSessionId}
-                appId={activeAppId}
-                onClose={() => setViewMode("chat-only")}
-                onAction={handleRendererAction}
-                onRefresh={handleCanvasRefresh}
-                onPrint={handleCanvasPrint}
-                isExpanded={viewMode === "canvas-only"}
-                onToggleExpand={() =>
-                  setViewMode((prev) =>
-                    prev === "canvas-only" ? "split" : "canvas-only"
-                  )
-                }
-              />
+              <WorkspaceErrorBoundary
+                fallbackTitle={`${activeApp.manifest.name} 工作台异常`}
+                onReset={() => {
+                  void handleCanvasRefresh("");
+                }}
+              >
+                <WorkspaceComponent
+                  data={canvasData}
+                  sessionId={currentSessionId}
+                  appId={activeAppId}
+                  onClose={() => setViewMode("chat-only")}
+                  onAction={handleRendererAction}
+                  onRefresh={handleCanvasRefresh}
+                  onPrint={handleCanvasPrint}
+                  isExpanded={viewMode === "canvas-only"}
+                  onToggleExpand={() =>
+                    setViewMode((prev) =>
+                      prev === "canvas-only" ? "split" : "canvas-only"
+                    )
+                  }
+                />
+              </WorkspaceErrorBoundary>
             </div>
           )}
         </div>

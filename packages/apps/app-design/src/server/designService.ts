@@ -1,11 +1,16 @@
-import { CliBridge } from "./cliBridge";
+import type { AppArtifactItem } from "@ginkgo/app-sdk";
+import { CliBridge, type BoardDetail, type DashboardArtifact } from "./cliBridge";
 
 export interface DesignStatusResponse {
   hasCanvas: boolean;
   canvasTitle?: string;
   boardCount: number;
   boards: string[];
+  boardsDetail?: BoardDetail[];
+  dashboards?: DashboardArtifact[];
+  hasClaudeData?: boolean;
   previewUrl?: string;
+  workspacePath?: string;
   hasDesignSystem: boolean;
   designSystem?: Record<string, unknown>;
   checkResult?: {
@@ -16,7 +21,7 @@ export interface DesignStatusResponse {
 
 export class DesignService {
   /**
-   * 获取工作区设计资产状态（供 API 路由消费）
+   * 获取工作区设计资产状态（供 API 路由与 dispatchAction 消费）
    */
   static async getStatus(workspaceDir: string): Promise<DesignStatusResponse> {
     const meta = await CliBridge.getWorkspaceDesignMeta(workspaceDir);
@@ -42,11 +47,70 @@ export class DesignService {
       canvasTitle: typeof meta.canvasJson?.title === "string" ? meta.canvasJson.title : undefined,
       boardCount: meta.boards.length,
       boards: meta.boards,
+      boardsDetail: meta.boardsDetail,
+      dashboards: meta.dashboards,
+      hasClaudeData: meta.dashboards.length > 0,
       previewUrl,
+      workspacePath: workspaceDir,
       hasDesignSystem: meta.hasDesignSystem,
       designSystem: meta.designSystemJson,
       checkResult,
     };
+  }
+
+  /**
+   * 平台产物枚举契约（listArtifacts）实现：
+   * 聚合画板 boards、Claude Data 看板与 Design System 规范文件
+   */
+  static async listArtifacts(workspaceDir: string): Promise<AppArtifactItem[]> {
+    const meta = await CliBridge.getWorkspaceDesignMeta(workspaceDir);
+    const artifacts: AppArtifactItem[] = [];
+
+    // 1. 视觉画板产物（单板维度与整体画布）
+    if (meta.hasCanvas) {
+      artifacts.push({
+        id: "canvas:index",
+        name: typeof meta.canvasJson?.title === "string" ? meta.canvasJson.title : "视觉设计画板总引",
+        type: "canvas",
+        path: "project/canvas.json",
+        updatedAt: Date.now(),
+      });
+
+      for (const board of meta.boardsDetail) {
+        artifacts.push({
+          id: `board:${board.key}`,
+          name: `${board.title} (${board.width}×${board.height})`,
+          type: "board",
+          path: `project/${board.key}`,
+          updatedAt: Date.now(),
+        });
+      }
+    }
+
+    // 2. Claude Data 数据看板产物
+    for (const d of meta.dashboards) {
+      artifacts.push({
+        id: d.id,
+        name: d.title,
+        type: "dashboard",
+        path: d.relativePath,
+        sizeBytes: d.sizeBytes,
+        updatedAt: d.updatedAt || Date.now(),
+      });
+    }
+
+    // 3. 设计系统规范
+    if (meta.hasDesignSystem) {
+      artifacts.push({
+        id: "design-system:tokens",
+        name: "Design System Tokens",
+        type: "system",
+        path: "project/design-system.json",
+        updatedAt: Date.now(),
+      });
+    }
+
+    return artifacts;
   }
 
   /**

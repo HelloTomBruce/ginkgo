@@ -152,12 +152,32 @@ describe("createSandboxTools", () => {
     ).toEqual(["edit_file", "list_dir", "read_file", "run_command", "write_file"]);
     expect(
       Object.keys(createSandboxTools({ sandboxDir: tempDir, permission: "readonly" })).sort()
-    ).toEqual(["read_file"]);
+    ).toEqual(["read_file", "request_build_permission"]);
     expect(
       Object.keys(
         createSandboxTools({ sandboxDir: tempDir, permission: "readonly", preset: "explorer" })
       ).sort()
-    ).toEqual(["list_dir", "read_file"]);
+    ).toEqual(["list_dir", "read_file", "request_build_permission"]);
+  });
+
+  it("request_build_permission 接收规划方案与变更清单，返回待审批状态", async () => {
+    const tools = createSandboxTools({ sandboxDir: tempDir, permission: "readonly" });
+    expect(tools.request_build_permission).toBeDefined();
+
+    const res = await tools.request_build_permission.execute!(
+      {
+        summary: "方案已规划完毕，申请创建登录页面",
+        changes: [{ type: "file_create", target: "src/Login.tsx", description: "登录组件" }],
+        riskLevel: "medium",
+      },
+      {} as never
+    );
+
+    expect(res).toMatchObject({
+      ok: true,
+      status: "pending_approval",
+      message: expect.stringContaining("等待用户确认"),
+    });
   });
 
   it("readonly 的 prompt 段说明只读边界与解锁路径", () => {

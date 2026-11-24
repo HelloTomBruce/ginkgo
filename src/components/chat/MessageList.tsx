@@ -6,6 +6,7 @@ import type {
   AppMessageExtensions,
   AppToolRendererSpec,
   AppToolApprovalRule,
+  ModeEscalationPayload,
 } from "@ginkgo/app-sdk";
 import { ToolInvocationCard } from "./ToolInvocationCard";
 import { ArrowDown, ArrowUp, Loader2, Sparkles, Printer, Star, GitFork, RotateCcw, Square, Play, Brain, ListOrdered, X, Pin, CheckCircle2, AlertTriangle } from "lucide-react";
@@ -101,6 +102,8 @@ interface MessageItemProps {
   /** 会话操作：从该消息分叉新会话；回滚到该用户消息重问（仅 user 消息展示） */
   onForkMessage?: (messageId: string) => void;
   onRewindMessage?: (messageId: string) => void;
+  /** 模式提权批准回调（Plan -> Build） */
+  onApproveEscalation?: (payload: ModeEscalationPayload) => void;
 }
 
 
@@ -243,6 +246,7 @@ const MessageItem = React.memo(function MessageItem({
   onPinDashboard,
   onForkMessage,
   onRewindMessage,
+  onApproveEscalation,
 }: MessageItemProps) {
   const rawContent = msg.content;
   const rawMsg = msg as unknown as {
@@ -450,6 +454,7 @@ const MessageItem = React.memo(function MessageItem({
                     approvalRules={approvalRules}
                     activeSources={activeSources}
                     onRendererAction={onRendererAction}
+                    onApproveEscalation={onApproveEscalation}
                   />
                 ))}
               </div>
@@ -769,6 +774,8 @@ interface MessageListProps {
   onRewindMessage?: (messageId: string) => void;
   /** 中止/暂停当前生成 */
   onStop?: () => void;
+  /** 模式提权批准回调（Plan -> Build） */
+  onApproveEscalation?: (payload: ModeEscalationPayload) => void;
 }
 
 /** 距顶/底多远以内视为「已在顶/底」（阈值像素） */
@@ -794,6 +801,7 @@ export function MessageList({
   onForkMessage,
   onRewindMessage,
   onStop,
+  onApproveEscalation,
 }: MessageListProps) {
   // isLoading 与 status 同源，内部派生避免双重传参
   const isLoading = status === "submitted" || status === "streaming";
@@ -1073,6 +1081,7 @@ export function MessageList({
           }
           onForkMessage={onForkMessage}
           onRewindMessage={onRewindMessage}
+          onApproveEscalation={onApproveEscalation}
         />
       ))}
 

@@ -106,7 +106,9 @@ pnpm dev        # http://localhost:3006
 | `LLM_MAX_CONCURRENT_TASKS` | 进程级同时 running 任务数上限（超限返回 429） | 8（钳 1–64） |
 | `LLM_TOOL_OUTPUT_MAX_BYTES` | 单个工具结果进入模型上下文的字节上限（头尾保留截断） | 32768（钳 4KB–1MB） |
 | `LLM_MAX_OUTPUT_TOKENS` | 每步输出 token 上限 | 16384（钳 1024–65536） |
-| `LLM_PLAN_MAX_STEPS` | plan 模式独立步数预算 | 继承 maxSteps |
+| `LLM_MAX_STEPS` | 全局步数熔断上限（默认 execute 50 步 / plan 25 步） | execute 50 / plan 25（钳 1–150） |
+| `LLM_BUILD_MAX_STEPS` | execute/build 模式独立步数预算 | 50 |
+| `LLM_PLAN_MAX_STEPS` | plan 模式独立步数预算 | 25 |
 | `PGUSER` / `PGHOST` / `PGDATABASE` / `PGPASSWORD` / `PGPORT` | 分析库连接（缺表自动建表写示例数据） | 本机 `ginkgo_analytics` 库 |
 | 动态 DB 源（设置中配置） | `dbType` 四选：postgres / mysql / **sqlite** / **clickhouse**。全部只读双保险（词法守卫 + 引擎级只读） | — |
 | GitLab MCP Endpoint / Token | 在页面「设置」中配置，存于浏览器 localStorage | `http://127.0.0.1:5002/mcp` |

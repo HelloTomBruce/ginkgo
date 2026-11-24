@@ -79,6 +79,9 @@ interface WorkspaceFileItem {
  * 查询工作区文件树或单个文件内容
  * - ?appId=general&sessionId=xxx : 返回文件树列表
  * - ?appId=general&sessionId=xxx&filePath=src/index.ts : 返回文件文本内容
+ *
+ * 安全线约束：工作区根目录一律由服务端从 sessionStore→workspaceStore
+ * 按 sessionId 解析（或回落默认沙箱），不接受客户端透传的文件系统路径。
  */
 export async function GET(req: Request) {
   try {

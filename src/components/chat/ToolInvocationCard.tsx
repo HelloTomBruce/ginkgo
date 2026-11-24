@@ -3,8 +3,13 @@
 import React, { useState } from "react";
 import { Loader2 } from "lucide-react";
 import type { ToolInvocationState } from "./contentBlocks";
-import type { AppToolRendererSpec, AppToolApprovalRule } from "@ginkgo/app-sdk";
-import { DiffViewer, ApprovalCard, TerminalViewer } from "@ginkgo/components";
+import type {
+  AppToolRendererSpec,
+  AppToolApprovalRule,
+  ModeEscalationChangeItem,
+  ModeEscalationPayload,
+} from "@ginkgo/app-sdk";
+import { DiffViewer, ApprovalCard, ModeApprovalCard, TerminalViewer } from "@ginkgo/components";
 
 export interface ToolInvocationCardProps {
   tool: ToolInvocationState;
@@ -12,6 +17,69 @@ export interface ToolInvocationCardProps {
   approvalRules?: AppToolApprovalRule[];
   activeSources?: { id: string; name: string }[];
   onRendererAction?: (prompt: string) => void;
+  /** 模式提权批准回调（可选）：原子切换会话为 build 模式并启动构建 */
+  onApproveEscalation?: (payload: ModeEscalationPayload) => void;
+}
+
+const ESCALATION_CHANGE_TYPES = new Set([
+  "file_create",
+  "file_modify",
+  "dependency_install",
+  "command",
+  "database",
+]);
+
+const RISK_LEVELS = new Set(["low", "medium", "high"]);
+
+/** 默认摘要（模型漏传 summary 时兜底展示） */
+const DEFAULT_ESCALATION_SUMMARY = "申请切换至构建模式以执行具体落地构建";
+
+/**
+ * 模式提权载荷边界归一：模型经工具入参透传的 args 属不可信外部数据，
+ * 在进入渲染层前逐项校验清洗（changes 仅保留 type 枚举合法且 target 为
+ * 非空字符串的条目），渲染组件无需再做防御分支。
+ */
+export function normalizeModeEscalationPayload(
+  rawArgs: Record<string, unknown> | undefined
+): ModeEscalationPayload {
+  const rawChanges = Array.isArray(rawArgs?.changes) ? rawArgs?.changes : [];
+  const changes = rawChanges
+    .filter(
+      (item): item is Record<string, unknown> =>
+        typeof item === "object" && item !== null
+    )
+    .filter(
+      (item) =>
+        typeof item.target === "string" &&
+        item.target.trim().length > 0 &&
+        typeof item.type === "string" &&
+        ESCALATION_CHANGE_TYPES.has(item.type)
+    )
+    .map((item) => ({
+      type: item.type as ModeEscalationChangeItem["type"],
+      target: item.target as string,
+      ...(typeof item.description === "string"
+        ? { description: item.description }
+        : {}),
+    }));
+
+  const riskLevel =
+    typeof rawArgs?.riskLevel === "string" && RISK_LEVELS.has(rawArgs.riskLevel)
+      ? (rawArgs.riskLevel as ModeEscalationPayload["riskLevel"])
+      : "medium";
+
+  return {
+    targetMode: "build",
+    summary:
+      typeof rawArgs?.summary === "string" && rawArgs.summary.trim()
+        ? rawArgs.summary
+        : DEFAULT_ESCALATION_SUMMARY,
+    changes,
+    riskLevel,
+    ...(typeof rawArgs?.actionPrompt === "string" && rawArgs.actionPrompt.trim()
+      ? { actionPrompt: rawArgs.actionPrompt }
+      : {}),
+  };
 }
 
 /** 工具调用徽标文本（兜底默认渲染） */
@@ -38,10 +106,54 @@ export function ToolInvocationCard({
   approvalRules,
   activeSources,
   onRendererAction,
+  onApproveEscalation,
 }: ToolInvocationCardProps) {
   const isRunning = tool.state !== "result";
   const [localApproved, setLocalApproved] = useState(false);
   const [localRejected, setLocalRejected] = useState<string | false>(false);
+
+  // 0. 模式提权主动审批 (Plan -> Build)
+  if (tool.toolName === "request_build_permission") {
+    // 工具结果恒为 pending_approval（申请已送达、等待用户决策），
+    // 因此此处完成态不代表放行——仅用户点击后才流转状态
+    const payload = normalizeModeEscalationPayload(
+      tool.args as Record<string, unknown> | undefined
+    );
+
+    const handleApprove = (p: ModeEscalationPayload) => {
+      setLocalApproved(true);
+      if (onApproveEscalation) {
+        onApproveEscalation(p);
+      } else {
+        onRendererAction?.(
+          p.actionPrompt || `我已批准权限申请，请切换至 Build 模式并严格按照规划方案执行：${p.summary}`
+        );
+      }
+    };
+
+    const handleReject = (feedback?: string) => {
+      const reason = feedback || "用户暂不希望进入构建模式，请继续保持在 Plan 模式调整方案。";
+      setLocalRejected(reason);
+      onRendererAction?.(
+        `[保持规划] 我已暂缓进入构建模式。调整建议：${reason}。请重新在 Plan 模式下优化方案。`
+      );
+    };
+
+    const status = localApproved
+      ? "approved"
+      : localRejected !== false
+      ? "rejected"
+      : "pending";
+
+    return (
+      <ModeApprovalCard
+        payload={payload}
+        status={status}
+        onApprove={handleApprove}
+        onReject={handleReject}
+      />
+    );
+  }
 
   // 1. 匹配审批规则
   const matchedApprovalRule = approvalRules?.find((rule) => {
@@ -82,6 +194,8 @@ export function ToolInvocationCard({
       );
     };
 
+    // 完成态语义：工具已有 result 即代表服务端已放行执行（含历史会话恢复场景），
+    // 此时不应再显示「审批中」误导用户；仅 running 中等待用户交互时显示 pending
     const status = localApproved
       ? "approved"
       : localRejected !== false

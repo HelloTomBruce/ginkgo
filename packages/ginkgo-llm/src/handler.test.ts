@@ -519,22 +519,72 @@ describe("双重终态识别与步数预算", () => {
     expect(text).toContain('"status":"truncated"');
   });
 
-  it("步数预算：请求体 maxSteps 与环境变量 LLM_MAX_STEPS 优先级", async () => {
+  it("当最后一步为 tool-calls 但流终结时（步数上限到达或空工具调用），诚实触发 step_limit_reached 与 truncated 终态", async () => {
+    vi.mocked(streamText).mockImplementation((opts) =>
+      streamResult({
+        onStart: () => {
+          opts.onStepFinish?.({
+            stepType: "tool-result",
+            toolCalls: [],
+            finishReason: "tool-calls",
+            text: "准备调用工具...",
+            usage: { promptTokens: 3000, completionTokens: 50 },
+          } as never);
+          opts.onFinish?.({ usage: { promptTokens: 3000 } } as never);
+        },
+      }) as never
+    );
+
+    const POST = createAnalyzeHandler({ resolveAppTools: async () => ({}) });
+    const res = await POST(makeRequest({ messages: [], apiKey: "k" }));
+    const text = await res.text();
+
+    expect(text).toContain('"type":"task_finish"');
+    expect(text).toContain('"termination":"step_limit_reached"');
+    expect(text).toContain('"status":"truncated"');
+  });
+
+  it("步数预算：请求体 maxSteps 与环境变量优先级及默认值分档", async () => {
     const POST = createAnalyzeHandler({ resolveAppTools: async () => ({}) });
 
-    // 请求体显式传 30
-    await POST(makeRequest({ messages: [], apiKey: "k", maxSteps: 30 }));
+    // 1. 无配置下默认步数：直接/执行模式默认 50 步，规划模式默认 25 步
+    await POST(makeRequest({ messages: [], apiKey: "k" }));
     let arg = vi.mocked(streamText).mock.calls[0][0];
+    expect(arg.maxSteps).toBe(50);
+
+    await POST(makeRequest({ messages: [], apiKey: "k", mode: "plan" }));
+    arg = vi.mocked(streamText).mock.calls[1][0];
+    expect(arg.maxSteps).toBe(25);
+
+    // 2. 请求体显式传 30 步优先
+    await POST(makeRequest({ messages: [], apiKey: "k", maxSteps: 30 }));
+    arg = vi.mocked(streamText).mock.calls[2][0];
     expect(arg.maxSteps).toBe(30);
 
-    // 环境变量 LLM_MAX_STEPS 覆盖默认值
-    process.env.LLM_MAX_STEPS = "25";
+    // 3. 环境变量 LLM_MAX_STEPS 覆盖默认值
+    process.env.LLM_MAX_STEPS = "35";
     try {
       await POST(makeRequest({ messages: [], apiKey: "k" }));
-      arg = vi.mocked(streamText).mock.calls[1][0];
-      expect(arg.maxSteps).toBe(25);
+      arg = vi.mocked(streamText).mock.calls[3][0];
+      expect(arg.maxSteps).toBe(35);
     } finally {
       delete process.env.LLM_MAX_STEPS;
+    }
+
+    // 4. 环境变量 LLM_BUILD_MAX_STEPS 与 LLM_PLAN_MAX_STEPS 独立分档生效
+    process.env.LLM_BUILD_MAX_STEPS = "60";
+    process.env.LLM_PLAN_MAX_STEPS = "15";
+    try {
+      await POST(makeRequest({ messages: [], apiKey: "k", mode: "execute" }));
+      arg = vi.mocked(streamText).mock.calls[4][0];
+      expect(arg.maxSteps).toBe(60);
+
+      await POST(makeRequest({ messages: [], apiKey: "k", mode: "plan" }));
+      arg = vi.mocked(streamText).mock.calls[5][0];
+      expect(arg.maxSteps).toBe(15);
+    } finally {
+      delete process.env.LLM_BUILD_MAX_STEPS;
+      delete process.env.LLM_PLAN_MAX_STEPS;
     }
   });
 
@@ -883,6 +933,50 @@ describe("Plan→execute 结构化交接（WS-4）", () => {
     expect(event.sessionId).toBe("sess_plan");
     expect(event.finalText).toContain("pareto");
     expect(event.sessions).toBe(sessions);
+  });
+
+  it("在 plan 模式下，平台内核只读守卫自动拦截副作用写工具调用", async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let capturedTool: any;
+    const writeMock = vi.fn(async () => ({ success: true }));
+
+    const POST = createAnalyzeHandler({
+      resolveAppTools: async () => ({
+        write_file: {
+          description: "写文件",
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          parameters: {} as any,
+          execute: writeMock,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        } as any,
+      }),
+    });
+
+    const { streamText } = await import("ai");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    vi.mocked(streamText).mockImplementationOnce((async (opts: any) => {
+      capturedTool = opts.tools.write_file;
+      return {
+        toDataStreamResponse: () => new Response("data: ok\n\n"),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    }) as any);
+
+    await POST(
+      makeRequest({
+        messages: [{ role: "user", content: "规划方案" }],
+        apiKey: "k",
+        sessionId: "sess_plan_guard",
+        mode: "plan",
+      })
+    );
+
+    expect(capturedTool).toBeDefined();
+    const result = await capturedTool.execute({ path: "test.txt", content: "hello" }, { toolCallId: "call_1" });
+    expect(result.isError).toBe(true);
+    expect(result.error).toContain("平台只读安全守卫拦截");
+    expect(writeMock).not.toHaveBeenCalled();
   });
 
 });

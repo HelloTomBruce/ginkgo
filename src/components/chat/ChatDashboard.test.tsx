@@ -859,4 +859,26 @@ describe("ChatDashboard 守护测试（重构行为锁定）", () => {
       );
     expect(posts).toHaveLength(0);
   });
+
+  it("页面挂载时优先从 localStorage 恢复 activeAppId 并拉取对应应用会话", async () => {
+    localStorage.setItem("ginkgo_active_app_id", "design");
+    render(<ChatDashboard />);
+
+    // 侧栏 AppSwitcher 应渲染体验设计工坊
+    expect(await screen.findByText("体验设计工坊")).toBeInTheDocument();
+  });
+
+  it("useChat 配置增强型 fetch 与 onError 会话流故障诊断", async () => {
+    render(<ChatDashboard />);
+    const lastConfig = vi.mocked(useChat).mock.calls.at(-1)?.[0] as {
+      fetch?: unknown;
+      onError?: (err: Error) => void;
+    };
+    expect(typeof lastConfig.fetch).toBe("function");
+    expect(typeof lastConfig.onError).toBe("function");
+
+    // 触发普通 network error 不抛异常并调用 toast 提示
+    const err = new TypeError("network error");
+    expect(() => lastConfig.onError?.(err)).not.toThrow();
+  });
 });

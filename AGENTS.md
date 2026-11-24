@@ -38,6 +38,10 @@
 - `pnpm dev`：开发服务器（端口 3006）
 - `pnpm lint` / `pnpm typecheck` / `pnpm test` / `pnpm build`：质量门禁
 
+## 代码提交红线
+
+- **严禁未经授权自动提交（强红线）**：没有用户明确要求（如用户发出“提交”、“commit”、“push”等明确指令），**绝对不允许**擅自执行 `git commit` 或 `git push`。修改完成并通过质量门禁验证后，只需向用户汇报改动详情与验证结果，静候用户明确的提交指示。
+
 <!-- BEGIN:nextjs-agent-rules -->
 
 ## This is NOT the Next.js you know

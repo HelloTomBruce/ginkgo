@@ -181,17 +181,17 @@ export function EngineSettings({
             >
               <span>最大思考步数上限（Max Steps）</span>
               <span className="font-mono text-foreground-faint">
-                {maxSteps && Number(maxSteps) > 0 ? `${maxSteps} 步` : "默认 25 步"}
+                {maxSteps && Number(maxSteps) > 0 ? `${maxSteps} 步` : "默认 50 步 (Plan 25)"}
               </span>
             </label>
             <input
               id="engine-max-steps"
               type="number"
               min="1"
-              max="100"
+              max="150"
               value={maxSteps}
               onChange={(e) => onMaxStepsChange?.(e.target.value)}
-              placeholder="默认 25 步（双重终态防死循环）"
+              placeholder="默认 50 步（规划 25 步，双重终态防死循环）"
               className="w-full p-2.5 rounded-lg border border-border bg-surface-sunken font-mono text-xs"
             />
           </div>

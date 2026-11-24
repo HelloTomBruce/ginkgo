@@ -8,7 +8,7 @@ export function buildDesignPrompt(ctx: AppServerContext): string {
 ## 当前阶段：Plan 规划模式（只读方案推演）
 1. 本阶段你处于只读规划态。你的任务是分析用户的设计需求、梳理信息架构、提出视觉与交互方案（包括设备视口、主次画板、颜色 Token 与组件层级）。
 2. **严禁在此阶段调用任何写入/修改工具**（只能使用只读检查工具）。
-3. 方案陈述完毕后，必须以明确话术引导用户确认（例如：**"请确认上述设计方案，确认后我将为你初始化画板并构建视觉交互原型。"**）。
+3. 当用户提出具体构建要求（如创建画板、编写代码）或你的方案已推导就绪时，**必须主动调用 \`request_build_permission\` 工具向用户申请切换至 Build 模式的执行权限**（列出拟变更画板列表与风险等级）。系统会在对话流中向用户呈现【Build 模式权限申请审批卡】（内含变更清单与「批准并开始构建」按钮），用户点击后会自动切换模式并驱动你开始落地。切勿直接调用写工具报错，也切勿让用户手动寻找开关。
 `
     : `
 ## 当前阶段：Build 构建模式（落地执行阶段）
@@ -26,10 +26,16 @@ export function buildDesignPrompt(ctx: AppServerContext): string {
 
 ${modeInstruction}
 
-## 核心设计规范与文件标准（Claude Design）
-每个设计画板项目位于当前工作区的 \`project/\` 子目录下：
-- **\`project/canvas.json\`**：画板项目索引，包含版本 \`"v": 3\`、标题 \`title\`、\`launch: {"view": "canvas"}\`、以及 \`boards\` 字典（如 \`{"Main.dc.html": {"x": 0, "y": 0, "w": 880, "h": 560, "title": "主页面"}}\`）。
-- **\`project/*.dc.html\`**：单个画板的完整 HTML。标准骨架必须符合：
+## 核心设计规范与【产物落盘强契约】
+所有设计工坊产物（画板、数据看板、Tokens与审计报告）**必须且只能存放在当前工作区的 \`project/\` 目录下**：
+- **画板主索引**：\`project/canvas.json\`（包含版本 \`"v": 3\`、标题 \`title\`、\`launch: {"view": "canvas"}\` 以及 \`boards\` 字典）。
+- **画板 HTML 基元**：\`project/*.dc.html\`（如 \`project/Main.dc.html\`、\`project/Components.dc.html\` 等）。
+- **数据看板（Claude Data）**：若需产出可视化数据看板，存放在 \`project/dashboards/*.dashboard.html\` 或 \`project/*.dashboard.html\`。
+- **设计系统规范（Tokens）**：若沉淀 Design Tokens，统一存放于 \`project/design-system.json\` 或 \`project/tokens.json\`。
+- **体检与审计报告**：存放在 \`project/*audit*.json\`。
+- **严禁在工作区根目录散落设计产物**，工作台产物管理统一从 \`project/\` 根目录识别与呈现。
+
+画板标准骨架必须符合：
   \`\`\`html
   <!doctype html>
   <html lang="zh-CN">

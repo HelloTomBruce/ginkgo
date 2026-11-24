@@ -262,31 +262,40 @@ async function migrateLegacySessions(): Promise<{
 export interface EnsureInitialInput {
   title: string;
   messages: SessionRecord["messages"];
+  appId?: string;
 }
 
-let ensureInFlight: Promise<{
-  list: SessionListResult;
-  created: SessionRecord | null;
-} | null> | null = null;
+const ensureInFlightMap = new Map<
+  string,
+  Promise<{
+    list: SessionListResult;
+    created: SessionRecord | null;
+  } | null>
+>();
 
 /**
  * bootstrap 幂等保证（迁移 + 空库创建初始会话）：
  * 并发调用共享同一在途 Promise——React StrictMode 双调用 effect、
  * 快速重挂载等场景下副作用（迁移 POST / 初始会话 POST）只执行一次；
- * 在途期结束后新的调用重新拉取，保证数据新鲜。
+ * 在途期结束后新的调用重新拉取，保证数据新鲜。按 appId 隔离在途状态。
  */
 export function ensureSessionsReady(
   initial: EnsureInitialInput
 ): Promise<{ list: SessionListResult; created: SessionRecord | null } | null> {
-  if (!ensureInFlight) {
-    ensureInFlight = (async () => {
+  const flightKey = initial.appId || "default";
+  let inFlight = ensureInFlightMap.get(flightKey);
+  if (!inFlight) {
+    inFlight = (async () => {
       await migrateLegacySessions();
-      let list = await fetchSessionList();
+      let list = await fetchSessionList(
+        initial.appId ? { appId: initial.appId } : undefined
+      );
       if (!list) return null;
 
       let created: SessionRecord | null = null;
       if (list.sessions.length === 0) {
         created = await createSessionApi({
+          appId: initial.appId ?? DEFAULT_APP_ID,
           title: initial.title,
           messages: initial.messages,
         });
@@ -308,8 +317,9 @@ export function ensureSessionsReady(
       }
       return { list, created };
     })().finally(() => {
-      ensureInFlight = null;
+      ensureInFlightMap.delete(flightKey);
     });
+    ensureInFlightMap.set(flightKey, inFlight);
   }
-  return ensureInFlight;
+  return inFlight;
 }

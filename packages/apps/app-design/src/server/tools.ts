@@ -6,7 +6,21 @@ import { createSandboxTools } from "@ginkgo/sandbox";
 import type { AppServerContext } from "@ginkgo/app-sdk";
 import { CliBridge } from "./cliBridge";
 
-export function createDesignTools(workspaceDir: string, isReadonly: boolean = false) {
+/**
+ * 设计工坊工具集类型：
+ * 沙箱原子工具键由 createSandboxTools 返回值自动推导（含 run_command/
+ * request_build_permission 等真实键，不手写易漂移的清单），
+ * 仅设计域专属工具在此显式声明。
+ */
+export type DesignTools = ReturnType<typeof createSandboxTools> & {
+  design_canvas_init?: ReturnType<typeof zodTool>;
+  design_canvas_check: ReturnType<typeof zodTool>;
+  design_canvas_serve?: ReturnType<typeof zodTool>;
+  design_canvas_stop?: ReturnType<typeof zodTool>;
+  design_system_audit: ReturnType<typeof zodTool>;
+};
+
+export function createDesignTools(workspaceDir: string, isReadonly: boolean = false): DesignTools {
   // 1. 基础沙箱文件工具（读写 .dc.html / canvas.json 等）
   const sandboxTools = createSandboxTools({
     sandboxDir: workspaceDir,
@@ -153,6 +167,15 @@ class Component extends DCLogic {
     },
   });
 
+  if (isReadonly) {
+    // Plan 规划模式（只读）：坚决不装配任何写工具与服务启停工具，杜绝模型在规划阶段调用任何副作用工具
+    return {
+      ...sandboxTools,
+      design_canvas_check,
+      design_system_audit,
+    };
+  }
+
   return {
     ...sandboxTools,
     design_canvas_init,
@@ -167,6 +190,7 @@ export function getDesignTools(ctx: AppServerContext) {
   const workspaceDir =
     ctx.workspace?.sandboxDir ||
     path.join(process.cwd(), "data", "workspaces", "design", ctx.sessionId || "default");
+  // 严格安全防御：与通用助手及平台机制一致，仅在显式 plan 模式下装配只读工具与提权审批；execute / direct 均拥有完整构建写权限
   const isReadonly = ctx.mode === "plan";
   return createDesignTools(workspaceDir, isReadonly);
 }

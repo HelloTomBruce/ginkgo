@@ -1,6 +1,10 @@
 import { analyticsServer } from "@/lib/analyticsRuntime";
 import { getGeneralTools as generalGetTools } from "@ginkgo-apps/general/server";
-import { getDesignTools as designGetTools } from "@ginkgo-apps/design/server";
+import {
+  getDesignTools as designGetTools,
+  dispatchDesignAction,
+  DesignService,
+} from "@ginkgo-apps/design/server";
 import { appRegistry } from "./registry";
 import type { AppServerContract } from "@ginkgo/app-sdk";
 
@@ -25,7 +29,12 @@ export function resolveRuntimeServer(appId: string):
     return { ...staticContract, getTools: generalGetTools };
   }
   if (appId === "design") {
-    return { ...staticContract, getTools: designGetTools };
+    return {
+      ...staticContract,
+      getTools: designGetTools,
+      dispatchAction: dispatchDesignAction,
+      listArtifacts: async (ctx) => DesignService.listArtifacts(ctx.sandboxDir),
+    };
   }
   return staticContract;
 }

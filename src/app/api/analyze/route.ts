@@ -7,8 +7,6 @@ import {
 import { getMcpManager, loadMcpServers } from "@/lib/mcpStore";
 import { sessionStore } from "@/lib/sessionStore";
 import { DEFAULT_APP_ID } from "@/lib/apps/registry";
-import { resolveWorkspaceContext } from "@/lib/workspaceResolver";
-import { workspaceStore } from "@/lib/workspaceStore";
 import {
   analyticsDeliverable,
   analyticsNoApiKeyMessage,
@@ -16,6 +14,7 @@ import {
 } from "@ginkgo-apps/analytics/server";
 import { resolveRuntimeServer } from "@/lib/apps/runtimeServers";
 import { analyticsServer } from "@/lib/analyticsRuntime";
+import { resolveWorkspaceForSession } from "@/lib/workspaceResolver";
 
 /**
  * WS-10 鉴权接缝桩：当前应用无成熟认证体系，开发模式全部放行并归入匿名租户
@@ -31,24 +30,6 @@ const devModeAuthenticate = async () => ({ principal: "anon" });
 
 /** WS-13 Prometheus 指标聚合：进程内单例，/api/metrics 刮擦导出 */
 export const metrics = createMetricsSink();
-
-/** 按会话绑定解析工作区沙箱（失败回退默认沙箱） */
-async function resolveWorkspaceForSession(appId: string, sessionId?: string) {
-  let customRootDir: string | undefined;
-  if (sessionId) {
-    const sRecord = await sessionStore.get(sessionId);
-    if (sRecord?.workspaceId) {
-      const ws = await workspaceStore.get(sRecord.workspaceId);
-      if (ws?.path) customRootDir = ws.path;
-    }
-  }
-  try {
-    return await resolveWorkspaceContext({ appId, sessionId, customRootDir });
-  } catch (wsErr) {
-    console.warn("[AnalyzeRoute] 解析工作区异常，回退至默认沙箱:", wsErr);
-    return await resolveWorkspaceContext({ appId, sessionId });
-  }
-}
 
 /**
  * 薄壳：LLM 编排在 @ginkgo/llm（领域中立），应用 prompt/工具全部经

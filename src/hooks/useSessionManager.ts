@@ -35,14 +35,43 @@ export interface UseSessionManagerOptions {
    * 优先于宿主兜底欢迎语）
    */
   welcomeMessage?: string;
+  /**
+   * 应用自治的新会话默认标题（AppClientContract.defaultSessionTitle，
+   * 未声明时宿主兜底为「新建会话」）
+   */
+  defaultSessionTitle?: string;
 }
 
 /** 这些标题视为「未命名」，首条用户消息到达时自动按内容生成标题 */
-const DEFAULT_TITLES = new Set([
+export const DEFAULT_TITLES = new Set([
+  "新建会话",
+  "新会话",
   "新建分析会话",
   "营销获客与商业分析会话",
   "新分析会话",
+  "新对话",
+  "未命名会话",
+  "Untitled",
+  "New Chat",
+  "New Session",
 ]);
+
+const DEFAULT_TITLE_PATTERNS = [
+  /^(新建|新)(会话|对话|分析会话)?$/i,
+  /^(未命名|Untitled|New Chat|New Session)(\s*\d+)?$/i,
+];
+
+/**
+ * 判断会话标题是否为默认未命名标题。
+ * 命中白名单，或匹配常见默认模板格式（如“新建会话”、“Untitled 1”等），
+ * 视为默认标题，首问到达时可自动重命名。
+ */
+export function isDefaultSessionTitle(title?: string | null): boolean {
+  if (!title || !title.trim()) return true;
+  const t = title.trim();
+  if (DEFAULT_TITLES.has(t)) return true;
+  return DEFAULT_TITLE_PATTERNS.some((pattern) => pattern.test(t));
+}
 
 /** 完整记录 → 列表摘要（与服务端 toSummary 同规则；服务端模块含 node:fs 不可客户端引入） */
 function toSummaryLocal(record: SessionRecord): SessionSummary {
@@ -133,6 +162,12 @@ export function useSessionManager(options?: UseSessionManagerOptions) {
     return buildWelcomeMessage();
   }, []);
 
+  // 默认会话标题读取器收进 ref：同 welcomeMessage，避免 options 依赖扩散
+  const defaultSessionTitleRef = useRef(options?.defaultSessionTitle);
+  useEffect(() => {
+    defaultSessionTitleRef.current = options?.defaultSessionTitle;
+  });
+
   // sessions 的最新快照（异步回调内读取，避免闭包过期）
   const sessionsRef = useRef(sessions);
   useEffect(() => {
@@ -166,7 +201,8 @@ export function useSessionManager(options?: UseSessionManagerOptions) {
       try {
         // ensureSessionsReady：并发/StrictMode 双调用共享在途 Promise，副作用只执行一次
         const ready = await ensureSessionsReady({
-          title: "营销获客与商业分析会话",
+          appId: currentAppId,
+          title: defaultSessionTitleRef.current ?? "新建会话",
           messages: [
             buildWelcome(),
           ] as unknown as SessionRecord["messages"],
@@ -285,7 +321,7 @@ export function useSessionManager(options?: UseSessionManagerOptions) {
       const summary = sessionsRef.current.find((s) => s.id === activeId);
       const firstUser = newMessages.find((m) => m.role === "user");
       const nextTitle =
-        summary && DEFAULT_TITLES.has(summary.title) && firstUser
+        summary && isDefaultSessionTitle(summary.title) && firstUser
           ? generateSessionTitle(firstUser.content)
           : undefined;
 

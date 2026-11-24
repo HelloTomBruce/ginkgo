@@ -33,6 +33,34 @@ export interface ServeResult {
   error?: string;
 }
 
+export interface BoardDetail {
+  key: string;
+  title: string;
+  width: number;
+  height: number;
+  x?: number;
+  y?: number;
+}
+
+export interface DashboardArtifact {
+  id: string;
+  title: string;
+  path: string;
+  relativePath: string;
+  sizeBytes?: number;
+  updatedAt?: number;
+}
+
+export interface WorkspaceDesignMeta {
+  hasCanvas: boolean;
+  canvasJson?: Record<string, unknown>;
+  boards: string[];
+  boardsDetail: BoardDetail[];
+  dashboards: DashboardArtifact[];
+  hasDesignSystem: boolean;
+  designSystemJson?: Record<string, unknown>;
+}
+
 export class CliBridge {
   static async runCommand(binName: string, args: string[], cwd?: string): Promise<{ stdout: string; stderr: string; code: number }> {
     const env = getEnhancedEnv();
@@ -77,10 +105,17 @@ export class CliBridge {
   }
 
   /**
-   * 启动画板本地实时预览服务 (claude-design open <root> --port 0)
+   * 启动画板本地实时预览服务 (claude-design open <root> [--port <port>])
+   * 严禁传入 --port 0（会强制内核分配 50000+ 随机高位端口导致预览地址飘逸），
+   * 默认使用官方受控标准端口（4720 左右，可由 CLAUDE_DESIGN_PORT 指定）。
    */
-  static async serveCanvas(workspaceDir: string): Promise<ServeResult> {
-    const res = await this.runCommand("claude-design", ["open", workspaceDir, "--port", "0"], workspaceDir);
+  static async serveCanvas(workspaceDir: string, port?: number): Promise<ServeResult> {
+    const targetPort = port || (process.env.CLAUDE_DESIGN_PORT ? Number(process.env.CLAUDE_DESIGN_PORT) : undefined);
+    const args = ["open", workspaceDir];
+    if (targetPort && Number.isFinite(targetPort) && targetPort > 0) {
+      args.push("--port", String(targetPort));
+    }
+    const res = await this.runCommand("claude-design", args, workspaceDir);
     try {
       const json = JSON.parse(res.stdout);
       return {
@@ -127,10 +162,15 @@ export class CliBridge {
   }
 
   /**
-   * 启动设计系统编辑器本地服务 (claude-design-system open <root> --port 0)
+   * 启动设计系统编辑器本地服务 (claude-design-system open <root> [--port <port>])
    */
-  static async serveDesignSystem(workspaceDir: string): Promise<ServeResult> {
-    const res = await this.runCommand("claude-design-system", ["open", workspaceDir, "--port", "0"], workspaceDir);
+  static async serveDesignSystem(workspaceDir: string, port?: number): Promise<ServeResult> {
+    const targetPort = port || (process.env.CLAUDE_DS_PORT ? Number(process.env.CLAUDE_DS_PORT) : undefined);
+    const args = ["open", workspaceDir];
+    if (targetPort && Number.isFinite(targetPort) && targetPort > 0) {
+      args.push("--port", String(targetPort));
+    }
+    const res = await this.runCommand("claude-design-system", args, workspaceDir);
     try {
       const json = JSON.parse(res.stdout);
       return {
@@ -144,46 +184,109 @@ export class CliBridge {
   }
 
   /**
-   * 检查工作区是否存在画板配置
+   * 检查工作区资产元数据（画板、数据看板 Claude Data、设计系统 Tokens 等）
    */
-  static async getWorkspaceDesignMeta(workspaceDir: string): Promise<{
-    hasCanvas: boolean;
-    canvasJson?: Record<string, unknown>;
-    boards: string[];
-    hasDesignSystem: boolean;
-    designSystemJson?: Record<string, unknown>;
-  }> {
+  static async getWorkspaceDesignMeta(workspaceDir: string): Promise<WorkspaceDesignMeta> {
     let hasCanvas = false;
     let canvasJson: Record<string, unknown> | undefined;
     const boards: string[] = [];
+    const boardsDetail: BoardDetail[] = [];
+    const dashboards: DashboardArtifact[] = [];
     let hasDesignSystem = false;
     let designSystemJson: Record<string, unknown> | undefined;
 
+    // 1. 扫描视觉画板（canvas.json）
     try {
       const canvasPath = path.join(workspaceDir, "project", "canvas.json");
       const content = await fs.readFile(canvasPath, "utf-8");
       canvasJson = JSON.parse(content);
       hasCanvas = true;
       if (canvasJson && typeof canvasJson.boards === "object" && canvasJson.boards !== null) {
-        boards.push(...Object.keys(canvasJson.boards));
+        for (const [key, rawMeta] of Object.entries(
+          canvasJson.boards as Record<string, Record<string, unknown>>
+        )) {
+          boards.push(key);
+          boardsDetail.push({
+            key,
+            title: typeof rawMeta?.title === "string" ? rawMeta.title : key,
+            width: typeof rawMeta?.w === "number" ? rawMeta.w : 880,
+            height: typeof rawMeta?.h === "number" ? rawMeta.h : 560,
+            x: typeof rawMeta?.x === "number" ? rawMeta.x : undefined,
+            y: typeof rawMeta?.y === "number" ? rawMeta.y : undefined,
+          });
+        }
       }
     } catch {
       // not found
     }
 
-    try {
-      const dsPath = path.join(workspaceDir, "project", "design-system.json");
-      const dsContent = await fs.readFile(dsPath, "utf-8");
-      designSystemJson = JSON.parse(dsContent);
-      hasDesignSystem = true;
-    } catch {
-      // not found
+    // 2. 扫描数据看板（强约定：必须存放在 project/ 产物目录下）
+    const scanDirs = [
+      path.join(workspaceDir, "project"),
+      path.join(workspaceDir, "project", "dashboards"),
+    ];
+    const seenDashboards = new Set<string>();
+
+    for (const dir of scanDirs) {
+      try {
+        const entries = await fs.readdir(dir, { withFileTypes: true });
+        for (const entry of entries) {
+          if (entry.isFile() && (entry.name.endsWith(".dashboard.html") || entry.name === "dashboard.html")) {
+            const fullPath = path.join(dir, entry.name);
+            const relPath = path.relative(workspaceDir, fullPath);
+            if (!seenDashboards.has(relPath)) {
+              seenDashboards.add(relPath);
+              let title = entry.name.replace(/\.dashboard\.html$/, "").replace(/\.html$/, "");
+              if (title === "dashboard") title = "业务数据看板";
+              try {
+                const stat = await fs.stat(fullPath);
+                dashboards.push({
+                  id: `data:${relPath}`,
+                  title,
+                  path: fullPath,
+                  relativePath: relPath,
+                  sizeBytes: stat.size,
+                  updatedAt: Math.round(stat.mtimeMs),
+                });
+              } catch {
+                dashboards.push({
+                  id: `data:${relPath}`,
+                  title,
+                  path: fullPath,
+                  relativePath: relPath,
+                });
+              }
+            }
+          }
+        }
+      } catch {
+        // dir does not exist or unreadable, ignore
+      }
+    }
+
+    // 3. 扫描设计系统（强约定：必须存放在 project/ 产物目录下）
+    const candidateDsPaths = [
+      path.join(workspaceDir, "project", "design-system.json"),
+      path.join(workspaceDir, "project", "tokens.json"),
+    ];
+
+    for (const dsPath of candidateDsPaths) {
+      try {
+        const dsContent = await fs.readFile(dsPath, "utf-8");
+        designSystemJson = JSON.parse(dsContent);
+        hasDesignSystem = true;
+        break;
+      } catch {
+        // try next
+      }
     }
 
     return {
       hasCanvas,
       canvasJson,
       boards,
+      boardsDetail,
+      dashboards,
       hasDesignSystem,
       designSystemJson,
     };
