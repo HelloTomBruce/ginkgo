@@ -279,3 +279,21 @@ export {
   type ValidationResult as DslValidationResult,
   type StructureValidator as DslStructureValidator,
 } from "./uiSpecDslValidator";
+
+// 跨应用通用展示与交互工具组件
+export {
+  DiffViewer,
+  computeLineDiff,
+  parseUnifiedDiff,
+  type DiffViewerProps,
+  type DiffLine,
+} from "./tools/DiffViewer";
+export {
+  ApprovalCard,
+  type ApprovalCardProps,
+} from "./tools/ApprovalCard";
+export {
+  TerminalViewer,
+  type TerminalViewerProps,
+} from "./tools/TerminalViewer";
+

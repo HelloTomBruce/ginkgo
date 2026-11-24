@@ -8,7 +8,6 @@ import {
   Compass,
   Search,
   Trash2,
-  FileCode,
   Sparkles,
   LayoutGrid,
   Eye,

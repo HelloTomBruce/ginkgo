@@ -36,32 +36,6 @@ describe("AnalysisCanvas 分析画布组件", () => {
     expect(onClose).toHaveBeenCalled();
   });
 
-  it("活看板状态下点击刷新按钮触发 onRefresh 回调", async () => {
-    const onRefresh = vi.fn().mockResolvedValue(undefined);
-    render(
-      <AnalysisCanvas
-        data={{ id: "msg-1", title: "获客分析", dsl: "", isLive: true }}
-        onClose={vi.fn()}
-        onRefresh={onRefresh}
-      />
-    );
-    const refreshBtn = screen.getByRole("button", { name: "刷新看板" });
-    fireEvent.click(refreshBtn);
-    expect(onRefresh).toHaveBeenCalledWith("msg-1");
-  });
-
-  it("静态快照（非活看板）刷新按钮禁用", () => {
-    render(
-      <AnalysisCanvas
-        data={{ id: "msg-1", title: "静态获客分析", dsl: "", isLive: false }}
-        onClose={vi.fn()}
-        onRefresh={vi.fn()}
-      />
-    );
-    const refreshBtn = screen.getByRole("button", { name: "刷新看板" });
-    expect(refreshBtn).toBeDisabled();
-  });
-
   it("支持父级受控全屏切换，点击全屏按钮触发 onToggleExpand", () => {
     const onToggleExpand = vi.fn();
     const { rerender } = render(

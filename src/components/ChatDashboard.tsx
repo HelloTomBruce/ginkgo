@@ -1,9 +1,8 @@
 "use client";
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useChat } from "@ai-sdk/react";
-import { TrendingUp, Bot, Settings, RefreshCw } from "lucide-react";
+import { TrendingUp, Bot, Settings } from "lucide-react";
 import { resolveContextWindow, estimateMessagesTokens } from "@ginkgo/llm/context";
-import { Hint } from "@/components/ui/hint";
 import type { AppPresetQuery } from "@ginkgo/app-sdk";
 import { DEFAULT_WELCOME_MESSAGE } from "@/lib/sessionStorage";
 import { upsertMessage } from "@/lib/messages";
@@ -429,21 +428,22 @@ export default function ChatDashboard() {
   }, [isLoading, getMessages, saveCurrentSessionMessages]);
   // 会话开始（存在用户消息）即锁定数据源选择：仅初始会话（只有欢迎语）可勾选
   const sourcesLocked = messages.some((m) => m.role === "user");
-  // Plan-first 状态机：最近一条 assistant 消息含 PlanReviewCard ⇒ 规划待确认，
-  // 下一条消息（打字答复或确认按钮注入）按 execute 发送；否则开关开启时按 plan；
-  // 都不满足则不带 mode（direct，向后兼容）。会话切换/刷新后由消息历史自然恢复。
+  // Plan-first 状态机：最近一条 assistant 消息含 PlanReviewCard 或命中应用声明的 planConfirm patterns ⇒ 规划待确认，
+  // 下一条消息按 execute 发送；若用户底栏主动切为 build 模式，同样按 execute 发送；否则开启时按 plan 发送。
   const awaitingPlanConfirm = useMemo(() => {
     const lastAssistant = [...messages]
       .reverse()
       .find((m) => m.role === "assistant");
-    return Boolean(
-      lastAssistant &&
-        (/PlanReviewCard\s*\(/.test(String(lastAssistant.content ?? "")) ||
-          /(?:分析思路|分析规划|请确认以下分析方案|澄清点说明)/.test(
-            String(lastAssistant.content ?? "")
-          ))
-    );
-  }, [messages]);
+    if (!lastAssistant) return false;
+    const content = String(lastAssistant.content ?? "");
+    if (/PlanReviewCard\s*\(/.test(content)) return true;
+    const patterns = activeApp.client.messageExtensions?.planConfirm?.patterns;
+    if (Array.isArray(patterns) && patterns.some((p) => content.includes(p))) {
+      return true;
+    }
+    return /(?:分析思路|分析规划|请确认以下分析方案|澄清点说明)/.test(content);
+  }, [messages, activeApp.client.messageExtensions?.planConfirm?.patterns]);
+
   const nextModeBody = useCallback((): { mode?: "plan" | "execute" } => {
     if (awaitingPlanConfirm) return { mode: "execute" };
     if (planMode) return { mode: "plan" };
@@ -1016,15 +1016,6 @@ export default function ChatDashboard() {
               <Settings className="w-3.5 h-3.5" />
               <span>设置</span>
             </button>
-            <Hint label="刷新页面">
-              <button
-                onClick={() => window.location.reload()}
-                aria-label="刷新页面"
-                className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 p-1.5 rounded-md hover:bg-muted"
-              >
-                <RefreshCw className="w-3.5 h-3.5" />
-              </button>
-            </Hint>
           </div>
         </header>
         {/* 工作台主体：支持纯对话、双栏协同与纯画布模式 */}
@@ -1051,6 +1042,8 @@ export default function ChatDashboard() {
                   onStop={handleStop}
                   // 看板工具条能力注入：操作项与标题由当前应用声明（未声明则全部不出现）
                   messageExtensions={activeApp.client.messageExtensions}
+                  toolRenderers={activeApp.client.toolRenderers}
+                  approvalRules={activeApp.client.approvalRules}
                   dashboardTitle={activeApp.client.dashboardToolbar?.title ?? "动态看板"}
                   dashboardExportEnabled={
                     activeApp.client.dashboardToolbar?.exportPdf ?? false

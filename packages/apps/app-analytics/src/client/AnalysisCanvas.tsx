@@ -6,7 +6,6 @@ import {
   X,
   Maximize2,
   Minimize2,
-  RefreshCw,
   Printer,
   Layers,
 } from "lucide-react";
@@ -35,13 +34,11 @@ export function AnalysisCanvas({
   data: rawData,
   onClose,
   onAction,
-  onRefresh,
   onPrint,
   isExpanded: controlledExpanded,
   onToggleExpand,
 }: AnalysisCanvasProps) {
   const data = rawData as CanvasDashboardData | null;
-  const [isRefreshing, setIsRefreshing] = useState(false);
   const [internalExpanded, setInternalExpanded] = useState(false);
 
   const isExpanded =
@@ -52,16 +49,6 @@ export function AnalysisCanvas({
       onToggleExpand();
     } else {
       setInternalExpanded((v) => !v);
-    }
-  };
-
-  const handleRefresh = async () => {
-    if (!data?.id || !onRefresh || isRefreshing) return;
-    setIsRefreshing(true);
-    try {
-      await onRefresh(data.id);
-    } finally {
-      setIsRefreshing(false);
     }
   };
 
@@ -91,20 +78,6 @@ export function AnalysisCanvas({
         </div>
 
         <div className="flex items-center gap-1 shrink-0">
-          {data && onRefresh && (
-            <Hint label={data.isLive ? "刷新最新数据（零 LLM 重放）" : "静态快照（无底层查询绑定，不支持自动刷新）"}>
-              <button
-                type="button"
-                onClick={handleRefresh}
-                disabled={isRefreshing || !data.isLive}
-                aria-label="刷新看板"
-                className="p-1.5 text-foreground-subtle hover:text-foreground rounded-lg hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? "animate-spin" : ""}`} />
-              </button>
-            </Hint>
-          )}
-
           {data && onPrint && (
             <Hint label="打印 / 导出 PDF">
               <button

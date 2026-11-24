@@ -141,6 +141,43 @@ export interface AppCanvasData {
 }
 
 /**
+ * 平台内置的通用展示渲染器类型
+ * - "diff": 代码/文本差异比对视图（支持 unified / split 切换、折叠、高亮）
+ * - "terminal": 终端命令执行与输出卡片（仿终端样式、命令回显、退出码、输出折叠）
+ * - "json": 格式化 JSON 树形折叠预览
+ */
+export type BuiltinToolRendererType = "diff" | "terminal" | "json";
+
+/** 工具调用展示渲染器声明 */
+export interface AppToolRendererSpec {
+  /** 匹配的工具名称（如 "edit_file", "run_command"） */
+  toolName: string;
+  /** 使用平台内置的渲染器或自定义组件 */
+  renderer: BuiltinToolRendererType | ComponentType<unknown>;
+  /** 是否默认展开内容体 */
+  defaultOpen?: boolean;
+  /** 自定义卡片标题 */
+  title?: string;
+}
+
+/** 人机协同审批规则声明（Human-in-the-Loop） */
+export interface AppToolApprovalRule {
+  /** 需要拦截审批的工具名称（如 "run_command", "write_file", "execute_sql"） */
+  toolName: string;
+  /** 风险级别：决定卡片视觉警告程度 */
+  riskLevel: "info" | "warning" | "danger";
+  /** 审批动作标题，如「终端命令执行确认」或「核心文件覆写确认」 */
+  title: string;
+  /**
+   * 触发审批的条件谓词（可选）：
+   * 不配置时全量拦截；配置时仅在特定参数下拦截（如匹配到某些高危命令或路径）
+   */
+  condition?: (args: Record<string, unknown>) => boolean;
+  /** 拒绝时的默认反馈提示词 */
+  defaultRejectFeedback?: string;
+}
+
+/**
  * 消息区扩展声明：宿主消息时间线按声明渲染应用语义的兜底卡与提示，
  * 宿主零应用语义（禁止话术正则与 appId 特判）。
  */
@@ -255,6 +292,17 @@ export interface AppClientContract {
 
   /** 消息区扩展声明（兜底卡/确认按钮/过渡文案），宿主零应用语义渲染 */
   messageExtensions?: AppMessageExtensions;
+
+  /**
+   * 工具调用展示渲染器映射：声明特定工具调用使用高级通用组件渲染
+   * （如 edit_file 走 diff，run_command 走 terminal）；未声明则回退轻量徽标
+   */
+  toolRenderers?: AppToolRendererSpec[];
+
+  /**
+   * 人机协同审批规则：声明需要人工确认的高危操作（如高危终端命令、核心文件覆写）
+   */
+  approvalRules?: AppToolApprovalRule[];
 
   /**
    * 推荐列表运行时解析插槽（如方法卡内置 + /api 合并卡集）。

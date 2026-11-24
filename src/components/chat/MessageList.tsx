@@ -2,7 +2,12 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Message } from "@ai-sdk/react";
-import type { AppMessageExtensions } from "@ginkgo/app-sdk";
+import type {
+  AppMessageExtensions,
+  AppToolRendererSpec,
+  AppToolApprovalRule,
+} from "@ginkgo/app-sdk";
+import { ToolInvocationCard } from "./ToolInvocationCard";
 import { ArrowDown, ArrowUp, Loader2, Sparkles, Printer, Star, GitFork, RotateCcw, Square, Play, Brain, ListOrdered, X, Pin, CheckCircle2, AlertTriangle } from "lucide-react";
 import { UiSpecRenderer } from "@/components/UiSpecRenderer";
 import {
@@ -82,6 +87,10 @@ interface MessageItemProps {
   dashboardExportEnabled?: boolean;
   /** 消息区扩展声明（规划确认/终态兜底/过渡文案），宿主零应用语义渲染 */
   messageExtensions?: AppMessageExtensions;
+  /** 工具调用渲染器配置映射（应用声明注入） */
+  toolRenderers?: AppToolRendererSpec[];
+  /** 人机协同审批规则列表（应用声明注入） */
+  approvalRules?: AppToolApprovalRule[];
   /** 看板收藏：该消息是否已收藏（按 origin.messageId 判定）与收藏触发 */
   isFavorited?: boolean;
   isFavoritePending?: boolean;
@@ -94,24 +103,6 @@ interface MessageItemProps {
   onRewindMessage?: (messageId: string) => void;
 }
 
-/** 工具调用徽标：按 <id>_ 前缀归因到源名称；内部纠错与未知名走通用兜底 */
-function toolBadgeText(
-  toolName: string,
-  args: Record<string, unknown> | undefined,
-  activeSources?: { id: string; name: string }[]
-): string {
-  // 内部纠错兜底工具（服务端 repair 重定向，模型参数被修复后重试）
-  if (toolName === "__tool_call_feedback__") {
-    return "⚡ 参数纠错";
-  }
-  const dyn = activeSources?.find((s) => toolName.startsWith(`${s.id}_`));
-  if (dyn) {
-    return toolName.endsWith("execute_sql")
-      ? `⚡ [${dyn.name}] 执行 SQL: ${args?.sql || ""}`
-      : `⚡ [${dyn.name}] 调用: ${toolName}`;
-  }
-  return `⚡ 工具调用: ${toolName}`;
-}
 
 /**
  * 深度思考过程展示器：
@@ -243,6 +234,8 @@ const MessageItem = React.memo(function MessageItem({
   dashboardTitle,
   dashboardExportEnabled = false,
   messageExtensions,
+  toolRenderers,
+  approvalRules,
   isFavorited = false,
   isFavoritePending = false,
   onFavoriteDashboard,
@@ -449,37 +442,16 @@ const MessageItem = React.memo(function MessageItem({
           if (block.type === "tools") {
             return (
               <div key={block.id} className="no-print space-y-2">
-                {block.tools.map((tool, idx: number) => {
-                  const isRunning = tool.state !== "result";
-                  return (
-                    <div
-                      key={tool.toolCallId || idx}
-                      className={`flex items-center gap-2 text-xs px-3 py-2.5 rounded-lg border transition-all ${
-                        isRunning
-                          ? "text-info-fg-strong bg-info-soft/80 border-info-border animate-pulse"
-                          : "text-foreground-subtle bg-surface-sunken border-border"
-                      }`}
-                    >
-                      <Loader2
-                        className={`w-3.5 h-3.5 ${
-                          isRunning ? "animate-spin text-info-fg" : "text-success-fg"
-                        }`}
-                      />
-                      <span className="font-mono flex-1 truncate">
-                        {toolBadgeText(tool.toolName, tool.args, activeSources)}
-                      </span>
-                      {isRunning ? (
-                        <span className="text-[10px] bg-info-soft-strong text-info-fg-strong px-2 py-0.5 rounded font-sans font-medium flex items-center gap-1">
-                          查询中...
-                        </span>
-                      ) : (
-                        <span className="text-[10px] bg-success-soft-strong text-success-fg px-2 py-0.5 rounded font-sans font-medium">
-                          已完成
-                        </span>
-                      )}
-                    </div>
-                  );
-                })}
+                {block.tools.map((tool, idx: number) => (
+                  <ToolInvocationCard
+                    key={tool.toolCallId || idx}
+                    tool={tool}
+                    toolRenderers={toolRenderers}
+                    approvalRules={approvalRules}
+                    activeSources={activeSources}
+                    onRendererAction={onRendererAction}
+                  />
+                ))}
               </div>
             );
           }
@@ -788,6 +760,10 @@ interface MessageListProps {
   dashboardExportEnabled?: boolean;
   /** 消息区扩展声明（规划确认/终态兜底/过渡文案），宿主零应用语义渲染 */
   messageExtensions?: AppMessageExtensions;
+  /** 工具调用渲染器配置映射（应用声明注入） */
+  toolRenderers?: AppToolRendererSpec[];
+  /** 人机协同审批规则列表（应用声明注入） */
+  approvalRules?: AppToolApprovalRule[];
   /** 会话操作：从某条消息分叉新会话；回滚到某条用户消息重问 */
   onForkMessage?: (messageId: string) => void;
   onRewindMessage?: (messageId: string) => void;
@@ -813,6 +789,8 @@ export function MessageList({
   dashboardTitle,
   dashboardExportEnabled,
   messageExtensions,
+  toolRenderers,
+  approvalRules,
   onForkMessage,
   onRewindMessage,
   onStop,
@@ -1088,6 +1066,8 @@ export function MessageList({
           dashboardTitle={dashboardTitle}
           dashboardExportEnabled={dashboardExportEnabled}
           messageExtensions={messageExtensions}
+          toolRenderers={toolRenderers}
+          approvalRules={approvalRules}
           onFavoriteDashboard={
             onFavoriteDashboard ? handleFavoriteDashboard : undefined
           }

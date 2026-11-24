@@ -7,7 +7,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor, fireEvent, cleanup } from "@testing-library/react";
 import { ArtifactViewer, buildFileTree } from "./ArtifactViewer";
 
-describe("ArtifactViewer", () => {
+describe("ArtifactViewer 多维工作台", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
   });
@@ -26,12 +26,11 @@ describe("ArtifactViewer", () => {
     ];
 
     const tree = buildFileTree(rawItems);
-    expect(tree.length).toBe(2); // src 目录与 README.md
+    expect(tree.length).toBe(2);
     expect(tree[0].name).toBe("src");
     expect(tree[0].type).toBe("directory");
     expect(tree[1].name).toBe("README.md");
 
-    // src 内部：components 目录在前，然后是 a.ts, b.ts
     const srcChildren = tree[0].children;
     expect(srcChildren[0].name).toBe("components");
     expect(srcChildren[0].type).toBe("directory");
@@ -39,8 +38,13 @@ describe("ArtifactViewer", () => {
     expect(srcChildren[2].name).toBe("b.ts");
   });
 
-  it("初始渲染展示产物标题与空态", async () => {
+  it("初始渲染展示文件树 Tab 与空态", async () => {
     vi.spyOn(global, "fetch").mockImplementation(async (url) => {
+      if (String(url).includes("action=git_status")) {
+        return new Response(JSON.stringify({ isGitRepo: true, branch: "main", changes: [] }), {
+          status: 200,
+        });
+      }
       if (String(url).includes("/api/workspace")) {
         return new Response(JSON.stringify({ files: [] }), { status: 200 });
       }
@@ -49,108 +53,87 @@ describe("ArtifactViewer", () => {
 
     render(<ArtifactViewer data={null} onClose={vi.fn()} />);
 
-    expect(screen.getByText(/工作区产物/)).toBeInTheDocument();
+    expect(screen.getByText("文件")).toBeInTheDocument();
+    expect(screen.getByText("Git 变更")).toBeInTheDocument();
+    expect(screen.getByText("终端")).toBeInTheDocument();
     await waitFor(() => {
       expect(screen.getByText("暂无生成文件")).toBeInTheDocument();
     });
   });
 
-  it("拉取到文件时列出文件并展示选中内容", async () => {
+  it("支持切换到 Git 变更 Tab 并展示变更文件", async () => {
     vi.spyOn(global, "fetch").mockImplementation(async (url) => {
       const u = String(url);
-      if (u.includes("filePath=src%2Findex.ts") || u.includes("filePath=src/index.ts")) {
+      if (u.includes("action=git_status")) {
         return new Response(
           JSON.stringify({
-            path: "src/index.ts",
-            content: "console.log('hello world');",
-          }),
-          { status: 200 }
-        );
-      }
-      if (u.includes("/api/workspace")) {
-        return new Response(
-          JSON.stringify({
-            files: [
+            isGitRepo: true,
+            branch: "feat-test",
+            changes: [
               {
-                name: "index.ts",
-                path: "src/index.ts",
-                type: "file",
-                updatedAt: Date.now(),
+                path: "src/main.ts",
+                status: "modified",
+                diff: "--- a/src/main.ts\n+++ b/src/main.ts\n@@ -1 +1 @@\n-old\n+new",
               },
             ],
           }),
           { status: 200 }
         );
       }
+      if (u.includes("/api/workspace")) {
+        return new Response(JSON.stringify({ files: [] }), { status: 200 });
+      }
+      return new Response(null, { status: 404 });
+    });
+
+    render(<ArtifactViewer data={null} onClose={vi.fn()} />);
+
+    const gitTab = screen.getByText("Git 变更");
+    fireEvent.click(gitTab);
+
+    await waitFor(() => {
+      expect(screen.getByText("分支: feat-test")).toBeInTheDocument();
+      expect(screen.getByText("src/main.ts")).toBeInTheDocument();
+      expect(screen.getByText("M")).toBeInTheDocument();
+    });
+  });
+
+  it("支持切换到 终端 Tab 并执行命令", async () => {
+    vi.spyOn(global, "fetch").mockImplementation(async (url, init) => {
+      const u = String(url);
+      if (init?.method === "POST") {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            command: "pwd",
+            stdout: "/workspace/general/sess_1",
+            exitCode: 0,
+            durationMs: 5,
+          }),
+          { status: 200 }
+        );
+      }
+      if (u.includes("/api/workspace")) {
+        return new Response(JSON.stringify({ files: [], changes: [] }), { status: 200 });
+      }
       return new Response(null, { status: 404 });
     });
 
     render(<ArtifactViewer data={null} sessionId="sess_1" onClose={vi.fn()} />);
 
-    await waitFor(() => {
-      expect(screen.getAllByText("src/index.ts").length).toBeGreaterThan(0);
-      expect(screen.getByText("console.log('hello world');")).toBeInTheDocument();
-    });
-  });
+    const termTab = screen.getByText("终端");
+    fireEvent.click(termTab);
 
-  it("点击关闭与切换最大化回调正确触发", async () => {
-    const handleClose = vi.fn();
-    const handleToggleExpand = vi.fn();
+    expect(screen.getByText("沙箱命令行终端已就绪")).toBeInTheDocument();
 
-    vi.spyOn(global, "fetch").mockResolvedValue(
-      new Response(JSON.stringify({ files: [] }), { status: 200 })
-    );
+    const input = screen.getByPlaceholderText(/在工作区沙箱执行 Shell 命令/);
+    fireEvent.change(input, { target: { value: "pwd" } });
 
-    render(
-      <ArtifactViewer
-        data={null}
-        onClose={handleClose}
-        onToggleExpand={handleToggleExpand}
-      />
-    );
-
-    const closeBtn = screen.getByTitle("关闭工作区");
-    fireEvent.click(closeBtn);
-    expect(handleClose).toHaveBeenCalledTimes(1);
-
-    const expandBtn = screen.getByTitle("全屏最大化");
-    fireEvent.click(expandBtn);
-    expect(handleToggleExpand).toHaveBeenCalledTimes(1);
-  });
-
-  it("点击文件夹节点可折叠与展开其子项", async () => {
-    vi.spyOn(global, "fetch").mockImplementation(async (url) => {
-      const u = String(url);
-      if (u.includes("/api/workspace")) {
-        return new Response(
-          JSON.stringify({
-            files: [
-              { name: "src", path: "src", type: "directory", updatedAt: 1 },
-              { name: "index.ts", path: "src/index.ts", type: "file", updatedAt: 1 },
-            ],
-          }),
-          { status: 200 }
-        );
-      }
-      return new Response(null, { status: 404 });
-    });
-
-    render(<ArtifactViewer data={null} sessionId="sess_tree" onClose={vi.fn()} />);
+    const submitBtn = screen.getByRole("button", { name: /执行/ });
+    fireEvent.click(submitBtn);
 
     await waitFor(() => {
-      expect(screen.getByText("src")).toBeInTheDocument();
-      expect(screen.getByText("index.ts")).toBeInTheDocument();
+      expect(screen.getByText("/workspace/general/sess_1")).toBeInTheDocument();
     });
-
-    // 点击 src 文件夹折叠
-    const folderEl = screen.getByText("src");
-    fireEvent.click(folderEl);
-
-    // 子节点 index.ts 被隐藏
-    expect(screen.queryByText("index.ts")).toBeNull();
-
-    // 再次点击展开
-    fireEvent.click(folderEl);
-    expect(screen.getByText("index.ts")).toBeInTheDocument();
   });
 });

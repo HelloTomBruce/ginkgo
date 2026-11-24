@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { GET } from "./route";
+import { GET, POST } from "./route";
 import { resolveWorkspaceContext } from "@/lib/workspaceResolver";
 
 describe("GET /api/workspace", () => {
@@ -87,5 +87,34 @@ describe("GET /api/workspace", () => {
     const data = await res.json();
     expect(data.isBinary).toBe(true);
     expect(data.content).toContain("二进制文件");
+  });
+
+  it("action=git_status 查询工作区 Git 状态", async () => {
+    const req = new Request(
+      "http://localhost/api/workspace?appId=general&sessionId=test_ws_api&action=git_status"
+    );
+    const res = await GET(req);
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(typeof data.isGitRepo).toBe("boolean");
+    expect(Array.isArray(data.changes)).toBe(true);
+  });
+
+  it("POST /api/workspace 在沙箱执行轻量终端命令", async () => {
+    const req = new Request("http://localhost/api/workspace", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        appId: "general",
+        sessionId: "test_ws_api",
+        command: "echo 'hello terminal'",
+      }),
+    });
+    const res = await POST(req);
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.success).toBe(true);
+    expect(data.stdout).toContain("hello terminal");
+    expect(data.exitCode).toBe(0);
   });
 });

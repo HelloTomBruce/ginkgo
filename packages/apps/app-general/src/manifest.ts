@@ -38,4 +38,46 @@ export const generalClient: AppClientContract = {
       description: "常用指令与探索场景",
     },
   ],
+  // 声明工具的高级通用展示渲染器（L2 @ginkgo/components 驱动）
+  toolRenderers: [
+    {
+      toolName: "edit_file",
+      renderer: "diff",
+      defaultOpen: true,
+      title: "代码变更审阅",
+    },
+    {
+      toolName: "write_file",
+      renderer: "diff",
+      defaultOpen: true,
+      title: "文件变更",
+    },
+    {
+      toolName: "run_command",
+      renderer: "terminal",
+      defaultOpen: false,
+    },
+  ],
+  // 声明人机协同审批规则（Human-in-the-Loop）
+  approvalRules: [
+    {
+      toolName: "run_command",
+      riskLevel: "danger",
+      title: "高危终端命令审批",
+      condition: (args) => {
+        const cmd = String(args.command || "");
+        return /\brm\s+-[rf]{1,2}\b|\bgit\s+reset\s+--hard\b|\bgit\s+clean\b|\bkill\b/i.test(cmd);
+      },
+      defaultRejectFeedback: "用户拒绝执行该高危终端命令，请尝试使用更安全或非破坏性的替代方案。",
+    },
+  ],
+  // 消息流扩展：Plan 规划模式快捷确认与工具执行过渡
+  messageExtensions: {
+    planConfirm: {
+      patterns: ["请确认", "是否按此方案", "确认方案", "分步实施计划", "若认可上述方案"],
+      label: "确认方案并开始构建",
+      actionPrompt: "方案已确认，请严格按照上述规划执行落地构建代码与产物。",
+    },
+    toolSettledHint: "沙箱文件读写与命令执行已完成，大模型正在组织代码与方案输出...",
+  },
 };

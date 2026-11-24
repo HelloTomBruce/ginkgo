@@ -1,9 +1,13 @@
 import { NextResponse } from "next/server";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { exec } from "node:child_process";
+import { promisify } from "node:util";
 import { resolveWorkspaceContext, resolveSafeWorkspacePath } from "@/lib/workspaceResolver";
 import { sessionStore } from "@/lib/sessionStore";
 import { workspaceStore } from "@/lib/workspaceStore";
+
+const execAsync = promisify(exec);
 
 export const DEFAULT_WORKSPACE_IGNORE_PATTERNS = new Set([
   // 1. 依赖与包管理 (Node / Python / Go / PHP / iOS)
@@ -82,6 +86,7 @@ export async function GET(req: Request) {
     const appId = searchParams.get("appId") || "general";
     const sessionId = searchParams.get("sessionId") || "default";
     const filePath = searchParams.get("filePath");
+    const action = searchParams.get("action");
 
     let customRootDir: string | undefined;
     if (sessionId && sessionId !== "default") {
@@ -95,6 +100,71 @@ export async function GET(req: Request) {
     }
 
     const ws = await resolveWorkspaceContext({ appId, sessionId, customRootDir });
+
+    // 0. Git 状态查询分支
+    if (action === "git_status") {
+      try {
+        await execAsync("git rev-parse --is-inside-work-tree", { cwd: ws.sandboxDir });
+      } catch {
+        return NextResponse.json({
+          isGitRepo: false,
+          branch: "",
+          changes: [],
+        });
+      }
+
+      let branch = "main";
+      try {
+        const { stdout } = await execAsync("git branch --show-current", { cwd: ws.sandboxDir });
+        branch = stdout.trim() || "HEAD";
+      } catch {
+        // 忽略分支获取异常
+      }
+
+      const { stdout: statusOut } = await execAsync("git status --porcelain=v1", { cwd: ws.sandboxDir });
+      const lines = statusOut.split("\n").filter(Boolean);
+      const changes: Array<{
+        path: string;
+        status: "modified" | "added" | "deleted" | "untracked";
+        diff?: string;
+      }> = [];
+
+      for (const line of lines) {
+        const code = line.slice(0, 2);
+        const relPath = line.slice(3).trim();
+        let status: "modified" | "added" | "deleted" | "untracked" = "modified";
+        if (code.includes("?")) status = "untracked";
+        else if (code.includes("A")) status = "added";
+        else if (code.includes("D")) status = "deleted";
+
+        let diff: string | undefined;
+        try {
+          if (status === "untracked") {
+            const abs = path.join(ws.sandboxDir, relPath);
+            const content = await fs.readFile(abs, "utf-8").catch(() => "");
+            diff = content
+              .split("\n")
+              .map((l) => `+${l}`)
+              .join("\n");
+          } else {
+            const { stdout: diffOut } = await execAsync(`git diff HEAD -- "${relPath}"`, {
+              cwd: ws.sandboxDir,
+            });
+            diff = diffOut || undefined;
+          }
+        } catch {
+          // 忽略单个文件的 diff 获取失败
+        }
+
+        changes.push({ path: relPath, status, diff });
+      }
+
+      return NextResponse.json({
+        isGitRepo: true,
+        branch,
+        changes,
+      });
+    }
 
     // 1. 若指定了 filePath，读取文件内容
     if (filePath) {
@@ -191,3 +261,85 @@ export async function GET(req: Request) {
     );
   }
 }
+
+/**
+ * POST /api/workspace
+ * 在工作区沙箱执行轻量终端交互指令（如 git、测试、查看日志）
+ */
+export async function POST(req: Request) {
+  try {
+    const body = await req.json();
+    const appId = body.appId || "general";
+    const sessionId = body.sessionId || "default";
+    const command = String(body.command || "").trim();
+
+    if (!command) {
+      return NextResponse.json({ error: "命令不能为空" }, { status: 400 });
+    }
+
+    // 安全检查高危破坏指令
+    const DANGEROUS = [
+      /\brm\s+-[rf]{1,2}\s+(\/|~|\$HOME|\.\.)(\s|$)/i,
+      /\bmkfs\b/i,
+      /\bshutdown\b/i,
+      /\breboot\b/i,
+      /\bdd\s+if=/i,
+      /\b:\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;/i,
+    ];
+    for (const pattern of DANGEROUS) {
+      if (pattern.test(command)) {
+        return NextResponse.json(
+          { error: `安全策略拦截：命令包含潜在的高危破坏性指令 (${command})` },
+          { status: 403 }
+        );
+      }
+    }
+
+    let customRootDir: string | undefined;
+    if (sessionId && sessionId !== "default") {
+      const sessionRecord = await sessionStore.get(sessionId);
+      if (sessionRecord?.workspaceId) {
+        const wsRecord = await workspaceStore.get(sessionRecord.workspaceId);
+        if (wsRecord?.path) {
+          customRootDir = wsRecord.path;
+        }
+      }
+    }
+
+    const ws = await resolveWorkspaceContext({ appId, sessionId, customRootDir });
+    await fs.mkdir(ws.sandboxDir, { recursive: true });
+
+    const startTime = Date.now();
+    try {
+      const { stdout, stderr } = await execAsync(command, {
+        cwd: ws.sandboxDir,
+        timeout: 30000,
+        maxBuffer: 1024 * 1024,
+      });
+      return NextResponse.json({
+        success: true,
+        command,
+        stdout,
+        stderr,
+        exitCode: 0,
+        durationMs: Date.now() - startTime,
+      });
+    } catch (execErr: unknown) {
+      const err = execErr as { stdout?: string; stderr?: string; code?: number; message?: string };
+      return NextResponse.json({
+        success: false,
+        command,
+        stdout: err.stdout || "",
+        stderr: err.stderr || err.message || "",
+        exitCode: typeof err.code === "number" ? err.code : 1,
+        durationMs: Date.now() - startTime,
+      });
+    }
+  } catch (err) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "命令执行失败" },
+      { status: 500 }
+    );
+  }
+}
+
