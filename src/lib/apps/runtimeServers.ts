@@ -1,5 +1,6 @@
 import { analyticsServer } from "@/lib/analyticsRuntime";
 import { getGeneralTools as generalGetTools } from "@ginkgo-apps/general/server";
+import { getDesignTools as designGetTools } from "@ginkgo-apps/design/server";
 import { appRegistry } from "./registry";
 import type { AppServerContract } from "@ginkgo/app-sdk";
 
@@ -22,6 +23,9 @@ export function resolveRuntimeServer(appId: string):
   if (appId === "general") {
     // 组合根注入运行时实现：静态声明段（needsWorkspace 等）+ ./server 入口的工具装配
     return { ...staticContract, getTools: generalGetTools };
+  }
+  if (appId === "design") {
+    return { ...staticContract, getTools: designGetTools };
   }
   return staticContract;
 }

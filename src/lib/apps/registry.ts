@@ -1,6 +1,7 @@
 import type { AppPackageDefinition } from "@ginkgo/app-sdk";
 import analyticsAppPackage from "@ginkgo-apps/analytics";
 import generalAppPackage from "@ginkgo-apps/general";
+import designAppPackage from "@ginkgo-apps/design";
 
 /**
  * 默认主应用 ID（用于向后兼容未指定 appId 的旧会话）
@@ -14,6 +15,7 @@ class AppRegistry {
     // 注册标准应用包（每个包来自 packages/apps/*）
     this.register(analyticsAppPackage);
     this.register(generalAppPackage);
+    this.register(designAppPackage);
   }
 
   /**

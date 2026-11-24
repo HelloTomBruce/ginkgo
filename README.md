@@ -2,7 +2,7 @@
 
 **Ginkgo 智能体应用平台**：统一对话宿主 + 可插拔应用体系 + 平台级 Agent 运行底座。
 
-用自然语言提问，由 LLM 编排 **PostgreSQL / MySQL / SQLite / ClickHouse / GitLab / 禅道 / 文件（CSV·Excel → DuckDB）** 多路数据源取数，流式生成**看板 DSL** 声明式可视化界面（KPI 卡、漏斗、热力图、雷达图、预算模拟器等）并实时渲染。**数据分析（analytics）** 与 **通用助手（general）** 是平台的前两个应用——新应用接入零宿主改动，见 [docs/app-integration-guide.md](docs/app-integration-guide.md)。
+用自然语言提问，由 LLM 编排 **PostgreSQL / MySQL / SQLite / ClickHouse / GitLab / 禅道 / 文件（CSV·Excel → DuckDB）** 多路数据源取数，流式生成**看板 DSL** 声明式可视化界面（KPI 卡、漏斗、热力图、雷达图、预算模拟器等）并实时渲染。**数据分析（analytics）**、**体验设计（design）** 与 **通用助手（general）** 是平台内置的标准应用——新应用接入零宿主改动，见 [docs/app-integration-guide.md](docs/app-integration-guide.md)。
 
 ## 底座架构
 
@@ -53,6 +53,7 @@
 | --- | --- | --- |
 | `packages/ginkgo-app-sdk` | `defineApp` / `AppPackageDefinition` | **L0 协议层**：manifest、客户端插槽、服务端契约、产物协议、消息区扩展 |
 | `packages/apps/app-analytics` | `createAnalyticsServer` | 智能数据分析师应用（深度应用）：三模式 prompt、schema 摘要、方法卡、跨源映射、数据源工具、**看板产物域全自持**（isomorphic 变换/捕获/快照 + server 收藏存储/SQL 物化/活看板重放/模板重绑定） |
+| `packages/apps/app-design` | `getDesignTools`（server 入口） | 体验设计工坊应用：基于 claude-design / claude-design-system / claude-data CLI，多端响应式视觉画板 (iframe)、设计系统 Token 大盘与样式合规审计 |
 | `packages/apps/app-general` | `getGeneralTools`（server 入口） | 通用智能助手应用：沙箱原子工具（消费 ginkgo-sandbox）、ArtifactViewer 产物工作台 |
 | `packages/ginkgo-sandbox` | `createSandboxTools` | 沙箱工作区能力包：四原子工具（read/edit/write/bash）+ explorer 只读增强预设、full/readonly 权限档、run_command env 白名单、prompt 片段 |
 | `packages/ginkgo-chart-spec` | `parseDashboardSpec` / `applyJsonPatch` | DashboardSpec 2.0 声明式状态树 + RFC 6902 JSON Patch 引擎（zod-only） |

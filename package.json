@@ -24,6 +24,7 @@
     "@ginkgo/llm": "workspace:*",
     "@ginkgo/sandbox": "workspace:*",
     "@ginkgo-apps/analytics": "workspace:*",
+    "@ginkgo-apps/design": "workspace:*",
     "@ginkgo-apps/general": "workspace:*",
     "@openuidev/react-lang": "^0.3.1",
     "class-variance-authority": "^0.7.1",

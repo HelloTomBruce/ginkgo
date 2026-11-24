@@ -15,6 +15,12 @@ describe("AppRegistry 应用注册表", () => {
     expect(general?.manifest.name).toBe("通用智能助手");
     expect(general?.client.hasWorkspace).toBe(true);
     expect(general?.client.workspaceTitle).toBe("工作区产物");
+
+    const design = getApp("design");
+    expect(design).toBeDefined();
+    expect(design?.manifest.name).toBe("体验设计工坊");
+    expect(design?.client.hasWorkspace).toBe(true);
+    expect(design?.client.workspaceTitle).toBe("设计工作台");
   });
 
   it("支持通过 get 和 getOrDefault 查询应用", () => {

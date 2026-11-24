@@ -172,6 +172,9 @@ importers:
       '@ginkgo-apps/analytics':
         specifier: workspace:*
         version: link:packages/apps/app-analytics
+      '@ginkgo-apps/design':
+        specifier: workspace:*
+        version: link:packages/apps/app-design
       '@ginkgo-apps/general':
         specifier: workspace:*
         version: link:packages/apps/app-general
@@ -324,6 +327,43 @@ importers:
       '@types/react-dom':
         specifier: ^19
         version: 19.3.0(@types/react@19.3.0)
+      jsdom:
+        specifier: ^30.1.2
+        version: 30.1.3
+      typescript:
+        specifier: ^5
+        version: 5.9.3
+      vitest:
+        specifier: ^5.1.0
+        version: 5.1.0(@opentelemetry/api@1.9.0)(@types/node@22.20.5)(@vitest/coverage-v8@5.1.0)(jsdom@30.1.3)(vite@8.3.4(@types/node@22.20.5)(jiti@2.7.0))
+
+  packages/apps/app-design:
+    dependencies:
+      '@ginkgo/app-sdk':
+        specifier: workspace:*
+        version: link:../../ginkgo-app-sdk
+      '@ginkgo/components':
+        specifier: workspace:*
+        version: link:../../ginkgo-components
+      '@ginkgo/harness-core':
+        specifier: workspace:*
+        version: link:../../ginkgo-harness-core
+      '@ginkgo/sandbox':
+        specifier: workspace:*
+        version: link:../../ginkgo-sandbox
+      lucide-react:
+        specifier: ^1.73.0
+        version: 1.73.0(@types/react@19.3.0)(react@19.3.1)
+      zod:
+        specifier: 4.6.7
+        version: 4.6.7
+    devDependencies:
+      '@testing-library/jest-dom':
+        specifier: ^7.0.1
+        version: 7.0.1(@testing-library/dom@10.4.2)(vitest@5.1.0)
+      '@testing-library/react':
+        specifier: ^16.3.3
+        version: 16.3.3(@testing-library/dom@10.4.2)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       jsdom:
         specifier: ^30.1.2
         version: 30.1.3

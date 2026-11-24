@@ -1,0 +1,29 @@
+{
+  "name": "@ginkgo-apps/design",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./client": "./src/client/index.ts",
+    "./server": "./src/server/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@ginkgo/app-sdk": "workspace:*",
+    "@ginkgo/components": "workspace:*",
+    "@ginkgo/harness-core": "workspace:*",
+    "@ginkgo/sandbox": "workspace:*",
+    "lucide-react": "^1.73.0",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.3",
+    "jsdom": "^30.1.2",
+    "typescript": "^5",
+    "vitest": "^5.1.0"
+  }
+}
