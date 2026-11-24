@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { GET, POST } from "./route";
 import { dashboardStore } from "@ginkgo-apps/analytics/server";
