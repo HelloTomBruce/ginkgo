@@ -73,6 +73,17 @@
 
 **能力消费**：沙箱工具（`@ginkgo/sandbox`）、数据源网关（datasources）、看板渲染（components + chart-spec）、方法卡（methodology）、`zodTool` 等底座设施（harness-core）。能力包不 import 应用与宿主，经协议层类型解耦。
 
+## 新应用接入质量准入清单（Checklist）
+
+所有新应用（`packages/apps/*`）接入或架构评审时，必须满足以下六道质量门禁（完整范式详见 [ginkgo-agent-application-paradigm.md](file:///Users/zhangbei/code/prd/ai-design/ginkgo-agent-application-paradigm.md) 与 [docs/app-integration-guide.md](docs/app-integration-guide.md)）：
+
+- [ ] **1. 交付物中心（WorkspaceView）**：右侧必须有专属的领域交付物工作台（如数据看板、代码树/Git/终端、架构拓扑等），拒绝纯单栏聊天。
+- [ ] **2. 规划与执行断层隔离（Plan-first）**：实现 `Plan` 与 `Build/Execute` 模式状态隔离；规划期权限档自动收敛为只读，明确用户确认信号。
+- [ ] **3. 人机审批与高危拦截（HITL）**：对具有副作用或高风险的动作（写入文件、执行 shell 命令、修改配置、写库等）声明 `approvalRules`，挂起并渲染 `ApprovalCard`。
+- [ ] **4. 真实环境感知（Workspace as Ground Truth）**：严禁模型凭记忆空想；通过原子工具实时从沙箱文件系统、Git 或数据源感知真实状态，动态修剪上下文防注意力涣散。
+- [ ] **5. 工具闭环与自愈指导**：工具保持高内聚原子化；执行报错返回必须具备建设性指引（带自愈线索），赋能智能体自主修复。
+- [ ] **6. 架构单向依赖与语义规范**：禁止应用逆向穿透宿主（不配 `@/*` 别名）；颜色与主题 100% 消费 CSS 语义 Token，严禁硬编码色板类。
+
 ## 快速开始
 
 ```bash
