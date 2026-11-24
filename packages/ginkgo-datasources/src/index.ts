@@ -36,7 +36,6 @@ export * from "./gateway/explainGuard";
 export * from "./gateway/queryCache";
 export * from "./gateway/queryPipeline";
 export * from "./gateway/queryGateway";
-export * from "./gateway/mcpGateway";
 
 // Certified Queries 语义层与口径治理 (Certified)
 export * from "./certified/types";
