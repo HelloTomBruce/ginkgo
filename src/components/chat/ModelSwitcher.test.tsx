@@ -148,4 +148,52 @@ describe("ModelSwitcher", () => {
     const headerListbox = screen.getByRole("listbox");
     expect(headerListbox.className).toContain("top-full");
   });
+
+  it("搜索输入过滤模型并支持清除", () => {
+    render(
+      <ModelSwitcher
+        providers={MOCK_PROVIDERS}
+        activeProviderId="deepseek"
+        activeModel="deepseek-chat"
+        onSwitchModel={vi.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /切换模型/ }));
+    const searchInput = screen.getByPlaceholderText(/搜索模型或提供商/);
+    expect(searchInput).toBeInTheDocument();
+
+    // 搜索 doubao
+    fireEvent.change(searchInput, { target: { value: "doubao" } });
+    expect(screen.getByRole("option", { name: /doubao-pro/ })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: /deepseek-chat/ })).not.toBeInTheDocument();
+
+    // 搜索不存在的
+    fireEvent.change(searchInput, { target: { value: "not-exist-xyz" } });
+    expect(screen.getByText("未找到匹配的模型或提供商")).toBeInTheDocument();
+  });
+
+  it("展示最近使用快捷选项并可点击选择", () => {
+    const onSwitchModel = vi.fn();
+    render(
+      <ModelSwitcher
+        providers={MOCK_PROVIDERS}
+        activeProviderId="deepseek"
+        activeModel="deepseek-chat"
+        onSwitchModel={onSwitchModel}
+        recentModels={[
+          { providerId: "custom-gate", model: "doubao-pro", usedAt: 12345 },
+        ]}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /切换模型/ }));
+    expect(screen.getByText("最近使用")).toBeInTheDocument();
+
+    // 点击最近使用里的 doubao-pro
+    const recentOptions = screen.getAllByRole("option", { name: /doubao-pro/ });
+    fireEvent.click(recentOptions[0]);
+
+    expect(onSwitchModel).toHaveBeenCalledWith("custom-gate", "doubao-pro");
+  });
 });

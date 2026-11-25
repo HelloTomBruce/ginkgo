@@ -11,9 +11,9 @@ import {
 // useChat mock 构造器：vi.mock 工厂被提升到文件顶部，只能引用 vi.hoisted 产物与导入值（惰性求值）
 const buildUseChatResult = vi.hoisted(
   () =>
-    // UIMessage 结构子集即可（测试消息仅含 role/content）
+    // UIMessage 结构子集即可（测试消息含 role/content/id/annotations）
     (
-      messages: Array<{ role: string; content: string }>,
+      messages: Array<{ role: string; content: string; id?: string; annotations?: unknown[] }>,
       data: unknown[] = []
     ) =>
       ({
@@ -218,6 +218,34 @@ describe("ChatDashboard 守护测试（重构行为锁定）", () => {
     render(<ChatDashboard />);
     // 64000 / 1024000 = 6%
     await screen.findByText(/64\.0k \/ 1024k（6%）/);
+    expect(screen.getByText("上下文")).toBeInTheDocument();
+  });
+
+  it("上下文用量条：当无 StreamData 且无 sessionPromptTokens 时，优先从历史消息 finops_cost 注解回溯真实单步实测值（防刷新闪降 3%）", async () => {
+    vi.mocked(useChat).mockImplementation(
+      () =>
+        buildUseChatResult([
+          DEFAULT_WELCOME_MESSAGE,
+          { id: "m1", role: "user", content: "分析近30天趋势" },
+          {
+            id: "m2",
+            role: "assistant",
+            content: "好的，根据数据分析结果...",
+            annotations: [
+              {
+                type: "finops_cost",
+                model: "gpt-4o-mini",
+                promptTokens: 32_000,
+                completionTokens: 500,
+                totalTokens: 32_500,
+              },
+            ],
+          },
+        ]) as never
+    );
+    render(<ChatDashboard />);
+    // 32000 / 128000 = 25%，从历史消息注解回溯实测值，不回退到可见字符粗估
+    await screen.findByText(/32\.0k \/ 128k（25%）/);
     expect(screen.getByText("上下文")).toBeInTheDocument();
   });
 

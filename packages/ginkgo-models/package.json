@@ -1,0 +1,20 @@
+{
+  "name": "@ginkgo/models",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./presets": "./src/presets.ts",
+    "./types": "./src/types.ts",
+    "./utils": "./src/utils.ts"
+  },
+  "scripts": {
+    "test": "vitest run"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "typescript": "^5",
+    "vitest": "^5.1.0"
+  }
+}

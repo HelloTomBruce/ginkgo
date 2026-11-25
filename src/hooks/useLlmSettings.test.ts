@@ -80,4 +80,23 @@ describe("useLlmSettings", () => {
     );
     expect(k3Models).toHaveLength(1);
   });
+
+  it("switchActiveModel 正确记录最近使用的模型并更新 recentModels", () => {
+    const { result } = renderHook(() => useLlmSettings());
+
+    act(() => {
+      result.current.switchActiveModel("deepseek", "deepseek-reasoner");
+    });
+
+    expect(result.current.activeProviderId).toBe("deepseek");
+    expect(result.current.activeModel).toBe("deepseek-reasoner");
+    expect(result.current.recentModels).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          providerId: "deepseek",
+          model: "deepseek-reasoner",
+        }),
+      ])
+    );
+  });
 });

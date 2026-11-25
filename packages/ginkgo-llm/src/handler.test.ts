@@ -812,6 +812,60 @@ describe("成本预算与并发准入（WS-3）", () => {
     expect(text).toContain('"termination":"natural"');
   });
 
+  it("缺省不配置预算：任意累计用量都不熔断(不限制),也不中止 provider", async () => {
+    vi.mocked(streamText).mockImplementation((opts) =>
+      streamResult({
+        onStart: () => {
+          // 单步即远超旧缺省 600k：缺省(无预算)必须放行
+          opts.onStepFinish?.({
+            stepType: "tool-result",
+            toolCalls: [],
+            finishReason: "stop",
+            text: "完成",
+            usage: { promptTokens: 900_000, completionTokens: 300_000 },
+          } as never);
+          opts.onFinish?.({ usage: { promptTokens: 900_000 } } as never);
+        },
+      }) as never
+    );
+
+    const POST = createAnalyzeHandler({ resolveAppTools: async () => ({}) });
+    const res = await POST(
+      makeRequest({ messages: [], apiKey: "k", sessionId: "sess_no_budget" })
+    );
+    const text = await res.text();
+    expect(text).not.toContain("budget_exhausted");
+    expect(text).toContain('"termination":"natural"');
+    const passedSignal = vi.mocked(streamText).mock.calls[0][0].abortSignal;
+    expect(passedSignal?.aborted).toBe(false);
+  });
+
+  it("显式 ≤0 视为不限制(逃逸口):env=0 时大用量不熔断", async () => {
+    process.env.LLM_TASK_TOKEN_BUDGET = "0";
+    vi.mocked(streamText).mockImplementation((opts) =>
+      streamResult({
+        onStart: () => {
+          opts.onStepFinish?.({
+            stepType: "tool-result",
+            toolCalls: [],
+            finishReason: "stop",
+            text: "完成",
+            usage: { promptTokens: 900_000, completionTokens: 300_000 },
+          } as never);
+          opts.onFinish?.({ usage: { promptTokens: 900_000 } } as never);
+        },
+      }) as never
+    );
+
+    const POST = createAnalyzeHandler({ resolveAppTools: async () => ({}) });
+    const res = await POST(
+      makeRequest({ messages: [], apiKey: "k", sessionId: "sess_budget_off" })
+    );
+    const text = await res.text();
+    expect(text).not.toContain("budget_exhausted");
+    expect(text).toContain('"termination":"natural"');
+  });
+
   it("并发准入：running 任务数达上限时新任务 429,重连不受限", async () => {
     process.env.LLM_MAX_CONCURRENT_TASKS = "1";
     let finishStream: () => void;

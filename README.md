@@ -27,6 +27,7 @@
 │  sandbox（沙箱原子工具+权限档）· datasources（直连+只读网关）    │
 │  components（看板组件库+渲染基建+UI 原语）· chart-spec（spec 契约）│
 │  methodology（方法卡资产）· harness-core（通用 Agent 底座）      │
+│  models（零依赖同构模型与 Provider 规范契约+元数据）            │
 ├────────────────────────────────────────────────────────────────┤
 │ L1 编排层 ginkgo-llm（领域中立）                                 │
 │  streamText + 模型链韧性 + StreamHub 流中继 + 三维熔断 +         │
@@ -56,6 +57,7 @@
 | `packages/apps/app-design` | `getDesignTools`（server 入口） | 体验设计工坊应用：基于 claude-design / claude-design-system / claude-data CLI，多端响应式视觉画板 (iframe)、设计系统 Token 大盘与样式合规审计 |
 | `packages/apps/app-general` | `getGeneralTools`（server 入口） | 通用智能助手应用：沙箱原子工具（消费 ginkgo-sandbox）、ArtifactViewer 产物工作台 |
 | `packages/ginkgo-sandbox` | `createSandboxTools` | 沙箱工作区能力包：四原子工具（read/edit/write/bash）+ explorer 只读增强预设、full/readonly 权限档、run_command env 白名单、prompt 片段 |
+| `packages/ginkgo-models` | `isReasoningModel` / `resolveContextWindow` / `findPreset` | **L2 契约与元数据**：零外部依赖同构模型包。统一 Provider 预设目录、模型参数归一化、深度思考/推理判定、动态 models.dev 目录合并与本地缓存、上下文容量规范 |
 | `packages/ginkgo-chart-spec` | `parseDashboardSpec` / `applyJsonPatch` | DashboardSpec 2.0 声明式状态树 + RFC 6902 JSON Patch 引擎（zod-only） |
 | `packages/ginkgo-harness-core` | `ContextEngine` / `createTerminationTool` / `MCPClientManager` | 通用 Agent Harness：上下文裁剪压缩、洋葱模型工具切面、任务生命周期断言、三维预算防跑飞、MCP 连接池、FinOps 台账 |
 | `packages/ginkgo-datasources` | `createDatasourceManager` / `QueryGateway` | 结构化数据源直连 + QueryGateway 安全网关 + 只读守卫管线 + Schema Card + Certified Queries 语义层 |
@@ -102,7 +104,7 @@ pnpm dev        # http://localhost:3006
 | `OPENAI_BASE_URL` / `LLM_BASE_URL` | OpenAI 兼容接口地址 | `https://api.openai.com/v1` |
 | `OPENAI_MODEL` / `LLM_MODEL` | 模型名 | `gpt-4o-mini` |
 | `LLM_TASK_TIMEOUT_MS` | 单任务 wall-clock 上限（超时自动中止） | 600000（钳 30s–60min） |
-| `LLM_TASK_TOKEN_BUDGET` | 单任务累计 token 预算（超限写 `budget_exhausted` 终态并中止） | 600000（钳 10k–5M） |
+| `LLM_TASK_TOKEN_BUDGET` | 单任务累计 token 预算（超限写 `budget_exhausted` 终态并中止） | 不限制（显式给 >0 值启用，钳 10k–5M） |
 | `LLM_MAX_CONCURRENT_TASKS` | 进程级同时 running 任务数上限（超限返回 429） | 8（钳 1–64） |
 | `LLM_TOOL_OUTPUT_MAX_BYTES` | 单个工具结果进入模型上下文的字节上限（头尾保留截断） | 32768（钳 4KB–1MB） |
 | `LLM_MAX_OUTPUT_TOKENS` | 每步输出 token 上限 | 16384（钳 1024–65536） |
@@ -187,6 +189,16 @@ pnpm dev        # http://localhost:3006
 - **第一道 tool-result pruning**：保留窗口外的工具结果替换为占位符；用户消息与规划卡豁免
 - **第二道 LLM 摘要**：pruning 后仍超阈值，旧历史压缩为摘要注入 system prompt（增量复用）
 - **用量条**：输入框上方实时显示 `实测 promptTokens / 模型窗口`（>70% 黄、>90% 红）
+
+## 多 Provider 与模型治理体系
+
+底座模型接入已实现同构拆包与极致交互打磨（由 `@ginkgo/models` 全局单一真值驱动）：
+
+- **快捷模型切换器（ModelSwitcher）**：输入框左侧支持即打即搜过滤、置顶「最近使用 (Recent Models)」、自动识别思考/推理模型徽标（⚡）、展示模型上下文容量规格，并支持单模型快捷启停过滤。
+- **配置中心与连通性探针（SettingsModal）**：
+  - **⚡ 测试连接**：服务端轻量探针智能多端点候选探测（优先 `/v1/models`、`/models`；404/405 时自动回退轻量对话端点探针），杜绝 Kimi Coding 等厂商返回 404 误报；
+  - **凭据与容量定制**：API Key 明暗文眼睛切换，预设模型容量快捷胶囊（32k / 64k / 128k / 200k / 1M 等），单模型展示开关，支持从官方拉取最新模型与预设兜底；
+  - **纯同构模型底座**：核心类型契约、预设字典与计算工具独立收敛至 `packages/ginkgo-models`（Zero-Dependency），前端客户端与服务端 Harness 调度零耦合共享真值。
 
 ## 先出思路（Plan-first，默认开启）
 

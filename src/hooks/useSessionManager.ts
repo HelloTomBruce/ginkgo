@@ -229,6 +229,11 @@ export function useSessionManager(options?: UseSessionManagerOptions) {
         if (cancelled) return;
         if (record) {
           setMessages(record.messages as unknown as Message[]);
+          if (record.context) {
+            setSessions((prev) =>
+              prev.map((s) => (s.id === targetId ? { ...s, context: record.context } : s))
+            );
+          }
         }
       } finally {
         if (!cancelled) setLoaded(true);
@@ -346,7 +351,8 @@ export function useSessionManager(options?: UseSessionManagerOptions) {
       // 后台同步服务端
       // 注意：context.lastPromptTokens（token 锚点）只由服务端 analyze handler
       // 按最后一步单步实测写入，客户端保存消息时绝不同步 context——
-      // useChat 的累计 usage 会覆盖实测锚点导致剪枝判定虚高
+      // useChat 的累计 usage 会覆盖实测锚点导致剪枝判定虚高。
+      // 成功保存后，服务端会返回携带最新实测 context 的 SessionSummary，客户端原子同步回 setSessions
       void updateSessionApi(
         activeId,
         {
@@ -354,9 +360,13 @@ export function useSessionManager(options?: UseSessionManagerOptions) {
           ...(nextTitle ? { title: nextTitle } : {}),
         },
         options?.keepalive ? { keepalive: true } : undefined
-      ).then((ok) => {
-        if (!ok && !options?.silent) {
+      ).then((res) => {
+        if (!res && !options?.silent) {
           toast("会话保存失败，刷新后以服务端内容为准", "error");
+        } else if (res?.context) {
+          setSessions((prev) =>
+            prev.map((s) => (s.id === activeId ? { ...s, context: res.context } : s))
+          );
         }
       });
     },
@@ -398,6 +408,11 @@ export function useSessionManager(options?: UseSessionManagerOptions) {
       if (seq !== switchSeqRef.current) return; // 已被更新的切换取代
       if (record) {
         setMessages(record.messages as unknown as Message[]);
+        if (record.context) {
+          setSessions((prev) =>
+            prev.map((s) => (s.id === sessionId ? { ...s, context: record.context } : s))
+          );
+        }
       } else {
         toast("会话加载失败", "error");
       }

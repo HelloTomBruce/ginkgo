@@ -51,6 +51,23 @@ import { toast } from "@/lib/toast";
  * 状态在 useLlmSettings / useSessionManager 中管理，展示在 chat/ 下的专注子组件中。
  */
 
+/** 从服务端 StreamData 中倒序提取最后一条有效的单步实测 context_usage（无则返回 null） */
+function lastContextUsageFromData(data: unknown): number | null {
+  if (!Array.isArray(data)) return null;
+  for (let i = data.length - 1; i >= 0; i--) {
+    const item = data[i] as { type?: string; promptTokens?: number } | null;
+    if (
+      item &&
+      item.type === "context_usage" &&
+      typeof item.promptTokens === "number" &&
+      item.promptTokens > 0
+    ) {
+      return item.promptTokens;
+    }
+  }
+  return null;
+}
+
 /** 上下文用量派生（纯函数，组件外定义以兼容 React Compiler 手动记忆化） */
 function deriveContextUsage(
   data: unknown,
@@ -61,31 +78,57 @@ function deriveContextUsage(
   messages?: unknown[]
 ): { promptTokens: number; window: number } {
   const windowSize = resolveContextWindow(model, contextWindowHint);
-  if (Array.isArray(data) && data.length > 0) {
-    for (let i = data.length - 1; i >= 0; i--) {
-      const item = data[i] as { type?: string; promptTokens?: number } | null;
-      if (
-        item &&
-        item.type === "context_usage" &&
-        typeof item.promptTokens === "number" &&
-        item.promptTokens > 0
-      ) {
-        return { promptTokens: item.promptTokens, window: windowSize };
-      }
-    }
+
+  // 1. 优先从当前流式 data（服务端 StreamData 下发的最后一步真实单步 context_usage）读取
+  const streamedUsage = lastContextUsageFromData(data);
+  if (streamedUsage !== null) {
+    return { promptTokens: streamedUsage, window: windowSize };
   }
+
+  // 2. 其次回退到内存中的 fallbackPromptTokens（兼容流式收尾或新 Turn 生成期间保持上一轮有效值，Freeze-on-Flight）
   if (typeof fallbackPromptTokens === "number" && fallbackPromptTokens > 0) {
     return { promptTokens: fallbackPromptTokens, window: windowSize };
   }
+
+  // 3. 再次回退到活跃会话持久化的 context.lastPromptTokens（跨会话切换与刷新恢复）
   if (typeof sessionPromptTokens === "number" && sessionPromptTokens > 0) {
     return { promptTokens: sessionPromptTokens, window: windowSize };
   }
+
+  // 4. 再次从历史消息的 finops_cost 注解回溯实测值（Ground-Truth Annotation Fallback）
+  // 每条 Assistant 消息均在注解中记录了该轮真实发往 LLM 的实际 promptTokens（含系统提示词与全部工具 Schema），
+  // 页面刷新（F5）或会话持久化字段延迟时，优先从中提取最后一条实测值，彻底杜绝只算可见字符导致的断崖式跳水（如 20+% -> 3%）
+  if (Array.isArray(messages) && messages.length > 0) {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i] as {
+        role?: string;
+        annotations?: Array<{ type?: unknown; promptTokens?: unknown }>;
+      } | null;
+      if (m && m.role === "assistant" && Array.isArray(m.annotations)) {
+        for (const a of m.annotations) {
+          if (
+            typeof a === "object" &&
+            a !== null &&
+            a.type === "finops_cost" &&
+            typeof a.promptTokens === "number" &&
+            Number.isFinite(a.promptTokens) &&
+            a.promptTokens > 0
+          ) {
+            return { promptTokens: a.promptTokens, window: windowSize };
+          }
+        }
+      }
+    }
+  }
+
+  // 5. 纯新会话首条消息发送但尚未获得 AI 回复时的启发式粗估
   if (Array.isArray(messages) && messages.length > 1) {
     const estimated = estimateMessagesTokens(messages);
     if (estimated > 0) {
       return { promptTokens: estimated, window: windowSize };
     }
   }
+
   return { promptTokens: 0, window: windowSize };
 }
 
@@ -126,6 +169,7 @@ export default function ChatDashboard() {
     activeProviderId,
     activeModel,
     activeModelConfig,
+    recentModels,
     switchActiveModel,
     saveProvider,
     deleteProvider,
@@ -349,11 +393,9 @@ export default function ChatDashboard() {
       // 仅在仍持有流式会话标记时落盘——标记被清空（切换/新建已停流）说明
       // 这条 finish 属于旧会话，静默丢弃，防止把 A 会话内容写进 B。
       const targetId = streamingSessionIdRef.current;
-      // 上下文用量：记录兜底值（当 StreamData 可用时优先消费真实单步值）
-      // 注意：options.usage 是 AI SDK 多步工具调用的【累计值】，只能用于展示兜底；
-      // 持久化锚点由服务端 handler 按最后一步单步实测写入（updateContext），
-      // 客户端不得再写——否则累计值覆盖实测锚点，后续剪枝判定与展示都会虚高
-      const promptTokens = options?.usage?.promptTokens;
+      // 上下文用量：记录兜底值（优先消费 StreamData 中的真实单步实测值，避免 AI SDK options.usage 的多步累加值）
+      const streamedUsage = lastContextUsageFromData(data);
+      const promptTokens = streamedUsage ?? options?.usage?.promptTokens;
       const validTokens =
         typeof promptTokens === "number" && Number.isFinite(promptTokens) && promptTokens > 0
           ? promptTokens
@@ -1162,6 +1204,7 @@ export default function ChatDashboard() {
                     activeModel={activeModel}
                     onSwitchModel={switchActiveModel}
                     onOpenSettings={handleOpenSettings}
+                    recentModels={recentModels}
                     variant="compact"
                   />
                 }

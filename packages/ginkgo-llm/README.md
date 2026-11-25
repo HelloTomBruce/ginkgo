@@ -49,7 +49,8 @@ enabledSources / activeSources（MCP 源摘要）/ sessions（会话上下文通
 - **流中继（StreamHub）**：后台续跑 + 多端重放续接 + 看门狗 + 终态 30s 保留窗
   （`reconnect=true` / `action=stop`）。
 - **三维熔断**：并发准入（`LLM_MAX_CONCURRENT_TASKS`，429）→ 租户配额（WS-11）→
-  任务 token 预算（`budget_exhausted` 终态 + 独立 abort，只取消 provider 不破坏流）。
+  任务 token 预算（可选，缺省不限制；启用后超限写 `budget_exhausted` 终态 +
+  独立 abort，只取消 provider 不破坏流）。
 - **上下文投影治理**：两阶段压缩（tool-result pruning → LLM 摘要缓存复用）；
   摘要提示词可注入（`summaryPromptBuilder`，缺省 harness-core 通用版）。
 - **finish_task 空跑防护**：证据标记命中（deliverable.evidenceMarkers，缺省

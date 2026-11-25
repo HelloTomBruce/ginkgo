@@ -510,6 +510,27 @@ export function createSessionStore(opts: { dir: string }): SessionStore {
     return record;
   }
 
+  // 并发写互斥锁（按会话 id 串行化写操作，彻底杜绝 updateContext 与 messages 保存并发无锁竞争导致 context 被冲刷覆盖）
+  const sessionWriteLocks = new Map<string, Promise<unknown>>();
+
+  async function runWithSessionLock<T>(id: string, fn: () => Promise<T>): Promise<T> {
+    const prev = sessionWriteLocks.get(id) ?? Promise.resolve();
+    let resolveNext!: () => void;
+    const next = new Promise<void>((r) => {
+      resolveNext = r;
+    });
+    sessionWriteLocks.set(id, next);
+    try {
+      await prev;
+      return await fn();
+    } finally {
+      resolveNext();
+      if (sessionWriteLocks.get(id) === next) {
+        sessionWriteLocks.delete(id);
+      }
+    }
+  }
+
   return {
     async list(options?: { appId?: string }) {
       const records = await readAll();
@@ -555,45 +576,49 @@ export function createSessionStore(opts: { dir: string }): SessionStore {
       if (!isValidId(id)) {
         return { ok: false, status: 404, errors: [`会话不存在: ${id}`] };
       }
-      const existing = await readRecord(`${id}.json`);
-      if (!existing) {
-        return { ok: false, status: 404, errors: [`会话不存在: ${id}`] };
-      }
-      const verdict = validateSessionFields(body);
-      if (!verdict.ok) return verdict;
-      const fields = verdict.value;
-      if (
-        fields.appId === undefined &&
-        fields.title === undefined &&
-        fields.messages === undefined &&
-        fields.enabledSources === undefined &&
-        fields.context === undefined &&
-        fields.planMode === undefined
-      ) {
-        return { ok: false, status: 400, errors: ["无可更新字段"] };
-      }
+      return runWithSessionLock(id, async () => {
+        const existing = await readRecord(`${id}.json`);
+        if (!existing) {
+          return { ok: false, status: 404, errors: [`会话不存在: ${id}`] };
+        }
+        const verdict = validateSessionFields(body);
+        if (!verdict.ok) return verdict;
+        const fields = verdict.value;
+        if (
+          fields.appId === undefined &&
+          fields.title === undefined &&
+          fields.messages === undefined &&
+          fields.enabledSources === undefined &&
+          fields.context === undefined &&
+          fields.planMode === undefined
+        ) {
+          return { ok: false, status: 400, errors: ["无可更新字段"] };
+        }
 
-      const record = applyOptionalFields(
-        { ...existing, updatedAt: Date.now() },
-        fields
-      );
-      await writeRecord(record);
-      return { ok: true, record };
+        const record = applyOptionalFields(
+          { ...existing, updatedAt: Date.now() },
+          fields
+        );
+        await writeRecord(record);
+        return { ok: true, record };
+      });
     },
 
     async remove(id) {
       if (!isValidId(id)) return false;
-      const record = await readRecord(`${id}.json`);
-      if (!record) return false;
-      try {
-        await fs.unlink(fileFor(id));
-        // 活跃指针指向被删会话时一并清除（调用方回落到列表首条）
-        const meta = await readMeta();
-        if (meta.activeId === id) await writeMeta(null);
-        return true;
-      } catch {
-        return false;
-      }
+      return runWithSessionLock(id, async () => {
+        const record = await readRecord(`${id}.json`);
+        if (!record) return false;
+        try {
+          await fs.unlink(fileFor(id));
+          // 活跃指针指向被删会话时一并清除（调用方回落到列表首条）
+          const meta = await readMeta();
+          if (meta.activeId === id) await writeMeta(null);
+          return true;
+        } catch {
+          return false;
+        }
+      });
     },
 
     async getActiveId() {

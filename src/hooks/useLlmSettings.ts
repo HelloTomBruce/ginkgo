@@ -14,6 +14,9 @@ import {
   PROVIDERS_STORAGE_KEY,
   ACTIVE_PROVIDER_STORAGE_KEY,
   ACTIVE_MODEL_STORAGE_KEY,
+  recordRecentModel,
+  getRecentModels,
+  type RecentModelItem,
 } from "@/lib/llmProviders";
 
 const STORAGE_KEYS = {
@@ -208,6 +211,10 @@ export function useLlmSettings() {
     setModel(chosenModel);
   }, []);
 
+  const [recentModels, setRecentModels] = useState<RecentModelItem[]>(() =>
+    getRecentModels()
+  );
+
   /**
    * 会话中切换活跃模型：直接按 providerId 与 modelName 切换
    */
@@ -219,6 +226,9 @@ export function useLlmSettings() {
       setActiveProviderId(nextProviderId);
       setActiveModel(nextModel);
       syncFromProvider(targetProvider, nextModel);
+
+      const updatedRecent = recordRecentModel(nextProviderId, nextModel);
+      setRecentModels(updatedRecent);
 
       if (typeof window !== "undefined") {
         localStorage.setItem(ACTIVE_PROVIDER_STORAGE_KEY, nextProviderId);
@@ -440,6 +450,7 @@ export function useLlmSettings() {
     activeContextWindow,
     activeMaxTokens,
     activeProvider,
+    recentModels,
     switchActiveModel,
     saveProvider,
     deleteProvider,

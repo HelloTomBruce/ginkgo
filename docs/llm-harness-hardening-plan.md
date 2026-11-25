@@ -139,7 +139,9 @@ task.deadlineTimer = setTimeout(() => {
 
 ```ts
 // AnalyzeRequestBody 新增可选 budgetTokens(服务端钳制上限兜底)
-const taskBudget = clamp(clientBudgetTokens ?? env LLM_TASK_TOKEN_BUDGET ?? 600_000, 10_000, 5_000_000);
+// 2026-11 变更：缺省值 600_000 改为 null(不限制)——仅显式配置(客户端 >0 或 env >0)时启用熔断
+const raw = clientBudgetTokens ?? env LLM_TASK_TOKEN_BUDGET ?? null;
+const taskBudget = raw !== null && raw > 0 ? clamp(raw, 10_000, 5_000_000) : null; // null = 不熔断,只计量
 
 // execute 闭包内累计
 let totalTokens = 0;
@@ -344,7 +346,7 @@ interface TaskStore {
 |---|---|---|
 | `LLM_TASK_TIMEOUT_MS` | 600000(钳 30s–60min) | WS-2 |
 | `LLM_STALL_TIMEOUT_MS` | 300000(二期) | WS-2 |
-| `LLM_TASK_TOKEN_BUDGET` | 600000(钳 10k–5M) | WS-3 |
+| `LLM_TASK_TOKEN_BUDGET` | 不限制（2026-11 变更：原缺省 600k 改为缺省关闭，显式给 >0 值启用，钳 10k–5M，≤0 视为不限制） | WS-3 |
 | `LLM_MAX_CONCURRENT_TASKS` | 8(钳 1–64) | WS-3 |
 | `LLM_TOOL_OUTPUT_MAX_BYTES` | 32768 | WS-5 |
 

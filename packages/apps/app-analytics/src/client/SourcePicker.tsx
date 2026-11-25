@@ -81,7 +81,7 @@ export function SourcePicker({
             ? "会话已开始，数据源选择已锁定"
             : "选择当前会话可用的数据源"
         }
-        className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs text-foreground-subtle hover:text-foreground hover:bg-surface-raised transition-colors cursor-pointer select-none"
+        className="flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-xs font-medium text-foreground-subtle hover:text-foreground hover:bg-surface-raised transition-colors cursor-pointer select-none"
       >
         {disabled ? (
           <Lock className="w-3.5 h-3.5 text-foreground-faint shrink-0" />

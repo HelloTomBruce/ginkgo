@@ -22,6 +22,7 @@
     "@ginkgo/datasources": "workspace:*",
     "@ginkgo/harness-core": "workspace:*",
     "@ginkgo/llm": "workspace:*",
+    "@ginkgo/models": "workspace:*",
     "@ginkgo/sandbox": "workspace:*",
     "@ginkgo-apps/analytics": "workspace:*",
     "@ginkgo-apps/design": "workspace:*",

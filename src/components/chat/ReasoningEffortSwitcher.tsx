@@ -100,7 +100,7 @@ export function ReasoningEffortSwitcher({
         aria-haspopup="listbox"
         aria-expanded={isOpen}
         aria-label={`推理等级：当前 ${currentOption.label}`}
-        className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium text-brand-fg bg-brand-soft hover:bg-brand-soft-strong transition-colors cursor-pointer select-none border border-brand-soft-strong shrink-0"
+        className="flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-xs font-medium text-brand-fg bg-brand-soft hover:bg-brand-soft-strong transition-colors cursor-pointer select-none border border-brand-soft-strong shrink-0"
       >
         <Sparkles className="w-3.5 h-3.5 text-brand-fg shrink-0" />
         <span>思考: {currentOption.shortLabel}</span>

@@ -503,7 +503,7 @@ export interface AnalyzeRequestBody {
   /**
    * 任务累计 token 预算（prompt+completion 总和）：
    * 超限时立即写入 budget_exhausted 终态并中止 provider 生成，防成本敞口失控。
-   * 缺省读 env LLM_TASK_TOKEN_BUDGET（缺省 600k），钳制 10k–5M。
+   * 缺省不限制；读 env LLM_TASK_TOKEN_BUDGET，显式给 >0 值启用（钳制 10k–5M），≤0 视为不限制。
    */
   budgetTokens?: number | string;
   /**
@@ -770,16 +770,22 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
           : defaultMaxSteps;
       const maxSteps = Math.min(Math.max(Math.round(rawMaxSteps), 1), 150);
 
-      // WS-3 任务累计 token 预算(prompt+completion 总和):超限即终态+中止,防成本敞口失控
-      const envTokenBudget = Number(process.env.LLM_TASK_TOKEN_BUDGET);
+      // WS-3 任务累计 token 预算(prompt+completion 总和):缺省不限制(null)。
+      // 客户端 budgetTokens 或 env LLM_TASK_TOKEN_BUDGET 显式给出 >0 值才启用限额
+      // (钳制 10k–5M),超限即终态+中止;显式给 ≤0 视为不限制(显式逃逸口)。
+      const envTokenBudgetRaw = process.env.LLM_TASK_TOKEN_BUDGET;
+      const envTokenBudget = Number(envTokenBudgetRaw);
       const parsedTokenBudget = Number(clientBudgetTokens);
       const rawTokenBudget =
         Number.isFinite(parsedTokenBudget) && clientBudgetTokens !== undefined && clientBudgetTokens !== ""
           ? parsedTokenBudget
-          : Number.isFinite(envTokenBudget) && envTokenBudget > 0
+          : envTokenBudgetRaw !== undefined && Number.isFinite(envTokenBudget)
             ? envTokenBudget
-            : 600_000;
-      const taskTokenBudget = Math.min(Math.max(Math.round(rawTokenBudget), 10_000), 5_000_000);
+            : null;
+      const taskTokenBudget =
+        rawTokenBudget !== null && rawTokenBudget > 0
+          ? Math.min(Math.max(Math.round(rawTokenBudget), 10_000), 5_000_000)
+          : null;
 
       // 安全约束：客户端自带 baseURL 时必须同时自带 apiKey。
       // 否则服务端会拿着 env 中的真实 Key 去请求客户端指定的任意 URL —— 凭证外泄通道。
@@ -1162,7 +1168,8 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
       // provider 生成,流自然收尾(客户端已收到 task_finish,订阅不得 error)
       const taskAbortController = new AbortController();
       const budgetAbortController = new AbortController();
-      // WS-3 累计 token 计量(prompt+completion 总和):超预算立即终态+中止
+      // WS-3 累计 token 计量(prompt+completion 总和):启用预算时超限立即终态+中止;
+      // 未配置预算(缺省)只计量不熔断
       let totalTokens = 0;
       let budgetExceeded = false;
 
@@ -1342,7 +1349,8 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
                       promptTokens: usage.promptTokens,
                     });
                   }
-                  // 累计预算熔断:超限写终态并中止 provider(客户端按既有 status=truncated 渲染)
+                  // 累计预算熔断(仅在显式配置预算时启用):超限写终态并中止 provider
+                  // (客户端按既有 status=truncated 渲染)
                   if (usage) {
                     const p =
                       typeof usage.promptTokens === "number" && Number.isFinite(usage.promptTokens)
@@ -1353,7 +1361,7 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
                         ? usage.completionTokens
                         : 0;
                     totalTokens += p + c;
-                    if (!budgetExceeded && totalTokens > taskTokenBudget) {
+                    if (taskTokenBudget !== null && !budgetExceeded && totalTokens > taskTokenBudget) {
                       budgetExceeded = true;
                       dataStream.writeData({
                         type: "task_finish",

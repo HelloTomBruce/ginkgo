@@ -167,6 +167,33 @@ describe("update 局部更新", () => {
     expect(missing.ok).toBe(false);
     if (!missing.ok) expect(missing.status).toBe(404);
   });
+
+  it("并发更新锁：并发更新 context 与 messages 时保证原子性，杜绝无锁覆盖丢失 context", async () => {
+    const created = await store.create({
+      messages: [{ id: "m1", role: "user", content: "hello" }],
+    });
+    if (!created.ok) throw new Error("seed failed");
+    const id = created.record.id;
+
+    // 并发触发两个 update：一个更新 context，另一个更新 messages
+    const [updateCtxRes, updateMsgRes] = await Promise.all([
+      store.update(id, { context: { lastPromptTokens: 33290 } }),
+      store.update(id, {
+        messages: [
+          { id: "m1", role: "user", content: "hello" },
+          { id: "m2", role: "assistant", content: "hi" },
+        ],
+      }),
+    ]);
+
+    expect(updateCtxRes.ok).toBe(true);
+    expect(updateMsgRes.ok).toBe(true);
+
+    const finalRecord = await store.get(id);
+    expect(finalRecord).not.toBeNull();
+    expect(finalRecord?.context?.lastPromptTokens).toBe(33290);
+    expect(finalRecord?.messages.length).toBe(2);
+  });
 });
 
 describe("remove 删除", () => {

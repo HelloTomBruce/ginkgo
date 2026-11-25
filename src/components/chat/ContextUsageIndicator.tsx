@@ -66,7 +66,7 @@ export function ContextUsageIndicator({
         tabIndex={0}
         role="status"
         aria-label={`上下文用量：${detailText}`}
-        className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs text-foreground-subtle hover:text-foreground hover:bg-surface-raised transition-colors cursor-pointer select-none ${className}`}
+        className={`flex items-center gap-1.5 h-8 px-2 rounded-lg text-xs font-medium text-foreground-subtle hover:text-foreground hover:bg-surface-raised transition-colors cursor-pointer select-none ${className}`}
       >
         <svg
           className="w-3.5 h-3.5 -rotate-90 shrink-0"

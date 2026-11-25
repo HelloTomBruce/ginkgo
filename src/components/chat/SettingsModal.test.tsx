@@ -316,6 +316,16 @@ describe("SettingsModal 协议类型", () => {
 });
 
 describe("SettingsModal 多 Provider 管理能力（参考 dsh）", () => {
+  beforeEach(() => {
+    vi.stubGlobal("fetch", fetchMock);
+    fetchMock.mockClear();
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
   const MOCK_PROVIDERS: ConfiguredProvider[] = [
     {
       id: "deepseek",
@@ -495,6 +505,53 @@ describe("SettingsModal 多 Provider 管理能力（参考 dsh）", () => {
         ]),
       })
     );
+  });
+
+  it("点击「测试连接」按钮发起 /api/models/probe 探测并在成功时展示成功状态", async () => {
+    fetchMock.mockImplementation(async (url: string) => {
+      if (typeof url === "string" && url.includes("/api/models/probe")) {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            latencyMs: 120,
+            message: "连接成功 (120ms)",
+          }),
+        };
+      }
+      return { ok: true, json: async () => ({}) };
+    });
+
+    renderModal({
+      providers: MOCK_PROVIDERS,
+      onSaveProvider: vi.fn(),
+    });
+
+    // 点击编辑 DeepSeek
+    const editBtns = screen.getAllByRole("button", { name: "编辑" });
+    fireEvent.click(editBtns[0]);
+
+    const testBtn = screen.getByRole("button", { name: /测试连接/ });
+    expect(testBtn).toBeInTheDocument();
+    fireEvent.click(testBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText(/连接成功 \(120ms\)/)).toBeInTheDocument();
+    });
+  });
+
+  it("支持切换 API Key 显示明文与暗文", () => {
+    renderModal();
+    const apiKeyInput = screen.getByLabelText("API Key") as HTMLInputElement;
+    expect(apiKeyInput.type).toBe("password");
+
+    const toggleBtn = screen.getByRole("button", { name: "显示密钥" });
+    fireEvent.click(toggleBtn);
+    expect(apiKeyInput.type).toBe("text");
+
+    const hideBtn = screen.getByRole("button", { name: "隐藏密钥" });
+    fireEvent.click(hideBtn);
+    expect(apiKeyInput.type).toBe("password");
   });
 });
 

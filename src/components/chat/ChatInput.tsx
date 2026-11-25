@@ -86,7 +86,7 @@ export function ChatInput({
     <div className="no-print p-4 bg-card border-t border-border">
       <form onSubmit={onSubmit} className="max-w-4xl mx-auto">
         {/* 输入框容器：边框/聚焦环在容器上，内部为 textarea + 底部工具行 */}
-        <div className="bg-surface-sunken border border-border rounded-2xl focus-within:ring-2 focus-within:ring-ring focus-within:border-ring transition-all">
+        <div className="bg-surface-sunken/60 border border-border rounded-2xl shadow-xs focus-within:ring-2 focus-within:ring-ring focus-within:border-ring transition-all">
           <textarea
             ref={textareaRef}
             rows={1}
@@ -101,15 +101,15 @@ export function ChatInput({
                   : "Build 模式：直接执行任务并输出最终交付产物...（Enter 发送，Shift+Enter 换行）"
             }
             disabled={isLoading}
-            className="w-full bg-transparent px-4 pt-3.5 pb-1 text-sm leading-6 placeholder:text-foreground-faint focus:outline-none resize-none disabled:opacity-50 overflow-y-auto"
+            className="w-full bg-transparent px-4 pt-3.5 pb-2 text-sm leading-6 placeholder:text-foreground-faint focus:outline-none resize-none disabled:opacity-50 overflow-y-auto"
             style={{ maxHeight: TEXTAREA_MAX_HEIGHT }}
           />
           {/* 底部工具行：左侧「Plan / Build 模式切换」+ 模型切换 + 数据源切换 + 上下文进度，右发送按钮 */}
-          <div className="flex items-center justify-between px-3 pb-2.5 pt-1 gap-2">
+          <div className="flex items-end justify-between px-3 pb-2.5 pt-2 gap-2">
             <div className="flex items-center gap-1.5 flex-wrap min-w-0">
               {/* Plan / Build 模式选择器 */}
               <div
-                className="flex items-center p-0.5 bg-surface-sunken border border-border/80 rounded-lg text-xs"
+                className="flex items-center h-8 p-0.5 bg-surface-sunken border border-border/80 rounded-lg text-xs"
                 role="group"
                 aria-label="模式切换"
               >
@@ -119,7 +119,7 @@ export function ChatInput({
                     aria-label="Plan (先出思路)"
                     aria-pressed={isPlan}
                     onClick={() => handleToggleMode(isPlan ? "build" : "plan")}
-                    className={`flex items-center gap-1 px-2 py-0.5 rounded-md font-medium transition-colors cursor-pointer select-none ${
+                    className={`flex items-center h-full gap-1 px-2.5 rounded-md text-xs font-medium transition-colors cursor-pointer select-none ${
                       isPlan
                         ? "bg-card text-info-fg shadow-2xs font-semibold"
                         : "text-foreground-faint hover:text-foreground-subtle"
@@ -135,7 +135,7 @@ export function ChatInput({
                     aria-label="Build (直接构建)"
                     aria-pressed={!isPlan}
                     onClick={() => handleToggleMode(isPlan ? "build" : "plan")}
-                    className={`flex items-center gap-1 px-2 py-0.5 rounded-md font-medium transition-colors cursor-pointer select-none ${
+                    className={`flex items-center h-full gap-1 px-2.5 rounded-md text-xs font-medium transition-colors cursor-pointer select-none ${
                       !isPlan
                         ? "bg-card text-foreground shadow-2xs font-semibold"
                         : "text-foreground-faint hover:text-foreground-subtle"
@@ -152,13 +152,13 @@ export function ChatInput({
               {sourcePickerNode}
               {contextUsageNode}
             </div>
-            <div className="shrink-0">
+            <div className="shrink-0 flex items-center">
               {isLoading ? (
                 <button
                   type="button"
                   onClick={onStop}
                   aria-label="停止生成"
-                  className="bg-danger-solid hover:bg-danger-solid-hover text-white rounded-xl px-4 py-2 text-sm font-medium transition-colors flex items-center gap-1.5 shadow-xs cursor-pointer select-none"
+                  className="h-8 px-3.5 bg-danger-solid hover:bg-danger-solid-hover text-white rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5 shadow-xs cursor-pointer select-none"
                 >
                   <Square className="w-3.5 h-3.5 fill-current" />
                   <span>停止</span>
@@ -167,9 +167,9 @@ export function ChatInput({
                 <button
                   type="submit"
                   disabled={!input.trim()}
-                  className="bg-info-solid hover:bg-info-solid-hover text-white rounded-xl px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 shadow-xs"
+                  className="h-8 px-3.5 bg-info-solid hover:bg-info-solid-hover text-white rounded-lg text-xs font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5 shadow-xs cursor-pointer select-none"
                 >
-                  <Send className="w-4 h-4" />
+                  <Send className="w-3.5 h-3.5" />
                   <span>发送</span>
                 </button>
               )}

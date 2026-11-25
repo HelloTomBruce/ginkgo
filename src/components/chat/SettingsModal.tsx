@@ -16,6 +16,9 @@ import {
   ShieldCheck,
   Sparkles,
   Settings2,
+  Eye,
+  EyeOff,
+  Check,
   icons,
 } from "lucide-react";
 import type { AppSettingsSectionSpec } from "@ginkgo/app-sdk";
@@ -209,6 +212,92 @@ function EndpointFields({
   );
 }
 
+/** 连通性测试按钮组件（复用轻量 probe 接口，提供实时反馈与延迟） */
+function TestConnectionButton({
+  baseURL,
+  apiKey,
+  protocol,
+  model,
+  className = "",
+}: {
+  baseURL: string;
+  apiKey: string;
+  protocol: "openai" | "anthropic";
+  model?: string;
+  className?: string;
+}) {
+  const [probing, setProbing] = useState(false);
+  const [probeResult, setProbeResult] = useState<{
+    ok: boolean;
+    latencyMs?: number;
+    message?: string;
+    error?: string;
+  } | null>(null);
+
+  const handleProbe = async () => {
+    if (!baseURL || !baseURL.trim()) {
+      setProbeResult({ ok: false, error: "请先填写 API 地址" });
+      return;
+    }
+    setProbing(true);
+    setProbeResult(null);
+    try {
+      const res = await fetch("/api/models/probe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          baseURL: baseURL.trim(),
+          apiKey: apiKey ? apiKey.trim() : "",
+          protocol,
+          model: model || undefined,
+        }),
+      });
+      const data = await res.json();
+      setProbeResult(data);
+    } catch {
+      setProbeResult({ ok: false, error: "网络请求异常，无法连接" });
+    } finally {
+      setProbing(false);
+    }
+  };
+
+  return (
+    <div className={`inline-flex items-center gap-2 flex-wrap ${className}`}>
+      <button
+        type="button"
+        onClick={handleProbe}
+        disabled={probing}
+        className="px-2.5 py-1 rounded-lg border border-border bg-card hover:bg-muted text-xs font-medium text-foreground-subtle hover:text-foreground flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+      >
+        <Zap className={`w-3.5 h-3.5 ${probing ? "animate-spin text-warning-fg" : "text-info-fg"}`} />
+        <span>{probing ? "探测中..." : "测试连接"}</span>
+      </button>
+
+      {probeResult && (
+        <span
+          className={`text-[11px] px-2 py-0.5 rounded-md flex items-center gap-1 font-mono ${
+            probeResult.ok
+              ? "bg-success-soft text-success-fg border border-success-border"
+              : "bg-danger-soft text-danger-fg border border-danger-border"
+          }`}
+        >
+          {probeResult.ok ? (
+            <>
+              <Check className="w-3 h-3 text-success-fg shrink-0" />
+              <span>{probeResult.message || `连接成功 (${probeResult.latencyMs}ms)`}</span>
+            </>
+          ) : (
+            <>
+              <X className="w-3 h-3 text-danger-fg shrink-0" />
+              <span className="truncate max-w-xs">{probeResult.error || "连接失败"}</span>
+            </>
+          )}
+        </span>
+      )}
+    </div>
+  );
+}
+
 /** 动态模型目录管理器（支持模型绑定的上下文窗口容量与最大输出 Tokens） */
 function ModelCatalogEditor({
   models,
@@ -231,6 +320,7 @@ function ModelCatalogEditor({
   const [modelInputCtx, setModelInputCtx] = useState("");
   const [modelInputMaxTokens, setModelInputMaxTokens] = useState("");
   const [modelInputSupportsReasoning, setModelInputSupportsReasoning] = useState(false);
+  const [modelInputEnabled, setModelInputEnabled] = useState(true);
 
   const [fetching, setFetching] = useState(false);
   const [fetchNotice, setFetchNotice] = useState<string | null>(null);
@@ -242,6 +332,7 @@ function ModelCatalogEditor({
     setModelInputCtx("");
     setModelInputMaxTokens("");
     setModelInputSupportsReasoning(false);
+    setModelInputEnabled(true);
   };
 
   const handleStartEdit = (index: number) => {
@@ -256,6 +347,7 @@ function ModelCatalogEditor({
         ? item.supportsReasoning
         : isReasoningModel(item.id)
     );
+    setModelInputEnabled(item.enabled !== false);
   };
 
   const handleCancelEdit = () => {
@@ -265,6 +357,7 @@ function ModelCatalogEditor({
     setModelInputCtx("");
     setModelInputMaxTokens("");
     setModelInputSupportsReasoning(false);
+    setModelInputEnabled(true);
   };
 
   const handleSaveModelItem = () => {
@@ -276,6 +369,7 @@ function ModelCatalogEditor({
       ...(modelInputCtx.trim() ? { contextWindow: modelInputCtx.trim() } : {}),
       ...(modelInputMaxTokens.trim() ? { maxTokens: modelInputMaxTokens.trim() } : {}),
       supportsReasoning: modelInputSupportsReasoning,
+      enabled: modelInputEnabled,
     };
 
     if (editingIndex !== null) {
@@ -491,6 +585,25 @@ function ModelCatalogEditor({
                   placeholder="留空自动推断（如 128000）"
                   className="w-full p-2 rounded-lg border border-border bg-card font-mono text-xs"
                 />
+                <div className="flex items-center gap-1 mt-1 flex-wrap">
+                  <span className="text-[10px] text-foreground-faint">常用:</span>
+                  {[
+                    { label: "32k", val: "32000" },
+                    { label: "64k", val: "64000" },
+                    { label: "128k", val: "128000" },
+                    { label: "200k", val: "200000" },
+                    { label: "1M", val: "1000000" },
+                  ].map((p) => (
+                    <button
+                      key={p.label}
+                      type="button"
+                      onClick={() => setModelInputCtx(p.val)}
+                      className="text-[10px] px-1.5 py-0.2 rounded bg-surface-raised hover:bg-muted border border-border-subtle text-foreground-subtle cursor-pointer transition-colors"
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
               </div>
               <div>
                 <label htmlFor="model-input-max-tokens" className="block text-[11px] text-muted-foreground mb-1 font-medium">
@@ -507,6 +620,25 @@ function ModelCatalogEditor({
                   placeholder="留空走默认（如 16384）"
                   className="w-full p-2 rounded-lg border border-border bg-card font-mono text-xs"
                 />
+                <div className="flex items-center gap-1 mt-1 flex-wrap">
+                  <span className="text-[10px] text-foreground-faint">常用:</span>
+                  {[
+                    { label: "4k", val: "4096" },
+                    { label: "8k", val: "8192" },
+                    { label: "16k", val: "16384" },
+                    { label: "32k", val: "32768" },
+                    { label: "64k", val: "65536" },
+                  ].map((p) => (
+                    <button
+                      key={p.label}
+                      type="button"
+                      onClick={() => setModelInputMaxTokens(p.val)}
+                      className="text-[10px] px-1.5 py-0.2 rounded bg-surface-raised hover:bg-muted border border-border-subtle text-foreground-subtle cursor-pointer transition-colors"
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
 
@@ -531,6 +663,24 @@ function ModelCatalogEditor({
                     勾选后在输入框支持选择思考预算（Low / Medium / High）并锁定采样温度
                   </div>
                 </div>
+              </label>
+            </div>
+
+            <div>
+              <label
+                htmlFor="model-input-enabled"
+                className="flex items-center gap-2 p-2 rounded-lg border border-border bg-card cursor-pointer hover:bg-muted select-none transition-colors"
+              >
+                <input
+                  id="model-input-enabled"
+                  type="checkbox"
+                  checked={modelInputEnabled}
+                  onChange={(e) => setModelInputEnabled(e.target.checked)}
+                  className="rounded border-border text-info-fg focus:ring-ring w-4 h-4 cursor-pointer"
+                />
+                <span className="text-xs font-medium text-foreground">
+                  在快捷模型选择器中展示此模型
+                </span>
               </label>
             </div>
           </div>
@@ -608,6 +758,10 @@ export function SettingsModal({
   const [addMode, setAddMode] = useState<"preset" | "custom">("preset");
   // 确认删除的目标 Provider ID（行内二次确认，不调浏览器原生 confirm）
   const [deletingProviderId, setDeletingProviderId] = useState<string | null>(null);
+
+  // 密码明暗文切换状态
+  const [showFormApiKey, setShowFormApiKey] = useState(false);
+  const [showSingleApiKey, setShowSingleApiKey] = useState(false);
 
   // 按厂商/服务类别分组内置预设
   const groupedPresets = React.useMemo(() => {
@@ -896,15 +1050,41 @@ export function SettingsModal({
                           </span>
                         )}
                       </label>
-                      <input
-                        type="password"
-                        value={formApiKey}
-                        onChange={(e) => setFormApiKey(e.target.value)}
-                        placeholder={
-                          isAddingNew ? "输入 API 密钥 (sk-...)" : "留空使用已保存凭据"
-                        }
-                        className="w-full p-2.5 rounded-lg border border-border bg-card font-mono text-xs"
-                      />
+                      <div className="relative flex items-center">
+                        <input
+                          type={showFormApiKey ? "text" : "password"}
+                          value={formApiKey}
+                          onChange={(e) => setFormApiKey(e.target.value)}
+                          placeholder={
+                            isAddingNew ? "输入 API 密钥 (sk-...)" : "留空使用已保存凭据"
+                          }
+                          className="w-full p-2.5 pr-9 rounded-lg border border-border bg-card font-mono text-xs"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowFormApiKey(!showFormApiKey)}
+                          className="absolute right-2.5 text-foreground-faint hover:text-foreground p-0.5 cursor-pointer"
+                          title={showFormApiKey ? "隐藏密钥" : "显示密钥"}
+                          aria-label={showFormApiKey ? "隐藏密钥" : "显示密钥"}
+                        >
+                          {showFormApiKey ? (
+                            <EyeOff className="w-3.5 h-3.5" />
+                          ) : (
+                            <Eye className="w-3.5 h-3.5" />
+                          )}
+                        </button>
+                      </div>
+                      <div className="flex items-center justify-between pt-1.5 flex-wrap gap-2">
+                        <TestConnectionButton
+                          baseURL={formBaseURL}
+                          apiKey={formApiKey}
+                          protocol={formProtocol}
+                          model={formModels[0] ? getModelId(formModels[0]) : undefined}
+                        />
+                        <span className="text-[10px] text-foreground-faint">
+                          凭证保存在本地浏览器存储中
+                        </span>
+                      </div>
                     </div>
 
                     {/* 折叠区 / 基础 API 与模型配置 */}
@@ -1159,14 +1339,37 @@ export function SettingsModal({
                     <Key className="w-3.5 h-3.5" />
                     <span>API Key</span>
                   </label>
-                  <input
-                    id="settings-api-key"
-                    type="password"
-                    value={apiKey}
-                    onChange={(e) => onApiKeyChange(e.target.value)}
-                    placeholder={preset?.keyHint ?? "sk-..."}
-                    className="w-full p-2.5 rounded-lg border border-border bg-surface-sunken font-mono"
-                  />
+                  <div className="relative flex items-center">
+                    <input
+                      id="settings-api-key"
+                      type={showSingleApiKey ? "text" : "password"}
+                      value={apiKey}
+                      onChange={(e) => onApiKeyChange(e.target.value)}
+                      placeholder={preset?.keyHint ?? "sk-..."}
+                      className="w-full p-2.5 pr-9 rounded-lg border border-border bg-surface-sunken font-mono"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowSingleApiKey(!showSingleApiKey)}
+                      className="absolute right-2.5 text-foreground-faint hover:text-foreground p-0.5 cursor-pointer"
+                      title={showSingleApiKey ? "隐藏密钥" : "显示密钥"}
+                      aria-label={showSingleApiKey ? "隐藏密钥" : "显示密钥"}
+                    >
+                      {showSingleApiKey ? (
+                        <EyeOff className="w-3.5 h-3.5" />
+                      ) : (
+                        <Eye className="w-3.5 h-3.5" />
+                      )}
+                    </button>
+                  </div>
+                  <div className="pt-2">
+                    <TestConnectionButton
+                      baseURL={baseURL}
+                      apiKey={apiKey}
+                      protocol={protocol}
+                      model={model}
+                    />
+                  </div>
                 </div>
 
                 <div>

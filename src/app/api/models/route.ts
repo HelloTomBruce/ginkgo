@@ -40,24 +40,30 @@ export async function POST(req: Request) {
     const candidateUrls: string[] = [];
 
     if (protocol === "anthropic") {
-      candidateUrls.push(`${cleanBaseURL}/models`);
       if (apiKey) {
         headers["x-api-key"] = apiKey;
         headers["anthropic-version"] = "2023-06-01";
       }
-    } else {
       if (cleanBaseURL.endsWith("/models")) {
         candidateUrls.push(cleanBaseURL);
-      } else {
+      } else if (cleanBaseURL.endsWith("/v1")) {
         candidateUrls.push(`${cleanBaseURL}/models`);
-        if (cleanBaseURL.endsWith("/v1")) {
-          candidateUrls.push(`${cleanBaseURL.replace(/\/v1$/, "")}/models`);
-        } else if (!cleanBaseURL.includes("/v")) {
-          candidateUrls.push(`${cleanBaseURL}/v1/models`);
-        }
+      } else {
+        candidateUrls.push(`${cleanBaseURL}/v1/models`);
+        candidateUrls.push(`${cleanBaseURL}/models`);
       }
+    } else {
       if (apiKey) {
         headers["Authorization"] = `Bearer ${apiKey}`;
+      }
+      if (cleanBaseURL.endsWith("/models")) {
+        candidateUrls.push(cleanBaseURL);
+      } else if (cleanBaseURL.endsWith("/v1")) {
+        candidateUrls.push(`${cleanBaseURL}/models`);
+        candidateUrls.push(`${cleanBaseURL.replace(/\/v1$/, "")}/models`);
+      } else {
+        candidateUrls.push(`${cleanBaseURL}/v1/models`);
+        candidateUrls.push(`${cleanBaseURL}/models`);
       }
     }
 
