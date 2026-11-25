@@ -52,3 +52,7 @@ designs
 
 # 本地 agent/编辑器会话目录
 .zcode/
+
+# VitePress 文档站构建产物与缓存
+docs/.vitepress/dist/
+docs/.vitepress/cache/

@@ -1,0 +1,86 @@
+/**
+ * Ginkgo 文档站品牌色 —— 与产品主题同源（src/app/globals.css 的 brand 岩石墨紫，
+ * oklch(50% 0.10 290)），亮暗双套覆写 VitePress 默认主色。
+ */
+
+:root {
+  --vp-c-brand-1: oklch(50% 0.1 290);
+  --vp-c-brand-2: oklch(44% 0.09 290);
+  --vp-c-brand-3: oklch(38% 0.08 290);
+  --vp-c-brand-soft: oklch(95% 0.018 290);
+
+  --vp-home-hero-name-color: transparent;
+  --vp-home-hero-name-background: linear-gradient(
+    120deg,
+    oklch(50% 0.1 290) 30%,
+    oklch(60% 0.15 320) 70%
+  );
+
+  --vp-home-hero-image-background-image: linear-gradient(
+    -45deg,
+    oklch(75% 0.09 290 / 0.6) 30%,
+    oklch(78% 0.12 320 / 0.6) 70%
+  );
+  --vp-home-hero-image-filter: blur(56px);
+}
+
+.dark {
+  --vp-c-brand-1: oklch(72% 0.09 290);
+  --vp-c-brand-2: oklch(62% 0.1 290);
+  --vp-c-brand-3: oklch(52% 0.1 290);
+  --vp-c-brand-soft: oklch(30% 0.04 290 / 0.35);
+}
+
+/* ============ 自定义落地页：全出血重置（layout: page + pageClass） ============ */
+/* 注意：pageClass 落在 .Layout（包裹导航），重置必须限定在 .VPContent 内，避免命中 VPNavBar 的 flex .container */
+.ginkgo-landing .vp-doc {
+  padding: 0 !important;
+  max-width: none !important;
+}
+
+.ginkgo-landing .VPContent .container,
+.ginkgo-landing .VPContent .content,
+.ginkgo-landing .VPContent .content-container {
+  max-width: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  display: block !important;
+}
+
+/* 落地页自带视觉收尾，隐藏文档页脚（编辑链接/上下页） */
+.ginkgo-landing .VPDocFooter {
+  display: none;
+}
+
+/* 落地页导航融入暖纸 hero：半透明纸色毛玻璃（仅本页覆写组件变量） */
+.ginkgo-landing {
+  --vp-nav-bg-color: oklch(96.8% 0.014 92 / 0.82);
+  --vp-nav-divider-color: oklch(28% 0.02 75 / 0.14);
+  background: oklch(96.8% 0.014 92);
+}
+
+.ginkgo-landing .VPContent {
+  background: oklch(96.8% 0.014 92);
+}
+
+/* 落地页页脚同步暖纸色 */
+.ginkgo-landing .VPFooter {
+  background: oklch(96.8% 0.014 92);
+  border-top: 1px solid oklch(28% 0.02 75 / 0.14);
+}
+
+.ginkgo-landing .VPNavBar {
+  backdrop-filter: blur(14px);
+  border-bottom: 1px solid oklch(28% 0.02 75 / 0.1);
+}
+
+/* 首页特性卡 hover 微调 */
+.VPFeature {
+  transition:
+    border-color 0.25s,
+    background-color 0.25s;
+}
+
+.VPFeature:hover {
+  border-color: var(--vp-c-brand-1);
+}

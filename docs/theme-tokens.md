@@ -1,6 +1,6 @@
 # 主题 Token 体系与迁移映射表
 
-本项目的所有颜色事实来源是 [`src/app/globals.css`](../src/app/globals.css)。
+本项目的所有颜色事实来源是 [`src/app/globals.css`](https://github.com/HelloTomBruce/ginkgo/blob/main/src/app/globals.css)。
 业务代码禁止出现 `bg-slate-*` / `text-blue-*` 这类具体色板类，一律使用下表 token 类。
 暗色模式跟随系统 `prefers-color-scheme`（无手动开关），亮暗两套值都定义在 globals.css 中。
 

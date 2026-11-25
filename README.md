@@ -1,6 +1,10 @@
 # Ginkgo
 
+[![文档站](https://img.shields.io/badge/docs-GitHub%20Pages-6750a4)](https://hellotombruce.github.io/ginkgo/)
+
 **Ginkgo 智能体应用平台**：统一对话宿主 + 可插拔应用体系 + 平台级 Agent 运行底座。
+
+> 📖 落地页与完整文档：<https://hellotombruce.github.io/ginkgo/>
 
 用自然语言提问，由 LLM 编排 **PostgreSQL / MySQL / SQLite / ClickHouse / GitLab / 禅道 / 文件（CSV·Excel → DuckDB）** 多路数据源取数，流式生成**看板 DSL** 声明式可视化界面（KPI 卡、漏斗、热力图、雷达图、预算模拟器等）并实时渲染。**数据分析（analytics）**、**体验设计（design）** 与 **通用助手（general）** 是平台内置的标准应用——新应用接入零宿主改动，见 [docs/app-integration-guide.md](docs/app-integration-guide.md)。
 
@@ -212,7 +216,17 @@ pnpm test         # Vitest 全仓测试
 pnpm lint         # ESLint
 pnpm typecheck    # tsc --noEmit
 pnpm build        # 生产构建
+pnpm docs:dev     # 文档站本地预览（VitePress）
+pnpm docs:build   # 文档站构建（产物 docs/.vitepress/dist）
 ```
+
+## 文档站（GitHub Pages）
+
+落地页与完整文档托管在 <https://hellotombruce.github.io/ginkgo/>，由 [docs/](docs/) 下的 VitePress 站点构建。push 到 `main` 且涉及 `docs/**` 变更时，`.github/workflows/deploy-pages.yml` 自动构建并发布。
+
+**首次启用需在仓库设置中配置一次**：Settings → Pages → Build and deployment → Source 选择 **GitHub Actions**（非 Deploy from a branch）。
+
+本地预览：`pnpm docs:dev`（默认 <http://localhost:5173/ginkgo/>）。
 
 ## 安全说明
 

@@ -6,5 +6,6 @@ allowBuilds:
   '@openuidev/lang-core': true
   core-js: true
   duckdb: true
+  esbuild: true
   sharp: false
   unrs-resolver: false

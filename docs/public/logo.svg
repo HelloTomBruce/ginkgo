@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <!-- 银杏叶：宽扁扇形（椭圆扇区 185°→-5°）+ 双圆丘叶瓣 + biloba 深裂口 + 放射叶脉 + 叶柄 -->
+  <defs>
+    <linearGradient id="leaf" x1="32" y1="12" x2="32" y2="48" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="oklch(58% 0.11 290)"/>
+      <stop offset="1" stop-color="oklch(46% 0.1 290)"/>
+    </linearGradient>
+    <clipPath id="bladeClip">
+      <path
+        d="M32 44
+           L2.1 46.2
+           A30 28 0 0 1 21.7 17.7
+           L29.5 22.8
+           Q32 27.5 34.5 22.8
+           L42.3 17.7
+           A30 28 0 0 1 61.9 46.2
+           Z"
+      />
+    </clipPath>
+  </defs>
+
+  <!-- 叶柄 -->
+  <path d="M32 44 L31 60" stroke="oklch(42% 0.09 290)" stroke-width="2.6" stroke-linecap="round"/>
+
+  <!-- 叶瓣：左下缘 → 左外弧（左圆丘）→ 圆底深裂口 → 右外弧（右圆丘）→ 右下缘 -->
+  <path
+    d="M32 44
+       L2.1 46.2
+       A30 28 0 0 1 21.7 17.7
+       L29.5 22.8
+       Q32 27.5 34.5 22.8
+       L42.3 17.7
+       A30 28 0 0 1 61.9 46.2
+       Z"
+    fill="url(#leaf)"
+  />
+
+  <!-- 放射叶脉（六脉，以裂口为中轴对称；clip 保证不溢出叶缘） -->
+  <g stroke="oklch(85% 0.03 290)" stroke-width="1.1" stroke-linecap="round" opacity="0.55" clip-path="url(#bladeClip)">
+    <path d="M32 44 L8.1 31.1"/>
+    <path d="M32 44 L16.2 22.9"/>
+    <path d="M32 44 L24.9 19.1"/>
+    <path d="M32 44 L39.1 19.1"/>
+    <path d="M32 44 L47.8 22.9"/>
+    <path d="M32 44 L55.9 31.1"/>
+  </g>
+</svg>
