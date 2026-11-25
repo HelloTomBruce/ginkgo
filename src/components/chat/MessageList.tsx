@@ -86,6 +86,8 @@ interface MessageItemProps {
   /** 看板工具条标题与导出能力（能力注入：由当前应用声明） */
   dashboardTitle?: string;
   dashboardExportEnabled?: boolean;
+  /** 应用声明的看板组件库（应用看板扩展点：未声明时关闭看板提取与渲染） */
+  dashboardLibrary?: unknown;
   /** 消息区扩展声明（规划确认/终态兜底/过渡文案），宿主零应用语义渲染 */
   messageExtensions?: AppMessageExtensions;
   /** 工具调用渲染器配置映射（应用声明注入） */
@@ -236,6 +238,7 @@ const MessageItem = React.memo(function MessageItem({
   onPrintDashboard,
   dashboardTitle,
   dashboardExportEnabled = false,
+  dashboardLibrary,
   messageExtensions,
   toolRenderers,
   approvalRules,
@@ -270,6 +273,7 @@ const MessageItem = React.memo(function MessageItem({
     // 控制面工具（编排层协议，非业务操作）：不出现在用户可见的工具时间线。
     // finishSummary 等数据层消费仍走 rawMsg.toolInvocations，不受此渲染过滤影响。
     const CONTROL_PLANE_TOOLS = new Set(["finish_task"]);
+    const supportsDashboard = Boolean(dashboardLibrary);
 
     // 1. 若存在 AI SDK 的 parts 数组，按真实执行流构建交错分块
     if (Array.isArray(parts) && parts.length > 0) {
@@ -301,7 +305,9 @@ const MessageItem = React.memo(function MessageItem({
         } else {
           flushTools();
           if (part.type === "text" && typeof part.text === "string") {
-            const { textPart, uiSpecPart, isClosed } = extractUiSpec(part.text);
+            const { textPart, uiSpecPart, isClosed } = supportsDashboard
+              ? extractUiSpec(part.text)
+              : { textPart: part.text, uiSpecPart: "", isClosed: true };
             result.push({
               type: "text",
               id: `text-${idx}`,
@@ -327,7 +333,9 @@ const MessageItem = React.memo(function MessageItem({
     }
 
     // 2. 兜底回退：兼容无 parts 消息（历史会话或非流式消息）
-    const { textPart, uiSpecPart, isClosed } = extractUiSpec(rawContent);
+    const { textPart, uiSpecPart, isClosed } = supportsDashboard
+      ? extractUiSpec(rawContent)
+      : { textPart: rawContent, uiSpecPart: "", isClosed: true };
     const result: ContentBlock[] = [];
     const visibleTools = toolInvocations?.filter(
       (t) => !CONTROL_PLANE_TOOLS.has(t.toolName)
@@ -350,7 +358,7 @@ const MessageItem = React.memo(function MessageItem({
       });
     }
     return result;
-  }, [rawContent, parts, toolInvocations]);
+  }, [rawContent, parts, toolInvocations, dashboardLibrary]);
 
   if (msg.role === "user") {
     return (
@@ -611,6 +619,7 @@ const MessageItem = React.memo(function MessageItem({
                     content={block.uiSpecPart}
                     isStreaming={isStreaming && block.isLast}
                     onAction={onRendererAction}
+                    library={dashboardLibrary}
                   />
 
                   {/* 截断兜底引导：由于达到 Token 长度限制中途截断时，提示用户并提供一键续写按钮 */}
@@ -763,6 +772,8 @@ interface MessageListProps {
   dashboardTitle?: string;
   /** 看板导出 PDF 能力开关（能力注入：未开启时不渲染导出按钮） */
   dashboardExportEnabled?: boolean;
+  /** 应用声明的看板组件库（应用看板扩展点：未声明时关闭看板提取与渲染） */
+  dashboardLibrary?: unknown;
   /** 消息区扩展声明（规划确认/终态兜底/过渡文案），宿主零应用语义渲染 */
   messageExtensions?: AppMessageExtensions;
   /** 工具调用渲染器配置映射（应用声明注入） */
@@ -795,6 +806,7 @@ export function MessageList({
   onPinDashboard,
   dashboardTitle,
   dashboardExportEnabled,
+  dashboardLibrary,
   messageExtensions,
   toolRenderers,
   approvalRules,
@@ -966,7 +978,7 @@ export function MessageList({
 
   const handleFavoriteDashboard = useCallback(
     async (msgId: string) => {
-      if (!onFavoriteDashboard) return;
+      if (!onFavoriteDashboard || !dashboardLibrary) return;
       const idx = messages.findIndex((m) => m.id === msgId);
       if (idx < 0) return;
       const { uiSpecPart } = extractUiSpec(messages[idx].content);
@@ -1031,7 +1043,7 @@ export function MessageList({
         setPendingFavoriteId(null);
       }
     },
-    [messages, onFavoriteDashboard, favoritedMessageIds, activeSources]
+    [messages, onFavoriteDashboard, favoritedMessageIds, activeSources, dashboardLibrary]
   );
 
   useEffect(() => {
@@ -1073,6 +1085,7 @@ export function MessageList({
           onPinDashboard={onPinDashboard}
           dashboardTitle={dashboardTitle}
           dashboardExportEnabled={dashboardExportEnabled}
+          dashboardLibrary={dashboardLibrary}
           messageExtensions={messageExtensions}
           toolRenderers={toolRenderers}
           approvalRules={approvalRules}

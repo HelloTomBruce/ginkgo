@@ -35,6 +35,8 @@ interface UiSpecRendererProps {
   showObservabilityBadge?: boolean;
   /** 覆盖上下文的工具集合（缺省取 UiSpecToolProviderContext） */
   toolProvider?: UiSpecToolMap;
+  /** 应用声明的看板组件库（缺省兜底为 analyticsLibrary） */
+  library?: unknown;
 }
 
 /**
@@ -98,6 +100,7 @@ export const UiSpecRenderer: React.FC<UiSpecRendererProps> = React.memo(function
   onAction,
   showObservabilityBadge = true,
   toolProvider,
+  library,
 }) {
   const renderContent = useStreamingThrottled(content, isStreaming);
   const onActionRef = useRef(onAction);
@@ -125,12 +128,16 @@ export const UiSpecRenderer: React.FC<UiSpecRendererProps> = React.memo(function
   }, []);
 
   const handleError = React.useCallback((errors: unknown) => {
-    if (errors && Array.isArray(errors) && errors.length > 0) {
+    // 仅在开发调试环境下输出 notice，防止控制台刷屏
+    if (process.env.NODE_ENV === "development" && errors && Array.isArray(errors) && errors.length > 0) {
       console.warn("[UiSpec Lang Parser/Render Notice]:", errors);
     }
   }, []);
 
   if (!renderContent || !renderContent.trim()) return null;
+
+  // 渲染时优先采用应用声明注入的组件库，未指定时兜底 analyticsLibrary
+  const effectiveLibrary = (library as Parameters<typeof Renderer>[0]["library"]) ?? analyticsLibrary;
 
   return (
     // resetKey=renderContent：流式中间态解析失败后，新 token 到达时自动复位重试
@@ -150,7 +157,7 @@ export const UiSpecRenderer: React.FC<UiSpecRendererProps> = React.memo(function
         )}
 
         <Renderer
-          library={analyticsLibrary}
+          library={effectiveLibrary}
           response={renderContent}
           isStreaming={isStreaming}
           toolProvider={tools}

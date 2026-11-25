@@ -24,10 +24,18 @@ describe("extractUiSpec", () => {
     expect(textPart).toBe(raw);
   });
 
-  it("未标注语言的裸围栏按 ginkgo 兜底处理", () => {
-    const raw = "```\nroot = Root([])\n```";
-    const { uiSpecPart } = extractUiSpec(raw);
-    expect(uiSpecPart).toBe("root = Root([])");
+  it("未标注语言的裸围栏不进入看板渲染器，正文原样保留", () => {
+    const raw = "配置说明：\n```\nkey: value\nroot = Root([])\n```\n以上。";
+    const { textPart, uiSpecPart } = extractUiSpec(raw);
+    expect(uiSpecPart).toBe("");
+    expect(textPart).toBe(raw);
+  });
+
+  it("普通裸代码块（如 git status、shell 命令）100% 保留在正文，绝不提取为看板", () => {
+    const raw = "工作区还有未提交改动：\n```\nM .env.production\nM package.json\n```\n请确认。";
+    const { textPart, uiSpecPart } = extractUiSpec(raw);
+    expect(uiSpecPart).toBe("");
+    expect(textPart).toBe(raw);
   });
 
   it("流式未闭合的 ginkgo 围栏也能提取，并标识 isClosed=false", () => {

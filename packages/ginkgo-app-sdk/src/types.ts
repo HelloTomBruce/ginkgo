@@ -309,6 +309,15 @@ export interface AppClientContract {
   settingsSections?: AppSettingsSectionSpec[];
 
   /**
+   * 应用自治的 UiSpec 看板组件库声明（应用看板能力扩展点）：
+   * 只有声明了此项的应用才具备看板能力。
+   * - analytics: 声明其 24 个数据分析图表/布局/指标组件库（analyticsLibrary）
+   * - 未声明（如 general 通用助手）：宿主完全关闭看板提取与渲染，所有代码块按 Markdown 正文显示
+   * - 其他应用：可自持并声明专属组件库（类型兼容 @openuidev/react-lang 的 Library 实例）
+   */
+  dashboardLibrary?: unknown;
+
+  /**
    * 消息内看板区块的工具条能力声明（能力注入）：
    * 未声明的应用不渲染任何操作按钮（钉选/收藏/导出 PDF 均按需开启），
    * 工具条标题也可由应用定制。

@@ -1157,6 +1157,7 @@ export default function ChatDashboard() {
                   toolRenderers={activeApp.client.toolRenderers}
                   approvalRules={activeApp.client.approvalRules}
                   dashboardTitle={activeApp.client.dashboardToolbar?.title ?? "动态看板"}
+                  dashboardLibrary={activeApp.client.dashboardLibrary}
                   dashboardExportEnabled={
                     activeApp.client.dashboardToolbar?.exportPdf ?? false
                   }

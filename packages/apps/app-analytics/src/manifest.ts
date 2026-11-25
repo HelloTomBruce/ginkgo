@@ -1,4 +1,5 @@
 import type { AppManifest, AppClientContract } from "@ginkgo/app-sdk";
+import { analyticsLibrary } from "@ginkgo/components";
 import { AnalysisCanvas } from "./client/AnalysisCanvas";
 import { SourcePicker } from "./client/SourcePicker";
 import { resolveMethodologyPresets } from "./client/methodologyPresets";
@@ -59,6 +60,8 @@ export const analyticsClient: AppClientContract = {
       Component: ComponentCatalogModal,
     },
   ],
+  // 显式声明本应用自治的看板组件库（包含 24 个数据分析图表/布局/指标组件）
+  dashboardLibrary: analyticsLibrary,
   // 消息内看板工具条：三项操作全开（general 等其他应用未声明则不渲染操作按钮）
   dashboardToolbar: { title: "动态看板", pin: true, favorite: true, exportPdf: true },
   // 设置中心应用分区：跨源映射为本应用领域自有配置（平台级数据源/模型配置归宿主）

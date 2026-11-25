@@ -104,6 +104,7 @@ describe("MessageList 流式重渲染治理", () => {
       messages: [userMsg, aiMsg],
       status: "ready",
       error: undefined,
+      dashboardLibrary: {},
       onRendererAction: vi.fn(),
       onReload: vi.fn(),
     };
@@ -122,6 +123,7 @@ describe("MessageList 流式重渲染治理", () => {
       messages: [userMsg, aiMsg],
       status: "ready",
       error: undefined,
+      dashboardLibrary: {},
       onRendererAction: vi.fn(),
       onReload: vi.fn(),
     };
@@ -269,6 +271,7 @@ describe("看板打印导出", () => {
     status: "ready" as const,
     error: undefined,
     activeSources: undefined,
+    dashboardLibrary: {},
     onRendererAction: vi.fn(),
     onReload: vi.fn(),
     // 能力注入：本组用例模拟声明了导出能力的应用（如 analytics）
@@ -404,6 +407,7 @@ describe("看板收藏", () => {
     status: "ready" as const,
     error: undefined,
     activeSources: undefined,
+    dashboardLibrary: {},
     onRendererAction: vi.fn(),
     onReload: vi.fn(),
   };
@@ -678,6 +682,7 @@ describe("消息内容与工具执行按顺序交错渲染", () => {
   const baseProps = {
     status: "ready" as const,
     error: undefined,
+    dashboardLibrary: {},
     activeSources: [
       { id: "gitlab", name: "GitLab" },
     ],
@@ -1161,6 +1166,7 @@ describe("控制面工具与应用能力注入", () => {
   const baseProps = {
     status: "ready" as const,
     error: undefined,
+    dashboardLibrary: {},
     onRendererAction: vi.fn(),
     onReload: vi.fn(),
   };
@@ -1236,5 +1242,50 @@ describe("控制面工具与应用能力注入", () => {
     expect(screen.getByText("数据取数与分析计算已全部完成")).toBeInTheDocument();
     expect(screen.getByText(/路由权限链路取数与分析完成/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /立即生成报告与看板/ })).toBeInTheDocument();
+  });
+
+  describe("应用自持看板组件库契约 (dashboardLibrary)", () => {
+    const mixedMsg: Message = {
+      id: "a-mixed",
+      role: "assistant",
+      content: "代码如下：\n```\nM .env.production\nM package.json\n```\n还有看板：\n```ginkgo\nroot = Root([card])\n```",
+    };
+
+    it("未声明 dashboardLibrary 的应用（如通用助手）：关闭看板提取，所有代码块作为正文渲染，绝不触发 UiSpecRenderer", () => {
+      render(
+        <MessageList
+          status="ready"
+          error={undefined}
+          onRendererAction={vi.fn()}
+          onReload={vi.fn()}
+          messages={[userMsg, mixedMsg]}
+        />
+      );
+
+      // 绝不渲染看板容器、标题与渲染器
+      expect(screen.queryByText("动态看板")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("renderer")).not.toBeInTheDocument();
+      // 正文完整保留
+      expect(screen.getByText(/M \.env\.production/)).toBeInTheDocument();
+    });
+
+    it("声明了 dashboardLibrary 的应用（如数据分析）：仅提取显式 ginkgo 围栏渲染看板，裸代码块留在正文", () => {
+      render(
+        <MessageList
+          status="ready"
+          error={undefined}
+          dashboardLibrary={{ custom: true }}
+          onRendererAction={vi.fn()}
+          onReload={vi.fn()}
+          messages={[userMsg, mixedMsg]}
+        />
+      );
+
+      // 渲染动态看板
+      expect(screen.getByText("动态看板")).toBeInTheDocument();
+      expect(screen.getByTestId("renderer")).toBeInTheDocument();
+      // 裸代码块仍在正文展示
+      expect(screen.getByText(/M \.env\.production/)).toBeInTheDocument();
+    });
   });
 });
