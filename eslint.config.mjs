@@ -11,6 +11,7 @@ const eslintConfig = defineConfig([
     ".next/**",
     "out/**",
     "build/**",
+    "**/dist/**",
     "next-env.d.ts",
     "data/**",
     // VitePress 文档站构建产物与缓存（源码 config/theme 仍参与检查）

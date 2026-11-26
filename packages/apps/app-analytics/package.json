@@ -1,8 +1,9 @@
 {
   "name": "@ginkgo-apps/analytics",
   "version": "0.1.0",
-  "private": true,
+  "description": "Intelligent Data Analytics app for Ginkgo platform",
   "type": "module",
+  "main": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
     "./isomorphic": "./src/isomorphic/index.ts",
@@ -10,30 +11,83 @@
     "./server": "./src/server/index.ts",
     "./isomorphic/dashboardCapture": "./src/isomorphic/dashboardCapture.ts"
   },
+  "publishConfig": {
+    "access": "public",
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      },
+      "./isomorphic": {
+        "types": "./dist/isomorphic.d.ts",
+        "import": "./dist/isomorphic.js"
+      },
+      "./client": {
+        "types": "./dist/client.d.ts",
+        "import": "./dist/client.js"
+      },
+      "./server": {
+        "types": "./dist/server.d.ts",
+        "import": "./dist/server.js"
+      },
+      "./isomorphic/dashboardCapture": {
+        "types": "./dist/dashboardCapture.d.ts",
+        "import": "./dist/dashboardCapture.js"
+      }
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "prepublishOnly": "pnpm build",
+    "test": "vitest run",
+    "eval:tier-b": "vitest run src/evals/tier-b.real-model.test.ts"
+  },
   "dependencies": {
+    "@clickhouse/client": "^1.12.1",
+    "@duckdb/node-api": "2.0.0-r.1",
     "@ginkgo/app-sdk": "workspace:*",
     "@ginkgo/chart-spec": "workspace:*",
     "@ginkgo/components": "workspace:*",
     "@ginkgo/datasources": "workspace:*",
-    "@ginkgo/llm": "workspace:*",
     "@openuidev/lang-core": "^0.3.1",
+    "@openuidev/react-lang": "^0.3.1",
     "ai": "4.3.19",
     "cn": "^0.5.2",
+    "exceljs": "^4.4.0",
     "lucide-react": "^1.73.0",
+    "mysql2": "^3.24.5",
+    "pg": "^8.23.1",
     "radix-ui": "^1.8.1",
-    "react": "19.3.1"
+    "recharts": "^3.10.1",
+    "use-sync-external-store": "^1.4.0"
+  },
+  "peerDependencies": {
+    "react": ">=18",
+    "react-dom": ">=18"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    },
+    "react-dom": {
+      "optional": true
+    }
   },
   "devDependencies": {
+    "@ginkgo/llm": "workspace:*",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.3",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "typescript": "^5",
-    "vitest": "^5.1.0",
-    "@testing-library/react": "^16.3.3",
     "jsdom": "^30.1.2",
-    "@testing-library/jest-dom": "^7.0.1"
-  },
-  "scripts": {
-    "test": "vitest run",
-    "eval:tier-b": "vitest run src/evals/tier-b.real-model.test.ts"
+    "tsup": "^9.0.0",
+    "typescript": "^5",
+    "vitest": "^5.1.0"
   }
 }
