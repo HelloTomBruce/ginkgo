@@ -1,4 +1,4 @@
-import { defaultCrossSourceRegistry, validateMappings } from "./crossSource";
+import { getDefaultCrossSourceRegistry, validateMappings } from "./crossSource";
 import type { CrossSourceRegistry, MappingEntry } from "./crossSource";
 
 /**
@@ -24,7 +24,7 @@ export interface CrossSourceSettingsPayload {
 }
 
 function buildPayload(deps: CrossSourceRouteDeps): CrossSourceSettingsPayload {
-  const registry = deps.registry ?? defaultCrossSourceRegistry;
+  const registry = deps.registry ?? getDefaultCrossSourceRegistry();
   const enabledIds = deps.sources
     .filter((s) => s.enabled)
     .map((s) => s.id);
@@ -76,7 +76,7 @@ export async function handleReplaceCrossSource(
     if (!verdict.ok) {
       return Response.json({ errors: verdict.errors }, { status: 400 });
     }
-    const registry = deps.registry ?? defaultCrossSourceRegistry;
+    const registry = deps.registry ?? getDefaultCrossSourceRegistry();
     registry.replaceMappings(verdict.mappings);
     return Response.json(buildPayload(deps));
   } catch (err: unknown) {

@@ -1,4 +1,3 @@
-import path from "node:path";
 import { tool, jsonSchema, type CoreTool } from "ai";
 import {
   CertifiedQueryStore,
@@ -25,13 +24,14 @@ import {
   getExecuteSystemPrompt,
 } from "./prompt";
 import { buildMethodDetailsFromMessages, renderMethodDetailsByIds } from "./methodSelector";
+import { resolveAnalyticsStorageDirs } from "./storage";
 import { extractPlanMethods } from "./planExtractor";
 import {
   buildSchemaDigest,
   extractLatestUserQuery,
 } from "./schemaDigest";
 import {
-  defaultCrossSourceRegistry,
+  getDefaultCrossSourceRegistry,
   CrossSourceRegistry,
 } from "./crossSource";
 
@@ -169,9 +169,10 @@ export function createAnalyticsServer(deps: AnalyticsServerDeps) {
   const certifiedStore =
     deps.certifiedStore ??
     new CertifiedQueryStore({
-      configPath: path.join(process.cwd(), "config/certified-queries.json"),
+      configPath: resolveAnalyticsStorageDirs().certifiedQueriesPath,
     });
-  const crossSourceRegistry = deps.crossSourceRegistry ?? defaultCrossSourceRegistry;
+  const crossSourceRegistry =
+    deps.crossSourceRegistry ?? getDefaultCrossSourceRegistry();
 
   /**
    * 装配当前激活的数据源工具（失败源降级跳过，与原编排层行为一致），

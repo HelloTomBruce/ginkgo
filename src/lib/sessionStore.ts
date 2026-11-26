@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { DEFAULT_APP_ID } from "@/lib/apps/registry";
+import { getSessionStorageDir } from "@/lib/storagePaths";
 
 /**
  * 会话存储层（server-only：依赖 node:fs，禁止在客户端组件引入）。
@@ -638,7 +639,7 @@ export function createSessionStore(opts: { dir: string }): SessionStore {
   };
 }
 
-/** 应用级单例：落盘位置与应用其余数据（data/dashboards、data/files）同根 */
+/** 应用级单例：落盘位置支持 GINKGO_HOME / 环境变量 / 用户主目录自适应 */
 export const sessionStore = createSessionStore({
-  dir: path.join(process.cwd(), "data", "sessions"),
+  dir: getSessionStorageDir(),
 });

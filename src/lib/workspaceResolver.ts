@@ -5,8 +5,10 @@ import type { AppWorkspaceContext } from "@ginkgo/app-sdk";
 import { assertSafePath } from "@ginkgo/sandbox";
 import { sessionStore } from "@/lib/sessionStore";
 import { workspaceStore } from "@/lib/workspaceStore";
+import { getWorkspacesRootDir } from "@/lib/storagePaths";
 
-export const DEFAULT_WORKSPACES_ROOT = path.join(process.cwd(), "data", "workspaces");
+/** 工作区沙箱根目录（随存储根解析，不再固定为 cwd） */
+export const DEFAULT_WORKSPACES_ROOT = getWorkspacesRootDir();
 
 export interface ResolveWorkspaceOptions {
   appId: string;

@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
-import path from "node:path";
+import { getWorkspaceStorageFile, writeJsonAtomic } from "@/lib/storagePaths";
 
 export interface WorkspaceRecord {
   id: string;
@@ -12,12 +12,7 @@ export interface WorkspaceRecord {
   updatedAt: number;
 }
 
-export const WORKSPACE_STORAGE_PATH = path.join(
-  process.cwd(),
-  "data",
-  "workspaces",
-  "_workspaces.json"
-);
+export const WORKSPACE_STORAGE_PATH = getWorkspaceStorageFile();
 
 export const DEFAULT_WORKSPACE_ID = "ws_default";
 
@@ -61,8 +56,8 @@ export class WorkspaceStore {
 
   private async persist(): Promise<void> {
     if (!this.cache) return;
-    await fs.mkdir(path.dirname(this.filePath), { recursive: true });
-    await fs.writeFile(this.filePath, JSON.stringify(this.cache, null, 2), "utf-8");
+    // 原子写：崩溃不留半截 JSON（与 sessionStore 约定一致）
+    await writeJsonAtomic(this.filePath, this.cache);
   }
 
   async list(appId?: string): Promise<WorkspaceRecord[]> {

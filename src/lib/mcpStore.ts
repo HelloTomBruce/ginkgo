@@ -1,16 +1,22 @@
 import fs from "node:fs/promises";
 import fsSync from "node:fs";
-import path from "node:path";
 import {
   MCPClientManager,
   type MCPServerConfig,
 } from "@ginkgo/harness-core/mcp";
+import { getMcpServersFile, writeJsonAtomic } from "@/lib/storagePaths";
 
 export interface StoredMcpServer extends MCPServerConfig {
   enabled?: boolean;
 }
 
-const CONFIG_FILE = path.join(process.cwd(), "config", "mcp-servers.json");
+/**
+ * 配置路径惰性解析：存储根可能来自显式配置或宿主引导，
+ * 不能在模块加载期固化（否则会先于引导算出 cwd 而分裂存储）。
+ */
+function configFile(): string {
+  return getMcpServersFile();
+}
 
 let globalManager: MCPClientManager | null = null;
 
@@ -29,10 +35,10 @@ export function getMcpManager(): MCPClientManager {
 
 export function loadMcpServersSync(): StoredMcpServer[] {
   try {
-    if (!fsSync.existsSync(CONFIG_FILE)) {
+    if (!fsSync.existsSync(configFile())) {
       return [];
     }
-    const content = fsSync.readFileSync(CONFIG_FILE, "utf-8");
+    const content = fsSync.readFileSync(configFile(), "utf-8");
     const parsed = JSON.parse(content);
     return Array.isArray(parsed) ? parsed : [];
   } catch (err) {
@@ -44,11 +50,11 @@ export function loadMcpServersSync(): StoredMcpServer[] {
 export async function loadMcpServers(): Promise<StoredMcpServer[]> {
   try {
     const exists = await fs
-      .access(CONFIG_FILE)
+      .access(configFile())
       .then(() => true)
       .catch(() => false);
     if (!exists) return [];
-    const content = await fs.readFile(CONFIG_FILE, "utf-8");
+    const content = await fs.readFile(configFile(), "utf-8");
     const parsed = JSON.parse(content);
     return Array.isArray(parsed) ? parsed : [];
   } catch (err) {
@@ -58,9 +64,7 @@ export async function loadMcpServers(): Promise<StoredMcpServer[]> {
 }
 
 export async function saveMcpServers(servers: StoredMcpServer[]): Promise<void> {
-  const dir = path.dirname(CONFIG_FILE);
-  await fs.mkdir(dir, { recursive: true });
-  await fs.writeFile(CONFIG_FILE, JSON.stringify(servers, null, 2), "utf-8");
+  await writeJsonAtomic(configFile(), servers);
 
   // 同步刷新运行中的 manager
   const mgr = getMcpManager();

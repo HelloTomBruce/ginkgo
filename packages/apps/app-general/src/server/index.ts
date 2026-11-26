@@ -18,10 +18,25 @@ import type { BrowserToolsPackage } from "@ginkgo/browser";
  * （沙箱禁止写文件/执行命令，浏览器仅支持打开/截图/探查无写副作用操作）；
  * 写入、命令执行与网页交互在方案经用户确认（execute/direct 请求）后解锁。
  */
+/**
+ * 工作区根目录（仅作 `ctx.workspace` 缺失时的兜底）。
+ *
+ * 存储根可能被显式配置或宿主引导（`GINKGO_RESOLVED_HOME`）外移；应用包禁止
+ * import 宿主模块，故经环境变量契约对齐，避免兜底路径仍写 cwd 造成分裂存储。
+ */
+function resolveWorkspaceRoot(appDir: string): string {
+  const explicit =
+    process.env.GINKGO_HOME?.trim() || process.env.GINKGO_DATA_DIR?.trim();
+  if (explicit) return path.join(path.resolve(explicit), "data", "workspaces", appDir);
+  const resolved = process.env.GINKGO_RESOLVED_HOME?.trim();
+  if (resolved) return path.join(path.resolve(resolved), "data", "workspaces", appDir);
+  return path.join(process.cwd(), "data", "workspaces", appDir);
+}
+
 export function getGeneralTools(ctx: AppServerContext) {
   const sandboxDir =
     ctx.workspace?.sandboxDir ||
-    path.join(process.cwd(), "data", "workspaces", "general", ctx.sessionId || "default");
+    path.join(resolveWorkspaceRoot("general"), ctx.sessionId || "default");
   const permission = ctx.mode === "plan" ? "readonly" : "full";
 
   const sandboxTools = createSandboxTools({

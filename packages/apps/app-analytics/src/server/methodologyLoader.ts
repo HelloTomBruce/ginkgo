@@ -8,6 +8,7 @@ import {
   type MethodCard,
   type MethodLibrary,
 } from "../methodology";
+import { resolveAnalyticsStorageDirs } from "./storage";
 
 /**
  * 用户方法卡运行时加载（三级扩展的第三级）：
@@ -19,15 +20,14 @@ import {
  *   缺省只做形态过滤（组件名错卡的兜底是渲染层 ErrorBoundary）
  */
 
-export const USER_METHOD_CARDS_DIR = path.join(
-  process.cwd(),
-  "data",
-  "methodology"
-);
+/** 用户方法卡目录（惰性解析：随存储根变化，不固化 cwd） */
+export function getUserMethodCardsDir(): string {
+  return resolveAnalyticsStorageDirs().methodologyDir;
+}
 
 /** 读取用户卡目录；目录不存在视为零卡（正常态，非错误） */
 export function loadUserMethodCards(
-  dir: string = USER_METHOD_CARDS_DIR
+  dir: string = getUserMethodCardsDir()
 ): { cards: MethodCard[]; skipped: CardValidationIssue[] } {
   let names: string[];
   try {
@@ -60,7 +60,7 @@ export function loadUserMethodCards(
 
 /** 组装应用方法论库：内置 10 卡 + 用户卡（同 id 覆盖内置），供 handler 注入 */
 export function createAppMethodology(
-  dir: string = USER_METHOD_CARDS_DIR
+  dir: string = getUserMethodCardsDir()
 ): {
   library: MethodLibrary;
   skipped: CardValidationIssue[];

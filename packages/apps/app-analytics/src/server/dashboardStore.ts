@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { resolveAnalyticsStorageDirs } from "./storage";
 import { isValidTransformSpec, type TransformSpec } from "@ginkgo-apps/analytics/isomorphic";
 // 内部实现引用同一形状来源（re-export 仅供既有消费方稳定入口）
 import type {
@@ -587,16 +588,25 @@ export interface DashboardStore {
   remove(id: string): Promise<boolean>;
 }
 
-export function createDashboardStore(opts: { dir: string }): DashboardStore {
-  const dir = opts.dir;
-  const fileFor = (id: string) => path.join(dir, `${id}.json`);
+export function createDashboardStore(opts: {
+  /** 目录字面量，或惰性求值函数（模块级单例应传函数，避免早于存储根引导固化路径） */
+  dir: string | (() => string);
+}): DashboardStore {
+  let resolvedDir: string | null = null;
+  const dir = (): string => {
+    if (resolvedDir === null) {
+      resolvedDir = typeof opts.dir === "function" ? opts.dir() : opts.dir;
+    }
+    return resolvedDir;
+  };
+  const fileFor = (id: string) => path.join(dir(), `${id}.json`);
 
   /** 严格 id 白名单（防路径穿越；id 一律由本存储层生成） */
   const isValidId = (id: string) => ID_RE.test(id);
 
   async function readRecord(fileName: string): Promise<DashboardRecord | null> {
     try {
-      const raw = await fs.readFile(path.join(dir, fileName), "utf-8");
+      const raw = await fs.readFile(path.join(dir(), fileName), "utf-8");
       const parsed: unknown = JSON.parse(raw);
       if (!isRecord(parsed)) return null;
       // 形态校验：缺关键字段或类型不对按坏文件跳过
@@ -623,7 +633,7 @@ export function createDashboardStore(opts: { dir: string }): DashboardStore {
   async function readAll(): Promise<DashboardRecord[]> {
     let names: string[];
     try {
-      names = await fs.readdir(dir);
+      names = await fs.readdir(dir());
     } catch {
       return [];
     }
@@ -636,7 +646,7 @@ export function createDashboardStore(opts: { dir: string }): DashboardStore {
   }
 
   async function writeRecord(record: DashboardRecord): Promise<void> {
-    await fs.mkdir(dir, { recursive: true });
+    await fs.mkdir(dir(), { recursive: true });
     await fs.writeFile(
       fileFor(record.id),
       JSON.stringify(record, null, 2),
@@ -856,7 +866,7 @@ export function createDashboardStore(opts: { dir: string }): DashboardStore {
   };
 }
 
-/** 应用级单例：落盘位置与应用其余数据（data/files、config）同根 */
+/** 应用级单例：落盘位置与应用其余数据（data/files、config）同根（惰性解析，见 storage.ts） */
 export const dashboardStore = createDashboardStore({
-  dir: path.join(process.cwd(), "data", "dashboards"),
+  dir: () => resolveAnalyticsStorageDirs().dashboardsDir,
 });

@@ -6,6 +6,7 @@ import { datasources } from "@/lib/datasources";
 import { createAppMethodology } from "@ginkgo-apps/analytics/server";
 import { dashboardStore } from "@ginkgo-apps/analytics/server";
 import { refreshDashboard } from "@ginkgo-apps/analytics/server";
+import { getStoragePath } from "@/lib/storagePaths";
 
 /**
  * analytics 运行时服务端单例（宿主组合根）：
@@ -21,6 +22,7 @@ const artifacts: AnalyticsArtifactServices = {
 
 export const analyticsServer = createAnalyticsServer({
   datasources,
-  methodology: createAppMethodology().library,
+  // 组合根显式注入用户方法卡目录（随存储根解析，不依赖包内 cwd 兜底）
+  methodology: createAppMethodology(getStoragePath("data", "methodology")).library,
   artifacts,
 });

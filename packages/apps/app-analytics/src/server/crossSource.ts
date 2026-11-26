@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { resolveAnalyticsStorageDirs } from "./storage";
 
 /**
  * 跨源联合分析映射配置（完全由用户维护，代码不内置任何数据源名）。
@@ -42,11 +43,10 @@ export interface MappingEntry extends CrossSourcePair {
   repo: string;
 }
 
-export const DEFAULT_CONFIG_PATH = path.join(
-  process.cwd(),
-  "config",
-  "cross-source-map.json"
-);
+/** 跨源映射配置路径（惰性解析：随存储根变化，不固化 cwd） */
+export function getCrossSourceMapPath(): string {
+  return resolveAnalyticsStorageDirs().crossSourceMapPath;
+}
 
 function parseMappingsFromFile(configPath: string): MappingEntry[] {
   try {
@@ -213,7 +213,7 @@ export class CrossSourceRegistry {
     if (options?.initialMappings) {
       this.cache = [...options.initialMappings];
     } else {
-      this.configPath = options?.configPath ?? DEFAULT_CONFIG_PATH;
+      this.configPath = options?.configPath ?? getCrossSourceMapPath();
     }
   }
 
@@ -331,39 +331,49 @@ export class CrossSourceRegistry {
 }
 
 /** 默认单例（向后兼容） */
-export const defaultCrossSourceRegistry = new CrossSourceRegistry();
+let defaultRegistry: CrossSourceRegistry | null = null;
+
+/**
+ * 默认注册表单例：首次访问时创建（构造期读配置路径，不能早于存储根引导）。
+ */
+export function getDefaultCrossSourceRegistry(): CrossSourceRegistry {
+  if (!defaultRegistry) {
+    defaultRegistry = new CrossSourceRegistry();
+  }
+  return defaultRegistry;
+}
 
 /** 兼容旧版顶层导出函数 */
 export function listCrossSourcePairs(): CrossSourcePair[] {
-  return defaultCrossSourceRegistry.listCrossSourcePairs();
+  return getDefaultCrossSourceRegistry().listCrossSourcePairs();
 }
 
 export function listMappings(): MappingEntry[] {
-  return defaultCrossSourceRegistry.listMappings();
+  return getDefaultCrossSourceRegistry().listMappings();
 }
 
 export function resolveCrossSourcePairs(
   activeSourceIds: string[]
 ): CrossSourcePair[] {
-  return defaultCrossSourceRegistry.resolveCrossSourcePairs(activeSourceIds);
+  return getDefaultCrossSourceRegistry().resolveCrossSourcePairs(activeSourceIds);
 }
 
 export function getCrossSourceLinks(
   projectId: string,
   projectSource?: string
 ): CrossSourceLink {
-  return defaultCrossSourceRegistry.getCrossSourceLinks(projectId, projectSource);
+  return getDefaultCrossSourceRegistry().getCrossSourceLinks(projectId, projectSource);
 }
 
 /**
  * 整份替换默认注册表的映射清单并落盘（宿主薄壳 /api/cross-source 的保存入口）。
  */
 export function replaceMappings(mappings: MappingEntry[]): MappingEntry[] {
-  return defaultCrossSourceRegistry.replaceMappings(mappings);
+  return getDefaultCrossSourceRegistry().replaceMappings(mappings);
 }
 
 export function reloadCrossSourceMap(
-  configPath: string = DEFAULT_CONFIG_PATH
+  configPath: string = getCrossSourceMapPath()
 ): void {
-  defaultCrossSourceRegistry.reload(configPath);
+  getDefaultCrossSourceRegistry().reload(configPath);
 }

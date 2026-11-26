@@ -208,10 +208,25 @@ class Component extends DCLogic {
   };
 }
 
+/**
+ * 工作区根目录（仅作 `ctx.workspace` 缺失时的兜底）。
+ *
+ * 存储根可能被显式配置或宿主引导（`GINKGO_RESOLVED_HOME`）外移；应用包禁止
+ * import 宿主模块，故经环境变量契约对齐，避免兜底路径仍写 cwd 造成分裂存储。
+ */
+function resolveWorkspaceRoot(appDir: string): string {
+  const explicit =
+    process.env.GINKGO_HOME?.trim() || process.env.GINKGO_DATA_DIR?.trim();
+  if (explicit) return path.join(path.resolve(explicit), "data", "workspaces", appDir);
+  const resolved = process.env.GINKGO_RESOLVED_HOME?.trim();
+  if (resolved) return path.join(path.resolve(resolved), "data", "workspaces", appDir);
+  return path.join(process.cwd(), "data", "workspaces", appDir);
+}
+
 export function getDesignTools(ctx: AppServerContext) {
   const workspaceDir =
     ctx.workspace?.sandboxDir ||
-    path.join(process.cwd(), "data", "workspaces", "design", ctx.sessionId || "default");
+    path.join(resolveWorkspaceRoot("design"), ctx.sessionId || "default");
   // 严格安全防御：与通用助手及平台机制一致，仅在显式 plan 模式下装配只读工具与提权审批；execute / direct 均拥有完整构建写权限
   const isReadonly = ctx.mode === "plan";
   return createDesignTools(workspaceDir, isReadonly);

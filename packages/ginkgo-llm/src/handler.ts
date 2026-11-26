@@ -145,17 +145,15 @@ function instrumentTools(
  */
 async function resolveRequestTokenizer(
   injected: { encode(text: string): number } | undefined,
-  model: string
+  model: string,
+  configPath: string
 ): Promise<{ encode(text: string): number } | undefined> {
   if (injected) return injected;
   if (process.env.LLM_TOKENIZER !== "tiktoken") return undefined;
   const { createTiktokenEstimator, resolveEncodingForModel } = await import(
     "@ginkgo/harness-core"
   );
-  const encoding = resolveEncodingForModel(
-    model,
-    `${process.cwd()}/config/model-tokenizer.json`
-  );
+  const encoding = resolveEncodingForModel(model, configPath);
   return createTiktokenEstimator(encoding);
 }
 
@@ -416,6 +414,12 @@ export interface AnalyzeHandlerOptions {
   quota?: QuotaPolicy;
   /** 模型计价表（可选注入；缺省读 config/model-pricing.json，缺表只记量不记钱） */
   pricing?: ModelPricingTable;
+  /**
+   * tokenizer 映射表路径（可选注入）：仅在 `LLM_TOKENIZER=tiktoken` 时生效。
+   * 缺省 `${cwd}/config/model-tokenizer.json`；宿主应注入存储根下的真实路径，
+   * 避免存储根外移后仍读 cwd 造成配置分裂。
+   */
+  tokenizerConfigPath?: string;
   /**
    * 真实 tokenizer（可选注入，WS-12）：只影响投影预判定；usage.promptTokens
    * 实测锚点仍是最高优先级。缺省 CJK 启发式，行为不变；env LLM_TOKENIZER=tiktoken
@@ -1076,7 +1080,12 @@ export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
           budget,
           anchorTokens: sessionCtx?.lastPromptTokens,
           systemTokens: estimateTextTokens(baseSystem),
-          tokenizer: await resolveRequestTokenizer(opts.tokenizer, model),
+          tokenizer: await resolveRequestTokenizer(
+            opts.tokenizer,
+            model,
+            opts.tokenizerConfigPath ??
+              `${process.cwd()}/config/model-tokenizer.json`
+          ),
         });
 
         let systemOut = baseSystem;

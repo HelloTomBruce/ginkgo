@@ -1,8 +1,11 @@
-import path from "node:path";
 import {
   createDatasourceManager,
   type DatasourceManager,
 } from "@ginkgo/datasources";
+import {
+  getDatasourcesConfigFile,
+  getFileStorageDir,
+} from "@/lib/storagePaths";
 
 const globalForDatasources = globalThis as unknown as {
   __ginkgo_datasources__?: DatasourceManager;
@@ -12,8 +15,8 @@ const globalForDatasources = globalThis as unknown as {
 export const datasources =
   globalForDatasources.__ginkgo_datasources__ ??
   createDatasourceManager({
-    configPath: path.join(process.cwd(), "config", "datasources.json"),
-    filesDir: path.join(process.cwd(), "data", "files"),
+    configPath: getDatasourcesConfigFile(),
+    filesDir: getFileStorageDir(),
   });
 
 if (process.env.NODE_ENV !== "production") {
