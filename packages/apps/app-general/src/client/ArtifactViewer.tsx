@@ -1,5 +1,9 @@
 "use client";
 
+/**
+ * 多维工作台壳：Tab 装配 + 文件树 / Git 变更 / 终端三个切片。
+ * 浏览器自动化切片自持于 ./browser/BrowserView，经 onOperationsCountChange 上报徽标计数。
+ */
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   FileCode2,
@@ -21,28 +25,15 @@ import {
   ChevronsUpDown,
   Send,
   RotateCcw,
+  Globe,
 } from "lucide-react";
 import type { AppWorkspaceProps } from "@ginkgo/app-sdk";
 import { DiffViewer, TerminalViewer } from "@ginkgo/components";
+import { MarkdownPreview } from "./MarkdownPreview";
+import { BrowserView } from "./browser/BrowserView";
+import { buildFileTree, type FileTreeNode, type WorkspaceFileItem } from "./fileTree";
 
-export type WorkspaceTab = "files" | "git" | "terminal";
-
-export interface WorkspaceFileItem {
-  name: string;
-  path: string;
-  type: "file" | "directory";
-  size?: number;
-  updatedAt: number;
-}
-
-export interface FileTreeNode {
-  name: string;
-  path: string;
-  type: "file" | "directory";
-  size?: number;
-  updatedAt: number;
-  children: FileTreeNode[];
-}
+export type WorkspaceTab = "files" | "git" | "terminal" | "browser";
 
 export interface GitChangeItem {
   path: string;
@@ -60,93 +51,16 @@ export interface TerminalHistoryItem {
   timestamp: number;
 }
 
-/**
- * 将平铺的工作区文件列表组装为嵌套层级树，并进行目录在前、字母升序排列
- */
-export function buildFileTree(items: WorkspaceFileItem[]): FileTreeNode[] {
-  const rootNodes: FileTreeNode[] = [];
-  const nodeMap = new Map<string, FileTreeNode>();
-
-  for (const item of items) {
-    nodeMap.set(item.path, {
-      name: item.name,
-      path: item.path,
-      type: item.type,
-      size: item.size,
-      updatedAt: item.updatedAt,
-      children: [],
-    });
-  }
-
-  for (const item of items) {
-    const parts = item.path.split("/");
-    if (parts.length === 1) {
-      const node = nodeMap.get(item.path)!;
-      if (!rootNodes.some((r) => r.path === node.path)) {
-        rootNodes.push(node);
-      }
-    } else {
-      let currentPath = "";
-      for (let i = 0; i < parts.length - 1; i++) {
-        const seg = parts[i];
-        const nextPath = currentPath ? `${currentPath}/${seg}` : seg;
-        if (!nodeMap.has(nextPath)) {
-          const dirNode: FileTreeNode = {
-            name: seg,
-            path: nextPath,
-            type: "directory",
-            updatedAt: Date.now(),
-            children: [],
-          };
-          nodeMap.set(nextPath, dirNode);
-          if (i === 0) {
-            rootNodes.push(dirNode);
-          } else {
-            const parentNode = nodeMap.get(currentPath);
-            if (parentNode && !parentNode.children.some((c) => c.path === nextPath)) {
-              parentNode.children.push(dirNode);
-            }
-          }
-        } else if (i === 0 && !rootNodes.some((r) => r.path === nextPath)) {
-          rootNodes.push(nodeMap.get(nextPath)!);
-        }
-        currentPath = nextPath;
-      }
-
-      const parentNode = nodeMap.get(currentPath);
-      const currentNode = nodeMap.get(item.path)!;
-      if (parentNode && !parentNode.children.some((c) => c.path === item.path)) {
-        parentNode.children.push(currentNode);
-      }
-    }
-  }
-
-  function sortNodes(nodes: FileTreeNode[]) {
-    nodes.sort((a, b) => {
-      if (a.type !== b.type) {
-        return a.type === "directory" ? -1 : 1;
-      }
-      return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" });
-    });
-    for (const n of nodes) {
-      if (n.children.length > 0) {
-        sortNodes(n.children);
-      }
-    }
-  }
-
-  sortNodes(rootNodes);
-  return rootNodes;
-}
-
 export function ArtifactViewer({
   onClose,
   sessionId,
   appId = "general",
   isExpanded,
   onToggleExpand,
+  messages: propMessages,
+  isStreaming,
 }: AppWorkspaceProps) {
-  // 当前活跃 Tab：文件树 / Git变更 / 终端
+  // 当前活跃 Tab：文件树 / Git变更 / 终端 / 浏览器
   const [activeTab, setActiveTab] = useState<WorkspaceTab>("files");
 
   // ===== 1. 文件树相关状态 =====
@@ -171,6 +85,10 @@ export function ArtifactViewer({
   const [commandInput, setCommandInput] = useState("");
   const [isExecutingCmd, setIsExecutingCmd] = useState(false);
   const terminalBottomRef = useRef<HTMLDivElement>(null);
+
+  // ===== 4. 浏览器 Tab 徽标计数（流水明细由 BrowserView 自持） =====
+  const [browserOpsCount, setBrowserOpsCount] = useState(0);
+  const handleOpsCountChange = useCallback((count: number) => setBrowserOpsCount(count), []);
 
   const sid = typeof sessionId === "string" ? sessionId : "default";
 
@@ -268,6 +186,21 @@ export function ArtifactViewer({
     };
   }, [fetchFiles, fetchGitStatus]);
 
+  // 切换选项卡
+  const handleSelectTab = (tab: WorkspaceTab) => {
+    setActiveTab(tab);
+  };
+
+  // 流式完成瞬间（isStreaming true -> false）自动对账刷新工作区文件
+  const prevStreamingRef = useRef(Boolean(isStreaming));
+  useEffect(() => {
+    if (prevStreamingRef.current && !isStreaming) {
+      void fetchFiles();
+      void fetchGitStatus();
+    }
+    prevStreamingRef.current = Boolean(isStreaming);
+  }, [isStreaming, fetchFiles, fetchGitStatus]);
+
   // 终端命令执行
   const handleRunCommand = async (cmdToRun?: string) => {
     const cmd = (cmdToRun || commandInput).trim();
@@ -314,7 +247,7 @@ export function ArtifactViewer({
     } finally {
       setIsExecutingCmd(false);
       setTimeout(() => {
-        terminalBottomRef.current?.scrollIntoView({ behavior: "smooth" });
+        terminalBottomRef.current?.scrollIntoView?.({ behavior: "smooth" });
       }, 50);
     }
   };
@@ -435,11 +368,11 @@ export function ArtifactViewer({
     <div className="flex flex-col h-full bg-card border-l border-border select-none min-w-0">
       {/* 顶部工具栏与 Tab 切换器 */}
       <div className="flex items-center justify-between px-4 py-2 border-b border-border bg-muted/40 gap-3">
-        {/* 左侧：3 个多维工作台 Tab 切换 */}
+        {/* 左侧：多维工作台 Tab 切换 */}
         <div className="flex items-center gap-1 bg-surface-sunken p-1 rounded-lg border border-border">
           <button
             type="button"
-            onClick={() => setActiveTab("files")}
+            onClick={() => handleSelectTab("files")}
             className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
               activeTab === "files"
                 ? "bg-card text-foreground shadow-xs font-semibold"
@@ -457,7 +390,7 @@ export function ArtifactViewer({
 
           <button
             type="button"
-            onClick={() => setActiveTab("git")}
+            onClick={() => handleSelectTab("git")}
             className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
               activeTab === "git"
                 ? "bg-card text-foreground shadow-xs font-semibold"
@@ -475,7 +408,7 @@ export function ArtifactViewer({
 
           <button
             type="button"
-            onClick={() => setActiveTab("terminal")}
+            onClick={() => handleSelectTab("terminal")}
             className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
               activeTab === "terminal"
                 ? "bg-card text-foreground shadow-xs font-semibold"
@@ -487,6 +420,24 @@ export function ArtifactViewer({
             {terminalHistory.length > 0 && (
               <span className="text-[10px] bg-muted px-1 rounded-full text-foreground-subtle">
                 {terminalHistory.length}
+              </span>
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => handleSelectTab("browser")}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+              activeTab === "browser"
+                ? "bg-card text-foreground shadow-xs font-semibold"
+                : "text-foreground-subtle hover:text-foreground"
+            }`}
+          >
+            <Globe className="w-3.5 h-3.5 text-brand-fg" />
+            <span>浏览器</span>
+            {browserOpsCount > 0 && (
+              <span className="text-[10px] bg-brand-soft text-brand-fg px-1.5 py-0.2 rounded-full font-bold">
+                {browserOpsCount}
               </span>
             )}
           </button>
@@ -636,69 +587,7 @@ export function ArtifactViewer({
                         加载文件中...
                       </div>
                     ) : selectedFilePath.endsWith(".md") && mdPreviewMode === "preview" ? (
-                      <div className="p-6 max-w-3xl mx-auto space-y-4 font-sans leading-relaxed text-sm">
-                        {fileContent.split("\n\n").map((para, pIdx) => {
-                          if (para.startsWith("# ")) {
-                            return (
-                              <h1
-                                key={pIdx}
-                                className="text-xl font-bold border-b border-border pb-2 mt-4 text-foreground-strong"
-                              >
-                                {para.replace(/^#\s+/, "")}
-                              </h1>
-                            );
-                          }
-                          if (para.startsWith("## ")) {
-                            return (
-                              <h2
-                                key={pIdx}
-                                className="text-base font-bold border-b border-border/50 pb-1 mt-3 text-foreground-strong"
-                              >
-                                {para.replace(/^##\s+/, "")}
-                              </h2>
-                            );
-                          }
-                          if (para.startsWith("### ")) {
-                            return (
-                              <h3
-                                key={pIdx}
-                                className="text-sm font-semibold mt-2 text-foreground-strong"
-                              >
-                                {para.replace(/^###\s+/, "")}
-                              </h3>
-                            );
-                          }
-                          if (para.startsWith("- ") || para.startsWith("* ")) {
-                            return (
-                              <ul
-                                key={pIdx}
-                                className="list-disc list-inside space-y-1 text-foreground-subtle pl-2"
-                              >
-                                {para.split("\n").map((li, lIdx) => (
-                                  <li key={lIdx}>{li.replace(/^[-*]\s+/, "")}</li>
-                                ))}
-                              </ul>
-                            );
-                          }
-                          if (para.startsWith("```")) {
-                            const lines = para.split("\n");
-                            const code = lines.slice(1, -1).join("\n");
-                            return (
-                              <pre
-                                key={pIdx}
-                                className="p-3 rounded-lg bg-surface-sunken border border-border font-mono text-xs overflow-x-auto"
-                              >
-                                <code>{code}</code>
-                              </pre>
-                            );
-                          }
-                          return (
-                            <p key={pIdx} className="text-foreground-subtle whitespace-pre-line">
-                              {para}
-                            </p>
-                          );
-                        })}
-                      </div>
+                      <MarkdownPreview content={fileContent} />
                     ) : (
                       <div className="flex font-mono text-xs min-h-full">
                         <div className="py-4 pr-3 pl-4 text-right text-foreground-subtle/40 select-none bg-surface-sunken/40 border-r border-border/40 font-mono">
@@ -902,6 +791,17 @@ export function ArtifactViewer({
               </button>
             </form>
           </div>
+        )}
+
+        {/* ==================== 4. 浏览器自动化操作与状态视图（自持切片） ==================== */}
+        {activeTab === "browser" && (
+          <BrowserView
+            appId={String(appId)}
+            sessionId={sid}
+            messages={propMessages}
+            isStreaming={Boolean(isStreaming)}
+            onOperationsCountChange={handleOpsCountChange}
+          />
         )}
       </div>
     </div>

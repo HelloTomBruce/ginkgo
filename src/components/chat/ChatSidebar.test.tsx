@@ -235,4 +235,24 @@ describe("ChatSidebar 底部功能栏", () => {
     expect(screen.getByText("常用指令与探索场景")).toBeInTheDocument();
     expect(screen.getByText(/帮我审查并重构一段代码/)).toBeInTheDocument();
   });
+
+  it("支持侧栏展开/收起切换与状态响应", () => {
+    const onToggleCollapse = vi.fn();
+    const { rerender } = render(
+      <ChatSidebar {...baseProps} isCollapsed={false} onToggleCollapse={onToggleCollapse} />
+    );
+
+    const collapseBtn = screen.getByRole("button", { name: "收起侧边栏" });
+    expect(collapseBtn).toBeInTheDocument();
+    fireEvent.click(collapseBtn);
+    expect(onToggleCollapse).toHaveBeenCalledTimes(1);
+
+    // 重新渲染为已收起状态
+    rerender(
+      <ChatSidebar {...baseProps} isCollapsed={true} onToggleCollapse={onToggleCollapse} />
+    );
+    const aside = screen.getByRole("complementary", { hidden: true });
+    expect(aside).toHaveAttribute("aria-hidden", "true");
+    expect(aside.className).toContain("-ml-72");
+  });
 });

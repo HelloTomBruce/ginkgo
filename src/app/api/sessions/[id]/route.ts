@@ -1,4 +1,7 @@
 import { sessionStore, toSummary } from "@/lib/sessionStore";
+import { appRegistry } from "@/lib/apps/registry";
+import { resolveRuntimeServer } from "@/lib/apps/runtimeServers";
+import type { AppSessionDetailProjection } from "@ginkgo/app-sdk";
 
 /**
  * GET /api/sessions/:id — 详情（含 messages 全文，会话切换/恢复用）；不存在 404。
@@ -13,7 +16,9 @@ export async function GET(
     if (!record) {
       return Response.json({ error: `会话不存在: ${id}` }, { status: 404 });
     }
-    return Response.json({ session: record });
+    // 响应形状与应用消费侧共用同一投影契约（AppSessionDetailProjection）
+    const data: AppSessionDetailProjection = { session: record };
+    return Response.json(data);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     return Response.json({ error: message }, { status: 500 });
@@ -56,9 +61,19 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params;
+    const record = await sessionStore.get(id);
     const removed = await sessionStore.remove(id);
     if (!removed) {
       return Response.json({ error: `会话不存在: ${id}` }, { status: 404 });
+    }
+    // 应用侧会话终止钩子：释放浏览器实例等会话级资源（清理失败不阻塞删除响应）
+    if (record) {
+      try {
+        const appId = appRegistry.getOrDefault(record.appId).manifest.id;
+        await resolveRuntimeServer(appId)?.onSessionEnd?.(id);
+      } catch {
+        // 会话资源释放失败由 dsh 空闲驱逐兜底
+      }
     }
     return new Response(null, { status: 204 });
   } catch (err: unknown) {

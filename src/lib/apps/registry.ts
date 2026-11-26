@@ -1,4 +1,4 @@
-import type { AppPackageDefinition } from "@ginkgo/app-sdk";
+import { KNOWN_APP_CAPABILITIES, type AppPackageDefinition } from "@ginkgo/app-sdk";
 import analyticsAppPackage from "@ginkgo-apps/analytics";
 import generalAppPackage from "@ginkgo-apps/general";
 import designAppPackage from "@ginkgo-apps/design";
@@ -19,10 +19,19 @@ class AppRegistry {
   }
 
   /**
-   * 注册应用包
+   * 注册应用包（同时校验 requiredCapabilities 词汇表：
+   * 未知能力仅告警不拦截——前向兼容第三方应用，防拼写漂移）
    */
   register(app: AppPackageDefinition): void {
     this.apps.set(app.manifest.id, app);
+    for (const cap of app.server.requiredCapabilities ?? []) {
+      if (!(KNOWN_APP_CAPABILITIES as readonly string[]).includes(cap)) {
+        console.warn(
+          `[registry] 应用 [${app.manifest.id}] 声明了平台未知的底层能力 "${cap}"，` +
+            `请检查拼写或在 @ginkgo/app-sdk 的 KNOWN_APP_CAPABILITIES 中扩充词汇表`
+        );
+      }
+    }
   }
 
   /**

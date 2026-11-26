@@ -49,6 +49,45 @@ export interface AppWorkspaceContextInfo {
   isGitRepo?: boolean;
 }
 
+/** 宿主消息流中一次工具调用的最小只读投影（应用包消费侧契约） */
+export interface AppWorkspaceToolInvocation {
+  /** 工具调用唯一 ID（AI SDK toolCallId） */
+  toolCallId?: string;
+  /** 工具名（如 browser_open） */
+  toolName?: string;
+  /** 调用入参 */
+  args?: Record<string, unknown>;
+  /** 返回结果（call 阶段缺省） */
+  result?: unknown;
+  /** 调用状态 */
+  state?: "call" | "partial-call" | "result";
+}
+
+/** 宿主注入工作台的消息最小只读投影（UIMessage 的协议化子集） */
+export interface AppWorkspaceMessage {
+  /** 消息 ID */
+  id?: string;
+  /** 角色（user / assistant / system ...） */
+  role?: string;
+  /** 创建时间（AI SDK 通常为 Date，持久化后可能序列化为字符串/时间戳） */
+  createdAt?: number | string | Date;
+  /** AI SDK parts 结构（tool-invocation 部件内嵌工具调用） */
+  parts?: Array<{
+    type?: string;
+    toolInvocation?: AppWorkspaceToolInvocation;
+  }>;
+  /** 顶层工具调用列表（与 parts 同源，AI SDK 双挂载） */
+  toolInvocations?: AppWorkspaceToolInvocation[];
+}
+
+/** 宿主会话详情 API 的最小投影（GET /api/sessions/:id 响应形状的应用消费侧契约） */
+export interface AppSessionDetailProjection {
+  session?: {
+    id?: string;
+    messages?: AppWorkspaceMessage[];
+  };
+}
+
 /** 宿主注入给右侧工作台插槽的 Props */
 export interface AppWorkspaceProps {
   /** 当前工作区的数据产物（如看板 DSL、文档内容、沙箱代码等） */
@@ -59,6 +98,10 @@ export interface AppWorkspaceProps {
   appId?: string;
   /** 宿主统一注入的工作区上下文 */
   workspace?: AppWorkspaceContextInfo;
+  /** 对话历史消息（包含正在流式生成的最新消息与工具调用） */
+  messages?: AppWorkspaceMessage[];
+  /** 当前是否正在流式生成回复 */
+  isStreaming?: boolean;
   /** 关闭工作台回到纯对话流 */
   onClose: () => void;
   /** 交互动作回调（如点击操作建议按钮反馈给模型） */
@@ -532,6 +575,12 @@ export interface AppServerContract {
     payload: Record<string, unknown>,
     ctx: AppActionContext
   ): Promise<unknown>;
+
+  /**
+   * 会话终止钩子（可选）：宿主删除会话时经组合根运行时触发，应用据此释放
+   * 会话级资源（如浏览器实例缓存、长驻服务）。清理失败由宿主吞错，不阻塞删除。
+   */
+  onSessionEnd?(sessionId: string): Promise<void>;
 
   /**
    * 产物列表（可选）：应用自治枚举其产物（看板/文档/文件等）为统一的

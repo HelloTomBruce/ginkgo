@@ -102,9 +102,14 @@ interface AppServerContract {
   requiresDataTools?: boolean;
   /** 声明需要会话沙箱（宿主解析 workspace 并注入 AppServerContext.workspace） */
   needsWorkspace?: boolean;
+  /** 声明依赖的平台底层能力（组合根按 KNOWN_APP_CAPABILITIES 词汇表校验） */
   requiredCapabilities?: string[];
   listArtifacts?(ctx: AppWorkspaceContext): Promise<AppArtifactItem[]>;
   refreshArtifact?(input: { artifactId: string }): Promise<AppArtifactRefreshVerdict>;
+  /** 应用自治动作分发网关（宿主 POST /api/apps/[appId]/action 校验后转发） */
+  dispatchAction?(action: string, payload: Record<string, unknown>, ctx: AppActionContext): Promise<unknown>;
+  /** 会话终止钩子（宿主删除会话时触发，释放浏览器等会话级资源） */
+  onSessionEnd?(sessionId: string): Promise<void>;
 }
 ```
 
@@ -113,6 +118,28 @@ interface AppServerContract {
 ——preset 是丰富度维度（atomic = read/edit/write/bash 四原子工具；explorer 追加
 list_dir），permission 是权限维度（readonly 只装配只读工具）；工具说明 prompt 片段
 用 `sandboxToolsPromptSection(preset, permission)` 与装配同源拼接。
+
+浏览器自动化工具同理消费 `@ginkgo/browser` 能力包（基于 dsh-browser-view 的
+Playwright 驱动 + 意图语义定位）：
+
+```ts
+import { createBrowserTools } from "@ginkgo/browser";
+
+const browserPkg = createBrowserTools({
+  sessionId: ctx.sessionId,          // 会话命名空间（dsh session scope 隔离多会话实例）
+  workspaceDir: sandboxDir,          // 截图/下载/基线落盘根目录（派生 screenshots/ 等子目录）
+  permissionLevel: ctx.mode === "plan" ? "readonly" : "full",
+  toolset: "core",                   // 25 个高频工具（省 prompt 常驻 token）；"all" 为全量 39 个
+  headless: true,
+});
+// browserPkg.tools 直接展开进 getTools 返回值；promptSection 与 tools 由同一
+// permissionLevel 派生（同源判定，prompt 宣称与实际能力永不漂移）。
+```
+
+只读档（plan 模式）在**装配层**按 `READONLY_BROWSER_TOOLS` allowlist 直接裁剪——
+写副作用工具（click/type/press/eval/表单等）根本不注册，而非仅靠 prompt 约束；
+新增 dsh 工具默认被排除，安全默认方向正确。浏览器实例按会话复用（请求 1 开页、
+请求 2 截图共享实例），会话销毁时宿主触发 `onSessionEnd`（见 §4.5）显式释放。
 
 ### 4.1 AppServerContext 字段全景
 
@@ -160,6 +187,45 @@ export function createXxxServer(deps: { datasources: DatasourceManager; ... }) {
 
 宿主组合根注入：`src/lib/analyticsRuntime.ts` 是范例（datasources / methodology /
 artifacts 三类依赖的装配点）。
+
+### 4.4 应用动作分发网关（dispatchAction）
+
+工作台/设置分区等前端交互指令走统一网关 `POST /api/apps/[appId]/action`：宿主薄壳
+完成白名单校验 → 会话归属权校验（防跨会话越权）→ 沙箱路径安全归一化 → 委托应用
+`dispatchAction(action, payload, ctx: AppActionContext)`。应用侧按 action 字符串
+分发（命令分发模式），返回值直接 JSON 回包；未实现该接缝的应用网关返回 501。
+范例见 `app-general/src/server/index.ts` 的 `browser_status` /
+`browser_capture_screenshot`。
+
+### 4.5 会话终止钩子（onSessionEnd）
+
+宿主删除会话（`DELETE /api/sessions/:id`）成功后触发 `onSessionEnd(sessionId)`，
+应用据此释放会话级资源（浏览器实例缓存、长驻服务等）。清理失败由宿主吞错，不阻塞
+删除响应；未声明该接缝的应用无需实现。约定：跨请求需要复用的资源（如同一会话的
+浏览器实例）**不要**在 `getTools` 里释放，只在 `onSessionEnd` 释放。
+
+### 4.6 底层能力声明（requiredCapabilities）
+
+`requiredCapabilities` 声明应用依赖的平台底层能力，合法取值以 app-sdk 的
+`KNOWN_APP_CAPABILITIES` 词汇表为唯一事实来源（workspace_sandbox / filesystem /
+bash / browser / sql_query / chart_spec / methodology / claude_design /
+claude_design_system）。组合根注册应用时逐项校验：未知能力 `console.warn`
+**不拦截**——前向兼容第三方应用（新版应用可声明旧版平台不认识的能力），同时防
+拼写漂移。新增底层能力时先扩充词汇表。
+
+### 4.7 协议投影类型（跨层消息与结果契约）
+
+- `AppWorkspaceMessage` / `AppWorkspaceToolInvocation`：宿主注入工作台插槽的
+  `messages` 最小只读投影——应用侧据此解析工具调用流水（如浏览器 Tab 的操作
+  时间线），禁止在应用内自行 `unknown` 窄化；
+- `AppSessionDetailProjection`：宿主 `GET /api/sessions/:id` 响应形状的投影契约，
+  应用经 HTTP 消费会话消息时与宿主同源标注；
+- `toolFailure(toolName, message)` / `ToolFailureResult` / `isToolFailureLike`：
+  「简单工具失败」结果的协议级工厂与守卫——能力包装层、编排安全切面、应用动作
+  网关等生产方一律经工厂构造（error 带 `[toolName]` 前缀），宿主工具卡片经宽容
+  守卫判定失败态。约定：**AbortError 必须在每层透传**，不得收敛为失败结果
+  （取消语义优先于错误收敛）。命令级富结构失败（bash 的 exitCode/stdout 等）
+  不适用本契约。
 
 ## 5. 工作区与沙箱边界
 

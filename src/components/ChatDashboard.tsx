@@ -1,7 +1,7 @@
 "use client";
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useChat } from "@ai-sdk/react";
-import { TrendingUp, Bot, Settings } from "lucide-react";
+import { TrendingUp, Bot, Settings, PanelLeft, PanelLeftOpen } from "lucide-react";
 import { resolveContextWindow, estimateMessagesTokens } from "@ginkgo/llm/context";
 import type { AppPresetQuery } from "@ginkgo/app-sdk";
 import { DEFAULT_WELCOME_MESSAGE } from "@/lib/sessionStorage";
@@ -1015,11 +1015,40 @@ export default function ChatDashboard() {
   const handleOpenSettings = useCallback(() => setShowSettings(true), [setShowSettings]);
   const handleCloseSettings = useCallback(() => setShowSettings(false), [setShowSettings]);
   const handleCancelRename = useCallback(() => setEditingSessionId(null), [setEditingSessionId]);
+
+  // 侧边栏展开/收起状态（支持本地存储记忆）
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        return localStorage.getItem("ginkgo_sidebar_collapsed") === "true";
+      } catch {
+        return false;
+      }
+    }
+    return false;
+  });
+
+  const handleToggleSidebar = useCallback(() => {
+    setIsSidebarCollapsed((prev) => {
+      const next = !prev;
+      if (typeof window !== "undefined") {
+        try {
+          localStorage.setItem("ginkgo_sidebar_collapsed", String(next));
+        } catch {
+          // ignore
+        }
+      }
+      return next;
+    });
+  }, []);
+
   return (
     <div className="flex h-screen bg-surface-sunken text-foreground font-sans overflow-hidden">
       {/* 平台渲染引擎的客户端本地工具注入（消息流 / 画布 / 应用插槽组件共用） */}
       <UiSpecToolProvider tools={clientTools}>
       <ChatSidebar
+        isCollapsed={isSidebarCollapsed}
+        onToggleCollapse={handleToggleSidebar}
         activeAppId={activeAppId}
         onSwitchApp={handleSwitchApp}
         sessions={sessions}
@@ -1051,6 +1080,19 @@ export default function ChatDashboard() {
         {/* 顶部标题栏 */}
         <header className="h-14 border-b border-border bg-card px-6 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3 text-sm font-medium min-w-0">
+            <button
+              type="button"
+              onClick={handleToggleSidebar}
+              className="p-1.5 -ml-2 rounded-lg text-foreground-subtle hover:text-foreground hover:bg-muted transition-colors cursor-pointer shrink-0"
+              title={isSidebarCollapsed ? "展开侧边栏" : "收起侧边栏"}
+              aria-label={isSidebarCollapsed ? "展开侧边栏" : "收起侧边栏"}
+            >
+              {isSidebarCollapsed ? (
+                <PanelLeftOpen className="w-4 h-4" />
+              ) : (
+                <PanelLeft className="w-4 h-4" />
+              )}
+            </button>
             {activeApp.manifest.icon === "Bot" ? (
               <Bot className="w-4 h-4 text-info-fg shrink-0" />
             ) : (
@@ -1255,6 +1297,8 @@ export default function ChatDashboard() {
                   data={canvasData}
                   sessionId={currentSessionId}
                   appId={activeAppId}
+                  messages={messages}
+                  isStreaming={isLoading}
                   onClose={() => setViewMode("chat-only")}
                   onAction={handleRendererAction}
                   onRefresh={handleCanvasRefresh}

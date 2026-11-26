@@ -16,10 +16,11 @@ Ginkgo 是**智能体应用平台**（不是单一定制产品）。分层与依
 │  app-analytics：三模式 prompt / 数据源与跨源工具 / 方法卡 /      │
 │                 看板产物域（收藏·物化·重放·模板，全自持）        │
 │  app-design：体验设计工坊（画板 / 设计系统 Token 大盘）          │
-│  app-general：沙箱原子工具 / ArtifactViewer 产物工作台           │
+│  app-general：沙箱+浏览器自动化工具 / ArtifactViewer 多维工作台  │
 ├────────────────────────────────────────────────────────────────┤
 │ L2 能力包 packages/ginkgo-*                                     │
 │  sandbox（沙箱原子工具+权限档）· datasources（直连+只读网关）    │
+│  browser（Playwright 浏览器自动化+权限档+会话作用域）            │
 │  components（看板组件库+渲染基建+UI 原语）· chart-spec（spec 契约）│
 │  methodology（方法卡资产）· harness-core（通用 Agent 底座）      │
 │  models（零依赖同构模型与 Provider 规范契约+元数据）            │
@@ -42,8 +43,9 @@ Ginkgo 是**智能体应用平台**（不是单一定制产品）。分层与依
 | `packages/ginkgo-app-sdk` | `defineApp` / `AppPackageDefinition` | **L0 协议层**：manifest、客户端插槽、服务端契约、产物协议、消息区扩展 |
 | `packages/apps/app-analytics` | `createAnalyticsServer` | 智能数据分析师应用（深度应用）：三模式 prompt、schema 摘要、方法卡、跨源映射、数据源工具、看板产物域全自持 |
 | `packages/apps/app-design` | `getDesignTools` | 体验设计工坊应用：多端响应式视觉画板 (iframe)、设计系统 Token 大盘与样式合规审计 |
-| `packages/apps/app-general` | `getGeneralTools` | 通用智能助手应用：沙箱原子工具（消费 ginkgo-sandbox）、ArtifactViewer 产物工作台 |
+| `packages/apps/app-general` | `getGeneralTools` | 通用智能助手应用：沙箱原子工具（ginkgo-sandbox）+ 浏览器自动化工具（ginkgo-browser）、ArtifactViewer 多维工作台（文件/Git/终端/浏览器 Tab） |
 | `packages/ginkgo-sandbox` | `createSandboxTools` | 沙箱工作区能力包：四原子工具（read/edit/write/bash）+ explorer 只读增强预设、full/readonly 权限档、run_command env 白名单 |
+| `packages/ginkgo-browser` | `createBrowserTools` / `buildBrowserPromptSection` | 浏览器自动化能力包：dsh-browser-view（Playwright）→ AI SDK Tool 适配、full/readonly 权限档（装配层 allowlist 裁剪）、core/all 工具集、会话作用域隔离、prompt 同源派生 |
 | `packages/ginkgo-models` | `isReasoningModel` / `resolveContextWindow` / `findPreset` | **L2 契约与元数据**：零依赖同构模型包。Provider 预设目录、模型参数归一化、推理判定、动态 models.dev 目录合并与缓存、上下文容量规范 |
 | `packages/ginkgo-chart-spec` | `parseDashboardSpec` / `applyJsonPatch` | DashboardSpec 2.0 声明式状态树 + RFC 6902 JSON Patch 引擎（zod-only） |
 | `packages/ginkgo-harness-core` | `ContextEngine` / `createTerminationTool` / `MCPClientManager` | 通用 Agent Harness：上下文裁剪压缩、洋葱模型工具切面、任务生命周期断言、三维预算防跑飞、MCP 连接池、FinOps 台账 |
@@ -61,7 +63,7 @@ Ginkgo 是**智能体应用平台**（不是单一定制产品）。分层与依
 
 **服务端接缝**（`AppServerContract`）：`buildSystemPrompt` / `getTools` / `needsWorkspace` / `requiresDataTools` / `listArtifacts` / `refreshArtifact`；`ctx.mode`（direct/plan/execute）贯穿 prompt 与工具装配——plan 模式沙箱自动收敛为只读档。
 
-**能力消费**：沙箱工具（`@ginkgo/sandbox`）、数据源网关（datasources）、看板渲染（components + chart-spec）、方法卡（methodology）、`zodTool` 等底座设施（harness-core）。能力包不 import 应用与宿主，经协议层类型解耦。
+**能力消费**：沙箱工具（`@ginkgo/sandbox`）、浏览器自动化（`@ginkgo/browser`）、数据源网关（datasources）、看板渲染（components + chart-spec）、方法卡（methodology）、`zodTool` 等底座设施（harness-core）。能力包不 import 应用与宿主，经协议层类型解耦。
 
 ## 渲染管线
 

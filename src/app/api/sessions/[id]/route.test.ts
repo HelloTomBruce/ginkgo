@@ -20,6 +20,12 @@ vi.mock("@/lib/sessionStore", async (importOriginal) => {
   };
 });
 
+/** 会话终止钩子接缝 mock：验证 DELETE 成功后触发应用侧资源释放 */
+const { onSessionEndSpy } = vi.hoisted(() => ({ onSessionEndSpy: vi.fn() }));
+vi.mock("@/lib/apps/runtimeServers", () => ({
+  resolveRuntimeServer: () => ({ onSessionEnd: onSessionEndSpy }),
+}));
+
 const RECORD: SessionRecord = {
   id: "sess_ab12cd34",
   title: "渠道 CAC 分析",
@@ -111,5 +117,32 @@ describe("DELETE /api/sessions/:id", () => {
       paramsOf("sess_ffffffff")
     );
     expect(missing.status).toBe(404);
+  });
+
+  it("删除成功时触发应用侧 onSessionEnd 会话终止钩子", async () => {
+    vi.mocked(sessionStore.get).mockResolvedValueOnce({ ...RECORD, appId: "general" });
+    vi.mocked(sessionStore.remove).mockResolvedValueOnce(true);
+
+    const res = await DELETE(
+      new Request("http://localhost/", { method: "DELETE" }),
+      paramsOf(RECORD.id)
+    );
+
+    expect(res.status).toBe(204);
+    expect(onSessionEndSpy).toHaveBeenCalledTimes(1);
+    expect(onSessionEndSpy).toHaveBeenCalledWith(RECORD.id);
+  });
+
+  it("会话不存在时不触发 onSessionEnd", async () => {
+    vi.mocked(sessionStore.get).mockResolvedValueOnce(null);
+    vi.mocked(sessionStore.remove).mockResolvedValueOnce(false);
+
+    const res = await DELETE(
+      new Request("http://localhost/", { method: "DELETE" }),
+      paramsOf("sess_ffffffff")
+    );
+
+    expect(res.status).toBe(404);
+    expect(onSessionEndSpy).not.toHaveBeenCalled();
   });
 });

@@ -89,6 +89,7 @@ export async function GET(req: Request) {
     const appId = searchParams.get("appId") || "general";
     const sessionId = searchParams.get("sessionId") || "default";
     const filePath = searchParams.get("filePath");
+    const raw = searchParams.get("raw") === "true";
     const action = searchParams.get("action");
 
     let customRootDir: string | undefined;
@@ -171,7 +172,54 @@ export async function GET(req: Request) {
 
     // 1. 若指定了 filePath，读取文件内容
     if (filePath) {
-      const ext = path.extname(filePath).toLowerCase();
+      let relFilePath = filePath;
+      // 容错处理：若为绝对路径或携带完整前缀，规范化为相对工作区路径
+      if (path.isAbsolute(filePath)) {
+        if (filePath.startsWith(ws.sandboxDir)) {
+          relFilePath = path.relative(ws.sandboxDir, filePath);
+        } else {
+          const match = filePath.match(/(screenshots\/[^/\\]+\.(?:png|jpg|jpeg|webp|gif))$/i);
+          if (match) {
+            relFilePath = match[1];
+          }
+        }
+      }
+      const ext = path.extname(relFilePath).toLowerCase();
+      const safeFile = resolveSafeWorkspacePath(ws.sandboxDir, relFilePath);
+
+      // 支持 raw=true 直接输出二进制或原始文件体（如浏览器截图预览、图片展示）
+      if (raw) {
+        try {
+          const stat = await fs.stat(safeFile);
+          if (!stat.isFile()) {
+            return new Response("Not a file", { status: 400 });
+          }
+          const buffer = await fs.readFile(safeFile);
+          // 注意：SVG 可携带 <script>，同源内联输出等同 Stored-XSS 通路，刻意不提供
+          // image/svg+xml 内联类型——未命中类型一律回落 octet-stream（配合 nosniff 以下载处理）
+          const mimeTypes: Record<string, string> = {
+            ".png": "image/png",
+            ".jpg": "image/jpeg",
+            ".jpeg": "image/jpeg",
+            ".webp": "image/webp",
+            ".gif": "image/gif",
+            ".pdf": "application/pdf",
+          };
+          const mime = mimeTypes[ext] || "application/octet-stream";
+          return new Response(buffer, {
+            headers: {
+              "Content-Type": mime,
+              "Content-Length": String(stat.size),
+              "X-Content-Type-Options": "nosniff",
+              // 会话私有产物：禁止共享缓存语义
+              "Cache-Control": "private, max-age=60",
+            },
+          });
+        } catch {
+          return new Response("File not found", { status: 404 });
+        }
+      }
+
       if (BINARY_EXTENSIONS.has(ext)) {
         return NextResponse.json({
           path: filePath,
@@ -182,7 +230,6 @@ export async function GET(req: Request) {
         });
       }
 
-      const safeFile = resolveSafeWorkspacePath(ws.sandboxDir, filePath);
       try {
         const stat = await fs.stat(safeFile);
         if (!stat.isFile()) {

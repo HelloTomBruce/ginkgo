@@ -1,4 +1,7 @@
 import type { NextConfig } from "next";
+import { createRequire } from "node:module";
+
+const require = createRequire(import.meta.url);
 
 const nextConfig: NextConfig = {
   /* config options here */
@@ -18,7 +21,7 @@ const nextConfig: NextConfig = {
   turbopack: {
     rules: {
       "*.css": {
-        loaders: ["@tailwindcss/turbopack"],
+        loaders: [require.resolve("@tailwindcss/turbopack")],
         as: "*.css",
       },
     },

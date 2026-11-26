@@ -299,7 +299,7 @@ const MessageItem = React.memo(function MessageItem({
             return;
           }
           if (currentTools.length === 0) {
-            currentToolsKey = part.toolInvocation.toolCallId || `tools-${idx}`;
+            currentToolsKey = `tools-${result.length}-${part.toolInvocation.toolCallId || idx}`;
           }
           currentTools.push(part.toolInvocation);
         } else {
@@ -456,7 +456,7 @@ const MessageItem = React.memo(function MessageItem({
               <div key={block.id} className="no-print space-y-2">
                 {block.tools.map((tool, idx: number) => (
                   <ToolInvocationCard
-                    key={tool.toolCallId || idx}
+                    key={`${tool.toolCallId || "tool"}-${idx}`}
                     tool={tool}
                     toolRenderers={toolRenderers}
                     approvalRules={approvalRules}

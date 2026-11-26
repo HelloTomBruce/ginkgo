@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { appRegistry, getDefaultApp, getApp, listApps, DEFAULT_APP_ID } from "./registry";
 import type { AppDefinition } from "@/types/app";
 
@@ -59,5 +59,39 @@ describe("AppRegistry 应用注册表", () => {
 
     const all = listApps();
     expect(all.some((a) => a.manifest.id === "demo-app")).toBe(true);
+  });
+
+  it("注册时校验能力词汇表：未知能力告警不拦截，已知能力不告警", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      // 未知能力：warn 且注册成功（不 block，前向兼容第三方应用）
+      appRegistry.register({
+        manifest: { id: "cap-demo", name: "能力校验演示", description: "", icon: "Bot" },
+        client: { welcomeMessage: "", presetQueries: [] },
+        server: {
+          buildSystemPrompt: () => "",
+          requiredCapabilities: ["workspace_sandbox", "totally_unknown_cap"],
+        },
+      } as unknown as Parameters<typeof appRegistry.register>[0]);
+      expect(appRegistry.has("cap-demo")).toBe(true);
+      const unknownWarns = warnSpy.mock.calls.filter((c) =>
+        c.join(" ").includes("totally_unknown_cap")
+      );
+      expect(unknownWarns).toHaveLength(1);
+
+      // 全部已知能力：不产生任何告警
+      appRegistry.register({
+        manifest: { id: "cap-ok-app", name: "能力合法演示", description: "", icon: "Bot" },
+        client: { welcomeMessage: "", presetQueries: [] },
+        server: {
+          buildSystemPrompt: () => "",
+          requiredCapabilities: ["workspace_sandbox", "browser"],
+        },
+      } as unknown as Parameters<typeof appRegistry.register>[0]);
+      const okWarns = warnSpy.mock.calls.filter((c) => c.join(" ").includes("cap-ok-app"));
+      expect(okWarns).toHaveLength(0);
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 });

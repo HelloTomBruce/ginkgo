@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2, AlertCircle, Check } from "lucide-react";
 import type { ToolInvocationState } from "./contentBlocks";
 import type {
   AppToolRendererSpec,
@@ -9,6 +9,7 @@ import type {
   ModeEscalationChangeItem,
   ModeEscalationPayload,
 } from "@ginkgo/app-sdk";
+import { isToolFailureLike } from "@ginkgo/app-sdk";
 import { DiffViewer, ApprovalCard, ModeApprovalCard, TerminalViewer } from "@ginkgo/components";
 
 export interface ToolInvocationCardProps {
@@ -320,26 +321,40 @@ export function ToolInvocationCard({
     }
   }
 
-  // 5. 兜底回退：默认经典胶囊徽标
+  // 5. 兜底回退：默认经典胶囊徽标（失败判定与生产方共用协议级宽容守卫）
+  const res = tool.result as Record<string, unknown> | undefined;
+  const isFailed = tool.state === "result" && isToolFailureLike(tool.result);
+
   return (
     <div
       className={`flex items-center gap-2 text-xs px-3 py-2.5 rounded-lg border transition-all ${
         isRunning
           ? "text-info-fg-strong bg-info-soft/80 border-info-border animate-pulse"
+          : isFailed
+          ? "text-danger-fg bg-danger-soft/40 border-danger-border"
           : "text-foreground-subtle bg-surface-sunken border-border"
       }`}
     >
-      <Loader2
-        className={`w-3.5 h-3.5 ${
-          isRunning ? "animate-spin text-info-fg" : "text-success-fg"
-        }`}
-      />
-      <span className="font-mono flex-1 truncate">
+      {isRunning ? (
+        <Loader2 className="w-3.5 h-3.5 animate-spin text-info-fg shrink-0" />
+      ) : isFailed ? (
+        <AlertCircle className="w-3.5 h-3.5 text-danger-fg shrink-0" />
+      ) : (
+        <Check className="w-3.5 h-3.5 text-success-fg shrink-0" />
+      )}
+      <span
+        className="font-mono flex-1 truncate"
+        title={isFailed && typeof res?.error === "string" ? res.error : undefined}
+      >
         {getFallbackBadgeText(tool.toolName, tool.args, activeSources)}
       </span>
       {isRunning ? (
         <span className="text-[10px] bg-info-soft-strong text-info-fg-strong px-2 py-0.5 rounded font-sans font-medium flex items-center gap-1">
           查询中...
+        </span>
+      ) : isFailed ? (
+        <span className="text-[10px] bg-danger-soft text-danger-fg px-2 py-0.5 rounded font-sans font-medium">
+          未命中或异常
         </span>
       ) : (
         <span className="text-[10px] bg-success-soft-strong text-success-fg px-2 py-0.5 rounded font-sans font-medium">

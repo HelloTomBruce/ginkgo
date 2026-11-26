@@ -19,6 +19,7 @@ import {
   SUMMARY_MAX_TOKENS,
 } from "./context";
 import type { AppDeliverableContract } from "@ginkgo/app-sdk";
+import { toolFailure } from "@ginkgo/app-sdk";
 import { withPlatformGuardrails, getPlatformBasePrompt } from "./platformPrompt";
 import {
   defaultModelCatalog,
@@ -123,7 +124,18 @@ function instrumentTools(
 ): Record<string, CoreTool> {
   const telemetryAspect = createTelemetryInterceptor(ctx);
   const readonlyAspect = createReadonlyGuardInterceptor(ctx.mode);
-  return composeToolInterceptors(tools, [telemetryAspect, readonlyAspect]);
+  // 稳健异常捕获切面：避免未捕获的工具异常导致整个流式生成崩溃
+  const safeExecutionAspect: ToolInterceptor = async (args, toolCtx, next) => {
+    try {
+      return await next(args);
+    } catch (err) {
+      // 取消语义不可吞：用户中止/超时中断必须继续向上传播，由流式管道按取消处理
+      if (err instanceof Error && err.name === "AbortError") throw err;
+      const message = err instanceof Error ? err.message : String(err);
+      return toolFailure(toolCtx.toolName, `执行出错: ${message}`);
+    }
+  };
+  return composeToolInterceptors(tools, [telemetryAspect, readonlyAspect, safeExecutionAspect]);
 }
 
 /**

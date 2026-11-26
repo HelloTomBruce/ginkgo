@@ -26,6 +26,7 @@ import {
   Box,
   ChevronDown,
   ChevronRight,
+  PanelLeftClose,
 } from "lucide-react";
 import type { SessionSummary } from "@/lib/sessionStore";
 import type { WorkspaceRecord } from "@/lib/workspaceStore";
@@ -80,7 +81,10 @@ interface ChatSidebarProps {
   presetQueries: PresetQuery[];
   /** 打开应用自治弹层（sidebarQuickActions 声明 Component 的动作，宿主按 key 管理 open） */
   onOpenAction: (key: string) => void;
-  /** 打开可视化组件查看弹窗 */
+  /** 侧栏是否收起（缺省 false） */
+  isCollapsed?: boolean;
+  /** 展开/收起切换回调 */
+  onToggleCollapse?: () => void;
 }
 
 export function ChatSidebar({
@@ -109,6 +113,8 @@ export function ChatSidebar({
   onPresetSelect,
   presetQueries,
   onOpenAction,
+  isCollapsed = false,
+  onToggleCollapse,
 }: ChatSidebarProps) {
   const currentApp = useMemo(
     () => appRegistry.getOrDefault(activeAppId),
@@ -264,12 +270,32 @@ export function ChatSidebar({
   }, [sessions, currentSessionId]);
 
   return (
-    <aside className="w-72 border-r border-border bg-card flex flex-col shrink-0">
+    <aside
+      className={`border-r border-border bg-card flex flex-col shrink-0 transition-[margin,opacity] duration-200 ease-in-out ${
+        isCollapsed
+          ? "-ml-72 w-72 overflow-hidden opacity-0 pointer-events-none border-r-0"
+          : "ml-0 w-72 opacity-100"
+      }`}
+      aria-hidden={isCollapsed}
+    >
       {/* 顶部品牌 + 应用切换器 */}
       <div className="p-3 border-b border-border-subtle">
-        <div className="flex items-center gap-2 mb-2.5 px-1">
-          <GinkgoLogo className="w-5 h-5 shrink-0" />
-          <span className="text-sm font-semibold tracking-tight text-foreground">Ginkgo</span>
+        <div className="flex items-center justify-between gap-2 mb-2.5 px-1">
+          <div className="flex items-center gap-2 min-w-0">
+            <GinkgoLogo className="w-5 h-5 shrink-0" />
+            <span className="text-sm font-semibold tracking-tight text-foreground truncate">Ginkgo</span>
+          </div>
+          {onToggleCollapse && (
+            <button
+              type="button"
+              onClick={onToggleCollapse}
+              className="p-1 rounded-md text-foreground-subtle hover:text-foreground hover:bg-muted transition-colors cursor-pointer shrink-0"
+              title="收起侧边栏"
+              aria-label="收起侧边栏"
+            >
+              <PanelLeftClose className="w-4 h-4" />
+            </button>
+          )}
         </div>
         <AppSwitcher
           activeAppId={activeAppId}

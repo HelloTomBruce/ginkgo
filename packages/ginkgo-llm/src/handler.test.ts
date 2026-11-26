@@ -1033,6 +1033,96 @@ describe("Plan→execute 结构化交接（WS-4）", () => {
     expect(writeMock).not.toHaveBeenCalled();
   });
 
+  it("工具抛出普通异常时收敛为结构化失败结果，不中断流式生成", async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let capturedTool: any;
+
+    const POST = createAnalyzeHandler({
+      resolveAppTools: async () => ({
+        read_file: {
+          description: "读文件",
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          parameters: {} as any,
+          execute: async () => {
+            throw new Error("boom");
+          },
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        } as any,
+      }),
+    });
+
+    const { streamText } = await import("ai");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    vi.mocked(streamText).mockImplementationOnce((async (opts: any) => {
+      capturedTool = opts.tools.read_file;
+      return {
+        toDataStreamResponse: () => new Response("data: ok\n\n"),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    }) as any);
+
+    await POST(
+      makeRequest({
+        messages: [{ role: "user", content: "读一下" }],
+        apiKey: "k",
+        sessionId: "sess_tool_err",
+      })
+    );
+
+    expect(capturedTool).toBeDefined();
+    const result = await capturedTool.execute({ path: "a.txt" }, { toolCallId: "call_err" });
+    expect(result.isError).toBe(true);
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("[read_file] 执行出错");
+    expect(result.error).toContain("boom");
+  });
+
+  it("工具抛出 AbortError 时透传取消语义，不吞为失败结果", async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let capturedTool: any;
+
+    const POST = createAnalyzeHandler({
+      resolveAppTools: async () => ({
+        read_file: {
+          description: "读文件",
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          parameters: {} as any,
+          execute: async () => {
+            const err = new Error("用户中止");
+            err.name = "AbortError";
+            throw err;
+          },
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        } as any,
+      }),
+    });
+
+    const { streamText } = await import("ai");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    vi.mocked(streamText).mockImplementationOnce((async (opts: any) => {
+      capturedTool = opts.tools.read_file;
+      return {
+        toDataStreamResponse: () => new Response("data: ok\n\n"),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    }) as any);
+
+    await POST(
+      makeRequest({
+        messages: [{ role: "user", content: "读一下" }],
+        apiKey: "k",
+        sessionId: "sess_tool_abort",
+      })
+    );
+
+    expect(capturedTool).toBeDefined();
+    await expect(
+      capturedTool.execute({ path: "a.txt" }, { toolCallId: "call_abort" })
+    ).rejects.toMatchObject({ name: "AbortError" });
+  });
+
 });
 
 describe("finish_task 服务端不变量（WS-5）", () => {

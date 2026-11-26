@@ -1,5 +1,9 @@
 import { analyticsServer } from "@/lib/analyticsRuntime";
-import { getGeneralTools as generalGetTools } from "@ginkgo-apps/general/server";
+import {
+  getGeneralTools as generalGetTools,
+  dispatchGeneralAction,
+  onSessionEnd as generalOnSessionEnd,
+} from "@ginkgo-apps/general/server";
 import {
   getDesignTools as designGetTools,
   dispatchDesignAction,
@@ -25,8 +29,13 @@ export function resolveRuntimeServer(appId: string):
   }
   const staticContract = appRegistry.get(appId)?.server;
   if (appId === "general") {
-    // 组合根注入运行时实现：静态声明段（needsWorkspace 等）+ ./server 入口的工具装配
-    return { ...staticContract, getTools: generalGetTools };
+    // 组合根注入运行时实现：静态声明段（needsWorkspace 等）+ ./server 入口的工具装配与动作分发
+    return {
+      ...staticContract,
+      getTools: generalGetTools,
+      dispatchAction: dispatchGeneralAction,
+      onSessionEnd: generalOnSessionEnd,
+    };
   }
   if (appId === "design") {
     return {

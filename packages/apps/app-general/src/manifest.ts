@@ -4,20 +4,21 @@ import { ArtifactViewer } from "./client/ArtifactViewer";
 export const generalManifest: AppManifest = {
   id: "general",
   name: "通用智能助手",
-  description: "多领域知识问答、方案撰写、代码审查与日常工作协同",
+  description: "多领域知识问答、方案撰写、网页自动化浏览、代码审查与日常工作协同",
   icon: "Bot",
   version: "1.0.0",
   category: "通用助理",
-  tags: ["对话", "助手", "通用", "代码"],
+  tags: ["对话", "助手", "通用", "代码", "浏览器"],
   author: "Ginkgo Team",
 };
 
 export const generalClient: AppClientContract = {
   welcomeMessage:
-    "你好！我是通用智能助手。我可以协助你编写代码、撰写方案、解答技术与业务问题。有什么我可以帮你的？",
+    "你好！我是通用智能助手。我可以协助你编写代码、撰写方案、自动化浏览与操作网页、解答技术与业务问题。有什么我可以帮你的？",
   presetQueries: [
     { text: "帮我审查并重构一段代码，提升可维护性", category: "代码工程" },
     { text: "撰写一份软件系统架构设计方案提纲", category: "方案写作" },
+    { text: "打开 Hacker News (https://news.ycombinator.com) 浏览首页并总结今日排名前三的技术热点", category: "网页浏览" },
     { text: "解释分布式事务中 2PC 与 TCC 的核心差异", category: "技术问答" },
   ],
   // 声明通用助手的工作区插槽与产物组件

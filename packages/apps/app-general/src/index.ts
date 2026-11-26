@@ -11,7 +11,7 @@ export const generalAppPackage: AppPackageDefinition = {
     buildSystemPrompt: buildGeneralSystemPrompt,
     needsWorkspace: true,
     requiresDataTools: false,
-    requiredCapabilities: ["workspace_sandbox", "filesystem", "bash"],
+    requiredCapabilities: ["workspace_sandbox", "filesystem", "bash", "browser"],
   },
 };
 

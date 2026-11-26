@@ -17,6 +17,19 @@ describe("ToolInvocationCard 跨应用工具调用渲染调度器", () => {
     expect(screen.getByText("已完成")).toBeDefined();
   });
 
+  it("当工具结果包含 error 或 isError 时渲染未命中或异常徽标", () => {
+    const tool: ToolInvocationState = {
+      state: "result",
+      toolCallId: "call-err",
+      toolName: "browser_type",
+      args: { what: "百度搜索框" },
+      result: { success: false, error: "语义定位未命中", isError: true },
+    };
+
+    render(<ToolInvocationCard tool={tool} />);
+    expect(screen.getByText("未命中或异常")).toBeDefined();
+  });
+
   it("匹配 diff 渲染器时，渲染 DiffViewer", () => {
     const tool: ToolInvocationState = {
       state: "result",

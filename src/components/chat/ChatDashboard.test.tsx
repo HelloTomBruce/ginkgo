@@ -909,4 +909,25 @@ describe("ChatDashboard 守护测试（重构行为锁定）", () => {
     const err = new TypeError("network error");
     expect(() => lastConfig.onError?.(err)).not.toThrow();
   });
+
+  it("点击顶部标题栏左侧按钮可展开/收起侧边栏并持久化至 localStorage", async () => {
+    render(<ChatDashboard />);
+
+    // 初始状态下侧栏展开，按钮包含“收起侧边栏”
+    const toggleBtns = screen.getAllByRole("button", { name: "收起侧边栏" });
+    expect(toggleBtns.length).toBeGreaterThanOrEqual(1);
+
+    // 点击收起
+    fireEvent.click(toggleBtns[0]);
+    expect(localStorage.getItem("ginkgo_sidebar_collapsed")).toBe("true");
+
+    // 顶部按钮变为“展开侧边栏”
+    const expandBtn = await screen.findByRole("button", { name: "展开侧边栏" });
+    expect(expandBtn).toBeInTheDocument();
+
+    // 点击重新展开
+    fireEvent.click(expandBtn);
+    expect(localStorage.getItem("ginkgo_sidebar_collapsed")).toBe("false");
+    expect(screen.getAllByRole("button", { name: "收起侧边栏" }).length).toBeGreaterThanOrEqual(1);
+  });
 });

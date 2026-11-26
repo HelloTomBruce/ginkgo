@@ -1,0 +1,26 @@
+{
+  "name": "@ginkgo/browser",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./tools": "./src/tools.ts",
+    "./types": "./src/types.ts",
+    "./prompts": "./src/prompts.ts"
+  },
+  "scripts": {
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@ginkgo/app-sdk": "workspace:*",
+    "ai": "4.3.19",
+    "dsh-browser-view": "^0.13.0",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "typescript": "^5",
+    "vitest": "^5.1.0"
+  }
+}
