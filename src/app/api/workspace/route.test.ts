@@ -1,9 +1,29 @@
 // @vitest-environment node
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { GET, POST } from "./route";
 import { resolveWorkspaceContext } from "@/lib/workspaceResolver";
+import { resetStorageRootCacheForTesting } from "@/lib/storagePaths";
+
+/**
+ * 工作区根随存储根解析：用例必须显式指定临时 GINKGO_HOME，
+ * 否则会写到开发机 ~/.ginkgo（全新克隆环境下 CI 也会污染 runner 家目录）。
+ */
+let tmpHome: string;
+
+beforeAll(async () => {
+  tmpHome = await fs.mkdtemp(path.join(os.tmpdir(), "ginkgo-ws-api-"));
+  process.env.GINKGO_HOME = tmpHome;
+  resetStorageRootCacheForTesting();
+});
+
+afterAll(async () => {
+  delete process.env.GINKGO_HOME;
+  resetStorageRootCacheForTesting();
+  await fs.rm(tmpHome, { recursive: true, force: true }).catch(() => {});
+});
 
 describe("GET /api/workspace", () => {
   it("扫描工作区文件树列表", async () => {

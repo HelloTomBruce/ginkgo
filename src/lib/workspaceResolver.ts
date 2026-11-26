@@ -7,8 +7,15 @@ import { sessionStore } from "@/lib/sessionStore";
 import { workspaceStore } from "@/lib/workspaceStore";
 import { getWorkspacesRootDir } from "@/lib/storagePaths";
 
-/** 工作区沙箱根目录（随存储根解析，不再固定为 cwd） */
-export const DEFAULT_WORKSPACES_ROOT = getWorkspacesRootDir();
+/**
+ * 工作区沙箱根目录默认值：**调用时**解析，不在模块加载期固化。
+ *
+ * 固化会让 `GINKGO_HOME` 在模块 import 之后才生效的调用方（测试、延迟引导）
+ * 写到错误的根上；与 dashboardStore 等单例同一约束。
+ */
+function defaultWorkspacesRoot(): string {
+  return getWorkspacesRootDir();
+}
 
 export interface ResolveWorkspaceOptions {
   appId: string;
@@ -23,14 +30,14 @@ export interface ResolveWorkspaceOptions {
 export async function resolveWorkspaceContext(
   opts: ResolveWorkspaceOptions
 ): Promise<AppWorkspaceContext> {
-  const { appId, sessionId, customRootDir, baseDir = DEFAULT_WORKSPACES_ROOT } = opts;
+  const { appId, sessionId, customRootDir, baseDir } = opts;
   // 安全会话标识符清洗（防止路径穿越）
   const safeSessionId = (sessionId ?? "default").replace(/[^a-zA-Z0-9_-]/g, "_");
   const safeAppId = appId.replace(/[^a-zA-Z0-9_-]/g, "_");
 
   const sandboxDir = customRootDir
     ? path.resolve(customRootDir)
-    : path.join(baseDir, safeAppId, safeSessionId);
+    : path.join(baseDir ?? defaultWorkspacesRoot(), safeAppId, safeSessionId);
 
   // 确保工作区物理目录存在
   await fs.mkdir(sandboxDir, { recursive: true });

@@ -19,7 +19,7 @@
 | 4 · 安装安全/权限/卸载 | ✅ 完成 | 2026-11-26 | e2e：403 默认关闭 / 401 令牌 / 400 非法 spec / 真卸载摘盘 |
 | 5 · 去领域化 | ✅ 完成 | 2026-11-26 | 宿主领域关键词 0 命中；模拟缺 CLI 时 design 降级且指引来自应用 |
 | 6 · 客户端 | ✅ 完成 | 2026-11-26 | 真实浏览器：停用 design 后切换器实时消失（徽标 3→2），无需刷新 |
-| 7 · 测试/文档 | ✅ 完成 | 2026-11-26 | `pnpm verify` 0；全新克隆模拟通过；架构守卫 5 条纳入 CI |
+| 7 · 测试/文档 | ✅ 完成 | 2026-11-26 | `pnpm verify` 0；全新克隆模拟通过；架构守卫 6 条纳入 CI |
 
 > Phase 1 实施期间发现两处与初版评审的偏差，已在下文 §2 D1、§1.2 R8 中修正说明。
 
@@ -787,5 +787,45 @@ lint ✅  typecheck ✅  test 176 files / 1491 passed ✅  build ✓ Compiled su
 |---|---|
 | 门禁 | `pnpm verify` = 0（lint / typecheck / 1491 tests / build） |
 | 评审 26 项 | 25 项已修复；R8 经实测**纠正判断**（非缺陷，已在 tsup 配置固化原因） |
-| 未做 | 预打包发布（P2.5 里程碑，含三条硬约束与两项待决策） |
+| 未做 | 预打包发布（P2.5 里程碑，含三条硬约束与两项待决策）；GitHub Pages 未启用（基础设施，非代码） |
 | 提交状态 | **未提交**（项目红线：需用户明确指令） |
+
+### 9.8 CI 复盘：前置验证的口径不够严（已修正）
+
+推送后 CI 在 `Run TypeScript Check` 失败：
+
+```
+src/lib/apps/registry.ts(5,10): error TS2307:
+  Cannot find module '../../../config/apps.json'
+```
+
+**根因**：`config/` 与 `data/` 是 gitignore 的运行期目录（含用户本地数据源、MCP 密钥），
+而 `registry.ts` / `appConfigServer.ts` 把 `config/apps.json` 当作**模块** import。
+开发机上文件存在所以本地全绿；全新克隆里根本不存在。
+
+**为什么之前的"全新克隆模拟"没抓到**：我只隐藏了 `dist` 目录，没隐藏 `config/` 与
+`data/`。这是一次**验证口径不足**，而不是运气问题——模拟必须把"gitignore 的目录"
+全部隐藏，才是真正的全新克隆。
+
+**修复**：
+
+1. 种子移进代码：新增 `src/lib/apps/defaultAppsConfig.ts`（`DEFAULT_APPS_CONFIG` +
+   `cloneDefaultAppsConfig()`），registry 单例与 `loadAppsConfig` 的首次运行兜底都改用它；
+   读改写返回**副本**，避免调用方污染模块级种子；
+2. 顺手修掉一个同类隐患：`workspaceResolver` 的 `DEFAULT_WORKSPACES_ROOT` 是模块级常量，
+   在 `GINKGO_HOME` 晚于 import 生效时（测试、延迟引导）会算到错误的根——改为调用时解析；
+3. `src/app/api/workspace/route.test.ts` 显式指定临时 `GINKGO_HOME`（此前隐式依赖仓库
+   `data/`，全新克隆下会写到 `~/.ginkgo`）；
+4. 新增架构守卫：**源码不得 import 被 gitignore 的运行期目录**（`config/`、`data/`），
+   直接拦这一类问题复发。
+
+**新的全新克隆模拟**（隐藏 `.next` + `config/` + `data/` + 全部 `dist`）：
+
+```bash
+$ pnpm verify
+lint ✅  typecheck ✅  test 176 files / 1492 passed ✅  build ✓ Compiled successfully ✅
+```
+
+> 另：同一次推送的 `Deploy Docs` 失败与本改动无关——文档站构建成功，失败在
+> `Setup Pages`（`Get Pages site failed`），属仓库未启用 GitHub Pages 的基础设施状态，
+> 需在仓库设置中开启后才能通过。

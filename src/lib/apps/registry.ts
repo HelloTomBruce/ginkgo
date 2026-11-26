@@ -2,7 +2,7 @@ import { KNOWN_APP_CAPABILITIES, type AppPackageDefinition } from "@ginkgo/app-s
 import analyticsAppPackage from "@ginkgo-apps/analytics";
 import generalAppPackage from "@ginkgo-apps/general";
 import designAppPackage from "@ginkgo-apps/design";
-import initialAppsConfig from "../../../config/apps.json";
+import { DEFAULT_APPS_CONFIG } from "./defaultAppsConfig";
 
 /**
  * 默认主应用 ID（用于向后兼容未指定 appId 的旧会话）
@@ -37,7 +37,7 @@ export class AppRegistry {
   private enabledStates: Map<string, boolean> = new Map();
   private appOrder: string[] = [];
 
-  constructor(config: AppConfigFile = initialAppsConfig) {
+  constructor(config: AppConfigFile = DEFAULT_APPS_CONFIG) {
     this.initFromConfig(config);
   }
 

@@ -153,6 +153,27 @@ describe("架构守卫", () => {
     expect(all, `包内穿透宿主路径：\n${format(all)}`).toEqual([]);
   });
 
+  it("源码不得 import 被 gitignore 的运行期目录（config/ 与 data/）", async () => {
+    // config/ 与 data/ 是本机运行期数据目录（含用户密钥、会话），必须 gitignore；
+    // 一旦被当作模块 import，全新克隆与 CI 会直接失败（真实踩过：config/apps.json）。
+    const targets = ["src", "packages"];
+    const all: Offense[] = [];
+    for (const target of targets) {
+      all.push(
+        ...(await scan(
+          path.join(REPO_ROOT, target),
+          [/from\s+["'][^"']*\/(config|data)\/[^"']*\.(json|ts)["']/],
+          { skipTests: true }
+        ))
+      );
+    }
+
+    expect(
+      all,
+      `运行期目录不得作为模块 import（种子请放进 src/ 下的常量）：\n${format(all)}`
+    ).toEqual([]);
+  });
+
   it("安装接口的门禁开关必须存在（防止有人把高危能力改成默认开启）", async () => {
     const routePath = path.join(
       REPO_ROOT,

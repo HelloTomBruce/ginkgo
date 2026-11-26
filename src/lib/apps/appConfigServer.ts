@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { getStoragePath, writeJsonAtomic } from "@/lib/storagePaths";
 import type { AppConfigFile } from "./registry";
-import initialAppsConfig from "../../../config/apps.json";
+import { cloneDefaultAppsConfig } from "./defaultAppsConfig";
 
 /**
  * 应用清单持久化（`<root>/config/apps.json`）。
@@ -56,8 +56,8 @@ export async function loadAppsConfig(): Promise<AppConfigFile> {
     raw = await fs.readFile(configPath, "utf-8");
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") {
-      // 首次运行：以打包内声明为初始值（尚未落盘）
-      return initialAppsConfig as AppConfigFile;
+      // 首次运行：以代码内种子为初始值（尚未落盘），返回可变副本避免污染种子
+      return cloneDefaultAppsConfig();
     }
     throw err;
   }
@@ -96,7 +96,7 @@ export async function loadAppsConfigWithFallback(): Promise<{
   } catch (err) {
     if (err instanceof AppsConfigCorruptError) {
       return {
-        config: initialAppsConfig as AppConfigFile,
+        config: cloneDefaultAppsConfig(),
         warning: err.message,
       };
     }
