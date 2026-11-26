@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { GET } from "./route";
 import { POST as installPost } from "./install/route";
