@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState } from "react";
-import { Loader2, AlertCircle, Check } from "lucide-react";
+import React, { useState, useMemo } from "react";
+import { Loader2, AlertCircle, Check, ChevronDown, ChevronRight, Code2, Database } from "lucide-react";
 import type { ToolInvocationState } from "./contentBlocks";
 import type {
   AppToolRendererSpec,
@@ -10,6 +10,7 @@ import type {
   ModeEscalationPayload,
 } from "@ginkgo/app-sdk";
 import { isToolFailureLike } from "@ginkgo/app-sdk";
+import { CopyButton } from "@ginkgo/components/ui/copy-button";
 import { DiffViewer, ApprovalCard, ModeApprovalCard, TerminalViewer } from "@ginkgo/components";
 
 export interface ToolInvocationCardProps {
@@ -20,6 +21,8 @@ export interface ToolInvocationCardProps {
   onRendererAction?: (prompt: string) => void;
   /** 模式提权批准回调（可选）：原子切换会话为 build 模式并启动构建 */
   onApproveEscalation?: (payload: ModeEscalationPayload) => void;
+  /** 默认是否展开详细信息（兜底渲染模式生效） */
+  defaultOpen?: boolean;
 }
 
 const ESCALATION_CHANGE_TYPES = new Set([
@@ -108,6 +111,7 @@ export function ToolInvocationCard({
   activeSources,
   onRendererAction,
   onApproveEscalation,
+  defaultOpen = false,
 }: ToolInvocationCardProps) {
   const isRunning = tool.state !== "result";
   const [localApproved, setLocalApproved] = useState(false);
@@ -321,45 +325,207 @@ export function ToolInvocationCard({
     }
   }
 
-  // 5. 兜底回退：默认经典胶囊徽标（失败判定与生产方共用协议级宽容守卫）
+  // 5. 兜底回退：支持点击展开查看入参与执行结果详情的卡片
+  return (
+    <DefaultToolCard
+      tool={tool}
+      activeSources={activeSources}
+      defaultOpen={defaultOpen}
+    />
+  );
+}
+
+function formatJsonOrText(val: unknown): string {
+  if (val === undefined || val === null) return "";
+  if (typeof val === "string") return val;
+  try {
+    return JSON.stringify(val, null, 2);
+  } catch {
+    return String(val);
+  }
+}
+
+/** 详情展示截断上限：超出部分不建 DOM 节点（复制语义分离，CopyButton 仍取全文） */
+const MAX_DETAIL_CHARS = 50_000;
+
+function truncateForDisplay(text: string): { display: string; truncated: boolean } {
+  if (text.length <= MAX_DETAIL_CHARS) return { display: text, truncated: false };
+  return { display: `${text.slice(0, MAX_DETAIL_CHARS)}\n…`, truncated: true };
+}
+
+interface DefaultToolCardProps {
+  tool: ToolInvocationState;
+  activeSources?: { id: string; name: string }[];
+  defaultOpen?: boolean;
+}
+
+function DefaultToolCard({ tool, activeSources, defaultOpen = false }: DefaultToolCardProps) {
+  const isRunning = tool.state !== "result";
+  // 三态展开：用户显式切换优先并保持；未切换时跟随 defaultOpen
+  // （可响应流式结束后的 late-open，与 MessageList ReasoningViewer 同模式）
+  const [userToggled, setUserToggled] = useState<boolean | null>(null);
+  const isOpen = userToggled !== null ? userToggled : defaultOpen;
+  const toggle = () => setUserToggled(!isOpen);
   const res = tool.result as Record<string, unknown> | undefined;
   const isFailed = tool.state === "result" && isToolFailureLike(tool.result);
 
+  const hasArgs =
+    tool.args != null &&
+    (typeof tool.args !== "object" || Object.keys(tool.args).length > 0);
+
+  const hasResult = tool.result !== undefined;
+
+  // 序列化惰性化：仅展开时执行——折叠态零成本，
+  // 流式逐 chunk 重渲染时不再为每张卡片支付 stringify 税
+  const argsFull = useMemo(() => (isOpen ? formatJsonOrText(tool.args) : ""), [isOpen, tool.args]);
+  const resultFull = useMemo(
+    () => (isOpen ? formatJsonOrText(tool.result) : ""),
+    [isOpen, tool.result]
+  );
+  // 展示截断：巨型结果（如 bash 1MB 输出）不一次性建 DOM 节点，防展开冻结
+  const argsView = truncateForDisplay(argsFull);
+  const resultView = truncateForDisplay(resultFull);
+
   return (
     <div
-      className={`flex items-center gap-2 text-xs px-3 py-2.5 rounded-lg border transition-all ${
+      className={`rounded-xl border transition-all overflow-hidden text-xs ${
         isRunning
-          ? "text-info-fg-strong bg-info-soft/80 border-info-border animate-pulse"
+          ? "bg-info-soft/20 border-info-border"
           : isFailed
-          ? "text-danger-fg bg-danger-soft/40 border-danger-border"
-          : "text-foreground-subtle bg-surface-sunken border-border"
+          ? "bg-danger-soft/20 border-danger-border"
+          : "bg-surface-sunken/60 border-border"
       }`}
     >
-      {isRunning ? (
-        <Loader2 className="w-3.5 h-3.5 animate-spin text-info-fg shrink-0" />
-      ) : isFailed ? (
-        <AlertCircle className="w-3.5 h-3.5 text-danger-fg shrink-0" />
-      ) : (
-        <Check className="w-3.5 h-3.5 text-success-fg shrink-0" />
-      )}
-      <span
-        className="font-mono flex-1 truncate"
-        title={isFailed && typeof res?.error === "string" ? res.error : undefined}
+      {/* 头部控制栏：点击即可展开/收起 */}
+      <div
+        role="button"
+        tabIndex={0}
+        aria-expanded={isOpen}
+        onClick={toggle}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            toggle();
+          }
+        }}
+        className={`flex items-center gap-2 px-3 py-2.5 transition-colors cursor-pointer select-none ${
+          isOpen ? "border-b border-border/60 bg-surface-sunken/40" : "hover:bg-surface-sunken/80"
+        }`}
       >
-        {getFallbackBadgeText(tool.toolName, tool.args, activeSources)}
-      </span>
-      {isRunning ? (
-        <span className="text-[10px] bg-info-soft-strong text-info-fg-strong px-2 py-0.5 rounded font-sans font-medium flex items-center gap-1">
-          查询中...
+        {isRunning ? (
+          <Loader2 className="w-3.5 h-3.5 animate-spin text-info-fg shrink-0" />
+        ) : isFailed ? (
+          <AlertCircle className="w-3.5 h-3.5 text-danger-fg shrink-0" />
+        ) : (
+          <Check className="w-3.5 h-3.5 text-success-fg shrink-0" />
+        )}
+        <span
+          className="font-mono flex-1 truncate text-foreground-strong font-medium"
+          title={isFailed && typeof res?.error === "string" ? res.error : undefined}
+        >
+          {getFallbackBadgeText(tool.toolName, tool.args, activeSources)}
         </span>
-      ) : isFailed ? (
-        <span className="text-[10px] bg-danger-soft text-danger-fg px-2 py-0.5 rounded font-sans font-medium">
-          未命中或异常
-        </span>
-      ) : (
-        <span className="text-[10px] bg-success-soft-strong text-success-fg px-2 py-0.5 rounded font-sans font-medium">
-          已完成
-        </span>
+        {isRunning ? (
+          <span className="text-[10px] bg-info-soft-strong text-info-fg-strong px-2 py-0.5 rounded font-sans font-medium flex items-center gap-1 shrink-0">
+            查询中...
+          </span>
+        ) : isFailed ? (
+          <span className="text-[10px] bg-danger-soft text-danger-fg px-2 py-0.5 rounded font-sans font-medium shrink-0">
+            未命中或异常
+          </span>
+        ) : (
+          <span className="text-[10px] bg-success-soft-strong text-success-fg px-2 py-0.5 rounded font-sans font-medium shrink-0">
+            已完成
+          </span>
+        )}
+        <div className="text-foreground-subtle hover:text-foreground shrink-0 p-0.5 ml-0.5">
+          {isOpen ? (
+            <ChevronDown className="w-3.5 h-3.5" data-testid="chevron-down" />
+          ) : (
+            <ChevronRight className="w-3.5 h-3.5" data-testid="chevron-right" />
+          )}
+        </div>
+      </div>
+
+      {/* 详细信息展开区 */}
+      {isOpen && (
+        <div
+          data-testid="tool-invocation-details"
+          className="p-3 space-y-3 font-mono text-[11px] leading-relaxed max-h-80 overflow-y-auto bg-surface-sunken/30"
+        >
+          {/* 输入参数 */}
+          <div>
+            <div className="flex items-center justify-between pb-1.5 text-foreground-subtle text-[11px] font-sans">
+              <span className="font-medium flex items-center gap-1.5">
+                <Code2 className="w-3.5 h-3.5" />
+                输入参数 (Arguments)
+              </span>
+              {hasArgs && <CopyButton text={argsFull} label="复制参数" />}
+            </div>
+            {hasArgs ? (
+              <>
+                <pre className="p-2.5 rounded-lg bg-surface-sunken border border-border overflow-x-auto text-foreground whitespace-pre-wrap break-all">
+                  <code>{argsView.display}</code>
+                </pre>
+                {argsView.truncated && (
+                  <p className="text-[10px] text-foreground-faint font-sans pt-1">
+                    已截断展示前 {MAX_DETAIL_CHARS} 字符（完整共 {argsFull.length} 字符），可点击「复制参数」获取全文
+                  </p>
+                )}
+              </>
+            ) : (
+              <div className="text-foreground-faint italic font-sans py-0.5">（无输入参数）</div>
+            )}
+          </div>
+
+          {/* 执行结果 / 异常回执 */}
+          <div>
+            <div className="flex items-center justify-between pb-1.5 text-foreground-subtle text-[11px] font-sans">
+              <span className="font-medium flex items-center gap-1.5">
+                {isFailed ? (
+                  <AlertCircle className="w-3.5 h-3.5 text-danger-fg" />
+                ) : (
+                  <Database className="w-3.5 h-3.5" />
+                )}
+                {isFailed ? "错误信息 (Error)" : "执行结果 (Result)"}
+              </span>
+              {!isRunning && hasResult && (
+                <CopyButton text={resultFull} label="复制结果" />
+              )}
+            </div>
+
+            {isRunning ? (
+              <div className="text-foreground-subtle font-sans italic py-1 flex items-center gap-1.5 animate-pulse">
+                <Loader2 className="w-3 h-3 animate-spin text-info-fg" />
+                等待工具执行返回...
+              </div>
+            ) : isFailed ? (
+              <>
+                <pre className="p-2.5 rounded-lg bg-danger-soft/30 border border-danger-border text-danger-fg overflow-x-auto whitespace-pre-wrap break-all">
+                  <code>{resultView.display}</code>
+                </pre>
+                {resultView.truncated && (
+                  <p className="text-[10px] text-foreground-faint font-sans pt-1">
+                    已截断展示前 {MAX_DETAIL_CHARS} 字符（完整共 {resultFull.length} 字符），可点击「复制结果」获取全文
+                  </p>
+                )}
+              </>
+            ) : hasResult ? (
+              <>
+                <pre className="p-2.5 rounded-lg bg-surface-sunken border border-border overflow-x-auto text-foreground whitespace-pre-wrap break-all">
+                  <code>{resultView.display}</code>
+                </pre>
+                {resultView.truncated && (
+                  <p className="text-[10px] text-foreground-faint font-sans pt-1">
+                    已截断展示前 {MAX_DETAIL_CHARS} 字符（完整共 {resultFull.length} 字符），可点击「复制结果」获取全文
+                  </p>
+                )}
+              </>
+            ) : (
+              <div className="text-foreground-faint italic font-sans py-0.5">（无返回值）</div>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );

@@ -15,8 +15,6 @@ import {
   Maximize2,
   Minimize2,
   RefreshCw,
-  Copy,
-  Check,
   Code2,
   Terminal,
   GitBranch,
@@ -29,6 +27,7 @@ import {
 } from "lucide-react";
 import type { AppWorkspaceProps } from "@ginkgo/app-sdk";
 import { DiffViewer, TerminalViewer } from "@ginkgo/components";
+import { CopyButton } from "@ginkgo/components/ui/copy-button";
 import { MarkdownPreview } from "./MarkdownPreview";
 import { BrowserView } from "./browser/BrowserView";
 import { buildFileTree, type FileTreeNode, type WorkspaceFileItem } from "./fileTree";
@@ -69,7 +68,6 @@ export function ArtifactViewer({
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
   const [fileContent, setFileContent] = useState<string>("");
   const [contentLoading, setContentLoading] = useState(false);
-  const [copied, setCopied] = useState(false);
   const [collapsedDirs, setCollapsedDirs] = useState<Record<string, boolean>>({});
   const [mdPreviewMode, setMdPreviewMode] = useState<"code" | "preview">("preview");
 
@@ -250,13 +248,6 @@ export function ArtifactViewer({
         terminalBottomRef.current?.scrollIntoView?.({ behavior: "smooth" });
       }, 50);
     }
-  };
-
-  const handleCopy = () => {
-    if (!fileContent) return;
-    void navigator.clipboard.writeText(fileContent);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
   };
 
   const getFileIcon = (itemPath: string) => {
@@ -446,18 +437,7 @@ export function ArtifactViewer({
         {/* 右侧：操作区与窗口控制 */}
         <div className="flex items-center gap-1 shrink-0">
           {activeTab === "files" && selectedFilePath && (
-            <button
-              type="button"
-              onClick={handleCopy}
-              className="p-1.5 text-foreground-subtle hover:text-foreground hover:bg-muted rounded-md transition-colors"
-              title="复制文件内容"
-            >
-              {copied ? (
-                <Check className="w-3.5 h-3.5 text-success-fg" />
-              ) : (
-                <Copy className="w-3.5 h-3.5" />
-              )}
-            </button>
+            <CopyButton text={fileContent} label="复制文件内容" variant="icon" />
           )}
 
           {activeTab === "files" && (

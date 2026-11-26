@@ -452,11 +452,17 @@ const MessageItem = React.memo(function MessageItem({
       <div className="max-w-4xl rounded-2xl p-4 text-sm bg-card border border-border text-foreground-strong rounded-bl-xs w-full shadow-xs space-y-3.5">
         {blocks.map((block) => {
           if (block.type === "tools") {
+            // 默认展开语义与 ReasoningViewer 对齐：非流式、末块、无主体内容时
+            // 自动展开末块最后一张工具卡的详情（用户显式切换后以其为准）
+            const isLastBlock = block.id === blocks[blocks.length - 1]?.id;
             return (
               <div key={block.id} className="no-print space-y-2">
                 {block.tools.map((tool, idx: number) => (
                   <ToolInvocationCard
                     key={`${tool.toolCallId || "tool"}-${idx}`}
+                    defaultOpen={
+                      !isStreaming && !hasMainContent && isLastBlock && idx === block.tools.length - 1
+                    }
                     tool={tool}
                     toolRenderers={toolRenderers}
                     approvalRules={approvalRules}

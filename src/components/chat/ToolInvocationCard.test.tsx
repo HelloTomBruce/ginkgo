@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import React from "react";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, within } from "@testing-library/react";
 import { ToolInvocationCard, normalizeModeEscalationPayload } from "./ToolInvocationCard";
 import type { ToolInvocationState } from "./contentBlocks";
 
@@ -255,5 +255,173 @@ describe("审批卡完成态与提权载荷边界", () => {
     expect(screen.getByText("申请切换至构建模式 (Build)")).toBeDefined();
     expect(screen.queryByText("<script>alert(1)</script>")).toBeNull();
     expect(screen.getByText("常规构建审批")).toBeDefined();
+  });
+
+  describe("默认工具卡片折叠展开与详情交互", () => {
+    it("默认收起详细信息，点击头部可展开并展示入参与返回值", () => {
+      const tool: ToolInvocationState = {
+        state: "result",
+        toolCallId: "call-expand-1",
+        toolName: "pg_execute_sql",
+        args: { sql: "SELECT * FROM users LIMIT 10;" },
+        result: [{ id: 1, name: "Alice" }],
+      };
+
+      render(
+        <ToolInvocationCard
+          tool={tool}
+          activeSources={[{ id: "pg", name: "生产数据库" }]}
+        />
+      );
+
+      // 默认未展开详情
+      expect(screen.queryByTestId("tool-invocation-details")).toBeNull();
+      expect(screen.getByTestId("chevron-right")).toBeDefined();
+
+      // 点击展开
+      const headerBtn = screen.getByRole("button", {
+        name: /执行 SQL: SELECT \* FROM users LIMIT 10;/i,
+      });
+      fireEvent.click(headerBtn);
+
+      // 展开后显示详情与参数、结果
+      const details = screen.getByTestId("tool-invocation-details");
+      expect(details).toBeDefined();
+      expect(screen.getByTestId("chevron-down")).toBeDefined();
+      expect(within(details).getByText(/SELECT \* FROM users LIMIT 10;/)).toBeDefined();
+      expect(within(details).getByText(/"Alice"/)).toBeDefined();
+
+      // 再次点击收起
+      fireEvent.click(headerBtn);
+      expect(screen.queryByTestId("tool-invocation-details")).toBeNull();
+    });
+
+    it("支持 defaultOpen={true} 初始展开", () => {
+      const tool: ToolInvocationState = {
+        state: "result",
+        toolCallId: "call-expand-2",
+        toolName: "custom_fetch",
+        args: { url: "https://api.example.com" },
+        result: { status: 200 },
+      };
+
+      render(<ToolInvocationCard tool={tool} defaultOpen={true} />);
+
+      expect(screen.getByTestId("tool-invocation-details")).toBeDefined();
+      expect(screen.getByText(/https:\/\/api\.example\.com/)).toBeDefined();
+    });
+
+    it("工具运行中展开时显示等待返回提示", () => {
+      const tool: ToolInvocationState = {
+        state: "call",
+        toolCallId: "call-running",
+        toolName: "heavy_task",
+        args: { timeout: 3000 },
+      };
+
+      render(<ToolInvocationCard tool={tool} defaultOpen={true} />);
+
+      expect(screen.getByText("等待工具执行返回...")).toBeDefined();
+    });
+
+    it("工具执行失败或未命中时，展开区域显示错误信息", () => {
+      const tool: ToolInvocationState = {
+        state: "result",
+        toolCallId: "call-failed",
+        toolName: "query_database",
+        args: { sql: "INVALID SQL" },
+        result: { error: "Syntax error at or near INVALID" },
+      };
+
+      render(<ToolInvocationCard tool={tool} defaultOpen={true} />);
+
+      expect(screen.getByText("错误信息 (Error)")).toBeDefined();
+      expect(screen.getByText(/Syntax error at or near INVALID/)).toBeDefined();
+    });
+
+    it("支持键盘 Enter 切换展开", () => {
+      const tool: ToolInvocationState = {
+        state: "result",
+        toolCallId: "call-keyboard",
+        toolName: "test_tool",
+      };
+
+      render(<ToolInvocationCard tool={tool} />);
+
+      const headerBtn = screen.getByRole("button");
+      fireEvent.keyDown(headerBtn, { key: "Enter" });
+
+      expect(screen.getByTestId("tool-invocation-details")).toBeDefined();
+    });
+
+    it("无入参与无返回值时展示空态文案", () => {
+      const tool: ToolInvocationState = {
+        state: "result",
+        toolCallId: "call-empty",
+        toolName: "ping_tool",
+      };
+
+      render(<ToolInvocationCard tool={tool} defaultOpen={true} />);
+
+      const details = screen.getByTestId("tool-invocation-details");
+      expect(within(details).getByText("（无输入参数）")).toBeDefined();
+      expect(within(details).getByText("（无返回值）")).toBeDefined();
+    });
+
+    it("空对象入参视为无参数", () => {
+      const tool: ToolInvocationState = {
+        state: "result",
+        toolCallId: "call-empty-args",
+        toolName: "no_args_tool",
+        args: {},
+        result: "ok",
+      };
+
+      render(<ToolInvocationCard tool={tool} defaultOpen={true} />);
+
+      const details = screen.getByTestId("tool-invocation-details");
+      expect(within(details).getByText("（无输入参数）")).toBeDefined();
+    });
+
+    it("超长结果截断展示并提示，复制通道保留全文", () => {
+      const tool: ToolInvocationState = {
+        state: "result",
+        toolCallId: "call-long",
+        toolName: "big_output",
+        args: {},
+        result: "x".repeat(50_001),
+      };
+
+      render(<ToolInvocationCard tool={tool} defaultOpen={true} />);
+
+      const details = screen.getByTestId("tool-invocation-details");
+      expect(within(details).getByText(/已截断展示前 50000 字符/)).toBeDefined();
+      expect(within(details).getByText(/完整共 50001 字符/)).toBeDefined();
+      // 复制按钮携带全文语义（剪贴板写入属浏览器环境行为，此处验证入口存在）
+      expect(within(details).getByText("复制结果")).toBeDefined();
+    });
+
+    it("defaultOpen 变化可响应展开，用户显式收起后覆盖默认值", () => {
+      const tool: ToolInvocationState = {
+        state: "result",
+        toolCallId: "call-reactive",
+        toolName: "late_open",
+        args: { a: 1 },
+        result: { ok: true },
+      };
+
+      const { rerender } = render(<ToolInvocationCard tool={tool} defaultOpen={false} />);
+      expect(screen.queryByTestId("tool-invocation-details")).toBeNull();
+
+      // defaultOpen 翻转（如流式结束）→ 自动展开
+      rerender(<ToolInvocationCard tool={tool} defaultOpen={true} />);
+      expect(screen.getByTestId("tool-invocation-details")).toBeDefined();
+
+      // 用户显式收起后，defaultOpen 保持 true 也不再自动展开（用户意图优先）
+      fireEvent.click(screen.getByRole("button", { expanded: true }));
+      expect(screen.queryByTestId("tool-invocation-details")).toBeNull();
+      rerender(<ToolInvocationCard tool={tool} defaultOpen={true} />);
+      expect(screen.queryByTestId("tool-invocation-details")).toBeNull();
+    });
   });
 });
