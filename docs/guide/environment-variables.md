@@ -42,3 +42,47 @@
 | 变量 | 说明 | 默认值 |
 | --- | --- | --- |
 | `GINKGO_API_AUTH_TOKEN` | 部署模式 API 鉴权令牌；配置后所有 `/api/*` 须携带 `Authorization: Bearer <token>` | 无 |
+
+## 存储根
+
+平台的数据（会话、看板、上传文件、工作区沙箱）与配置（数据源、MCP、应用清单等）统一落在一个**存储根**下，按 `config/`、`data/`、`plugins/`、`logs/` 分类。
+
+| 变量 | 说明 | 默认值 |
+| --- | --- | --- |
+| `GINKGO_HOME` | 存储根绝对路径（**显式指定才搬家**） | 见下方解析顺序 |
+| `GINKGO_DATA_DIR` | 旧变量名，等价于 `GINKGO_HOME`（同时设置时 `GINKGO_HOME` 优先） | 无 |
+
+解析顺序（**默认零变更**是首要约束）：
+
+1. `GINKGO_HOME` / `GINKGO_DATA_DIR` 显式配置 → 使用该路径；
+2. 仓库/工作目录下已存在 `./data` 或 `./config` → **沿用当前目录**（既有安装升级后不会搬家，与 `NODE_ENV` 无关）；
+3. 全新安装（两者都不存在）→ `~/.ginkgo`（Windows 回退 `%USERPROFILE%\.ginkgo`）。
+
+::: warning 迁移既有数据
+平台**不会自动迁移**。设置 `GINKGO_HOME` 后若本地仍有 `./data`/`./config`，启动日志会告警，并提供迁移助手：
+
+```bash
+GINKGO_HOME=~/.ginkgo pnpm storage:migrate --dry-run   # 先看会做什么
+GINKGO_HOME=~/.ginkgo pnpm storage:migrate             # 复制并校验
+```
+
+它只**复制**、不覆盖、不删除源目录；确认数据完整后由人手动删除旧目录。
+:::
+
+`GINKGO_RESOLVED_HOME` 由平台在启动期自动注入（能力包与应用包据此对齐同一存储根），一般**不需要手动设置**。
+
+## 应用安装（高危能力）
+
+应用安装会执行 `npm install` 并 `import()` 第三方代码——等同于在主机上执行任意代码，因此**默认关闭**。
+
+| 变量 | 说明 | 默认值 |
+| --- | --- | --- |
+| `GINKGO_ALLOW_APP_INSTALL` | 设为 `1` 才开启 `POST /api/apps/install`；未开启时该接口返回 403 | 关闭 |
+| `GINKGO_APP_INSTALL_TOKEN` | 安装接口的独立令牌，请求须带 `x-ginkgo-install-token` 头 | 无 |
+| `GINKGO_ALLOW_LOCAL_APP_PACKAGE` | 设为 `1` 才允许从本地 tarball（`file:` / 绝对路径 `.tgz`）安装 | 关闭 |
+
+::: warning 共享/公网环境必读
+`GINKGO_API_AUTH_TOKEN` **默认不配置**（本地单机形态全部放行），而安装接口的爆炸半径远高于其它写接口。部署到共享环境时请务必同时设置 `GINKGO_ALLOW_APP_INSTALL=1` + `GINKGO_APP_INSTALL_TOKEN`。
+:::
+
+即便开启安装，仍有三道内建约束：包名必须是 `@scope/name[@semver]` 形态（拒绝路径穿越与裸包名）；内置应用 id 不可被动态包覆盖；声明了 `permissions` 的包必须在 UI 中确认权限后才会启用（未映射的工具一律不挂载）。

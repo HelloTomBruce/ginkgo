@@ -227,6 +227,69 @@ claude_design_system）。组合根注册应用时逐项校验：未知能力 `c
   （取消语义优先于错误收敛）。命令级富结构失败（bash 的 exitCode/stdout 等）
   不适用本契约。
 
+### 4.8 生命周期契约与健康检查（第三方应用必读）
+
+应用可选声明安装/卸载/更新钩子与运行前健康检查。**归属原则**：凡是"这个应用依赖什么外部东西"，一律由应用自己声明或探测，平台层不做猜测。
+
+```ts
+// manifest.lifecycle（安装期钩子，服务端执行）
+lifecycle: {
+  onInstall?: (ctx: AppInstallContext) => Promise<{ success: boolean; message?: string }>;
+  onUninstall?: (ctx: AppInstallContext) => Promise<void>;
+  onUpdate?: (ctx: AppInstallContext, from: string, to: string) => Promise<void>;
+}
+
+// server.healthCheck（运行期健康检查，服务端专用）
+server: {
+  healthCheck: async (ctx) => ({
+    healthy: false,
+    status: "missing_deps",              // ready | degraded | missing_deps
+    missingCapabilities: ["cli:my-cli"],
+    remediationGuide: "npm install -g my-cli",
+    message: "缺少 my-cli，导出功能不可用",
+  }),
+}
+```
+
+**为什么 `healthCheck` 放在 `server` 而不是 `manifest`**：manifest 会被客户端组件链引用，而 CLI 探测依赖 `node:child_process`；放进 manifest 会把 Node 内置模块拖进浏览器包。服务端入口才是它的归属。
+
+- 宿主只判定**平台自身提供**的能力（`PLATFORM_PROVIDED_CAPABILITIES`：sandbox/filesystem/bash/browser/sql_query/chart_spec/methodology/duckdb）；
+- 其余能力（外部 CLI/服务）宿主一律委托 `server.healthCheck`；若应用声明了非平台能力却没实现探测，`GET /api/apps` 会显示 `degraded` 并提示补齐——**不会由平台编造安装命令**；
+- 第三方应用也支持在 `manifest.lifecycle.onHealthCheck` 实现，注册时会被适配到 `server.healthCheck`（运行时只有一条调用路径）；
+- 健康检查结果在宿主侧缓存 30s，避免列表接口反复探测。
+
+### 4.9 权限声明与工具门禁（权限模型 v1）
+
+第三方应用若需要读取数据源、写工作区、执行命令等，必须显式申请权限，**未声明的工具不会被挂载（default deny）**。
+
+```ts
+manifest: {
+  permissions: ["datasources.read", "workspace.write"],   // 申请
+},
+server: {
+  toolPermissions: {          // 工具 → 所需权限（宿主据此过滤）
+    sql_query: "datasources.read",
+    write_file: "workspace.write",
+  },
+},
+```
+
+规则：
+
+| 情况 | 宿主行为 |
+| --- | --- |
+| 未声明 `permissions`（平台内置应用） | 不过滤（零回归） |
+| 声明了 `permissions` | 只放行「已声明 `toolPermissions` 且该权限在 `permissions` 内」的工具 |
+| 工具没写进 `toolPermissions` | **丢弃**（default deny） |
+
+安装时是**两段握手**：首次提交返回 `409` + 权限清单，用户在应用中心确认后带 `acknowledgedPermissions` 重试才会注册启用；确认结果留痕在 `config/apps.json`。包在确认前已下载但**不注册、不启用**。
+
+### 4.10 打包与出口形态（当前形态）
+
+平台**消费源码**（`exports` → `./src/*.ts`），由 Next 按**文件级** `"use client"` 划分 RSC 边界。`publishConfig` 里保留 `dist` 出口供未来发布使用，但仓内构建不依赖 `dist`。
+
+> ⚠️ 不要改成"整包 bundle + 全局 `"use client"` banner"：实测会导致服务端组合根拿到的 `manifest` 变成 client reference（`app.manifest` 为 undefined，构建在 page data 收集阶段失败）；去掉 banner 则客户端 UI 依赖（recharts）进入 RSC 报 106 个错。发布形态见路线图「预打包发布」里程碑。
+
 ## 5. 工作区与沙箱边界
 
 - 会话可绑定工作区（`data/workspaces/_workspaces.json`，`session.workspaceId` →
@@ -281,4 +344,6 @@ claude_design_system）。组合根注册应用时逐项校验：未知能力 `c
       `sessions.pendingPlan` 交接（消费即清空）
 - [ ] 产物（若有）→ `appId` 归属 + `listArtifacts` + （可刷新则）`refreshArtifact`
 - [ ] registry 注册 + （深度应用）runtimeServers 装配
-- [ ] `pnpm lint && pnpm typecheck && pnpm test` 全绿；prompt 变更跑一次 `pnpm eval:tier-b`
+- [ ] 外部依赖（CLI/服务）→ `server.healthCheck` 自治探测（不要指望平台知道你的命令名）
+- [ ] 需要数据/沙箱/命令能力 → `manifest.permissions` + `server.toolPermissions` 成对声明
+- [ ] `pnpm verify` 全绿（lint + typecheck + test + build）；prompt 变更跑一次 `pnpm eval:tier-b`

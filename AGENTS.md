@@ -37,6 +37,17 @@
 
 - `pnpm dev`：开发服务器（端口 3006）
 - `pnpm lint` / `pnpm typecheck` / `pnpm test` / `pnpm build`：质量门禁
+- `pnpm verify`：四道门禁串联（lint → typecheck → test → build），提交前跑这一条即可
+- `pnpm storage:migrate`：把本地 `./data`/`./config` 复制到显式配置的 `GINKGO_HOME`（只复制、不删除）
+
+### 架构守卫（CI 会跑的测试）
+
+`src/lib/architecture-guards.test.ts` 把以下约束变成可执行断言，违反即测试失败：
+
+1. 宿主 `src/**` 不得出现具体应用的厂商 CLI 名（平台层保持零应用领域语义）；
+2. 宿主 `src/**` 不得自己拼 `process.cwd() + data/config`（存储根唯一出口 `src/lib/storagePaths.ts`）；
+3. 应用包/能力包不得 import 宿主 `@/`（依赖单向）；
+4. `/api/apps/install` 必须保留安装开关与独立令牌门禁。
 
 ## 代码提交红线
 

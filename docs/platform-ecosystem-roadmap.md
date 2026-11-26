@@ -56,9 +56,17 @@ factory 级测试 + 接入规范增量章节。
 
 ## 2. 第三方应用分发（三段演进 + 轻应用通道）
 
-### P1 · 动态注册 + 配置驱动（近期 · 约 2-3 天 · 零新基建）
+### P1 · 动态注册 + 配置驱动（✅ 已落地 · 2026-11 · 见 docs/app-store-remediation-plan.md Phase 3–5）
 
 **目标**：安装一个应用 = 「装包 + 配置一行」，宿主代码零改动。
+
+> **实施状态**：启动引导（`src/instrumentation.ts` → `src/lib/apps/bootstrap.ts`）按磁盘
+> `config/apps.json` 注册内置与第三方应用；能力协商闭环落地为
+> `PLATFORM_PROVIDED_CAPABILITIES` + 应用自治 `server.healthCheck`（宿主零领域语义）；
+> 权限模型 v1 落地为 `manifest.permissions` + `server.toolPermissions` + default-deny
+> 工具门禁（`src/lib/apps/permissionGate.ts`）。
+> **未落地**：`runtimeServers` 的工厂装配仍未配置驱动（当前为 appId 分支，属组合根既有形态）；
+> 待 devops 这类"纯配置接入"应用出现时再收敛。
 
 - `config/apps.json`：`{apps: [{package: "@ginkgo-apps/devops", enabled: true, runtime?: {...}}]}`
   ——符合仓库「配置零硬编码」原则；
@@ -71,7 +79,12 @@ factory 级测试 + 接入规范增量章节。
   "workspace.write", "mcp:gitlab"]`，宿主在 `resolveAppTools` 分发处执行
   per-app 工具白名单门禁（harness 洋葱切面 `composeToolInterceptors` 是现成挂点）。
 
-### P2 · 应用目录 + 安装管理 + 权限模型（中期 · 约 1-2 周）
+### P2 · 应用目录 + 安装管理 + 权限模型（部分落地）
+
+> **已落地**：应用中心 UI（AppStoreModal）+ 安装/启停/卸载 API + 权限两段握手
+> （409 → 确认 → 启用）+ 真卸载（npm uninstall + 注册表注销）。
+> **安全前置**：安装默认关闭（`GINKGO_ALLOW_APP_INSTALL`）、独立令牌、spec 白名单。
+> **未落地**：远程目录服务（manifest 索引 / 截图 / 审核状态）。
 
 - **应用目录服务**：manifest 索引（名称/版本/截图/所需能力/权限声明）+ 目录 API +
   侧栏「应用市场」入口（复用 AppSwitcher 交互位）；
@@ -80,6 +93,18 @@ factory 级测试 + 接入规范增量章节。
 - **权限模型 v2**：在 P1 的工具白名单之上补数据面粒度（源级/字段级脱敏）与
   权限审批 UX（安装时展示所需权限清单）；
 - 应用级配额（⑦）本阶段落地。
+
+### P2.5 · 预打包发布（独立里程碑 · 未开始）
+
+当前仓库形态下应用包以源码 `.ts` 出口被 Next 直接编译，靠**文件级** `"use client"` 维持 RSC 边界。对外发布 npm 包必须同时满足：
+
+1. 构建为**不打包**的 ESM（保留每个文件的指令），或让消费方自己编译；
+2. 消费方配置 `transpilePackages`；
+3. CI 增加 `next build` 冒烟（只跑 tsc/vitest 发现不了边界问题）。
+
+任何「整包 bundle + 全局 banner」方案都会破坏边界（实测：单包 bundle 时服务端 `manifest` 为 undefined；去掉 banner 则 recharts 进入 RSC 报 106 错）。
+
+同里程碑需一并决策：**`@ginkgo/datasources` 是否继续内联进 `dist/server.js`**。当前内联（`noExternal`）迫使 app-analytics 显式声明 5 个数据库/文件驱动；改为正常 npm 依赖可消除该耦合。另需用 `npm pack --dry-run` 验证 `publishConfig` 对 `main`/`exports` 的覆盖是否生效。
 
 ### P3 · 运行时沙箱分发（远期 · 应用商店终态 · 前两段验证生态成立后再投入）
 

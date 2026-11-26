@@ -31,6 +31,10 @@ export default defineConfig({
         items: [
           { text: "应用接入规范", link: "/app-integration-guide" },
           { text: "平台生态路线图", link: "/platform-ecosystem-roadmap" },
+          {
+            text: "应用中心整改实施文档",
+            link: "/app-store-remediation-plan",
+          },
           { text: "主题 Token 规范", link: "/theme-tokens" },
           { text: "LLM Harness 加固方案", link: "/llm-harness-hardening-plan" },
           {
