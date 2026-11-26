@@ -843,3 +843,29 @@ Phase 3/4 的 e2e 覆盖）。**教训与上一节同源**：本地运行环境�
 > 另：同一次推送的 `Deploy Docs` 失败与本改动无关——文档站构建成功，失败在
 > `Setup Pages`（`Get Pages site failed`），属仓库未启用 GitHub Pages 的基础设施状态，
 > 需在仓库设置中开启后才能通过。
+
+### 9.9 CI 收敛过程（4 次迭代，最终绿）
+
+推送后 CI 连续暴露 4 类问题，全部是**本地全绿但 CI 红**，值得记下来：
+
+| 迭代 | CI 失败点 | 根因 | 修复 |
+|---|---|---|---|
+| 1 | TypeScript Check | `import "../../../config/apps.json"`（gitignore 的运行期目录） | 种子移进代码 `defaultAppsConfig.ts` + 新增守卫 |
+| 2 | Unit Tests | 测试夹具用 ESM，`createRequire` 在 vitest vm 里对 `.mjs` 按 CJS 解析 | 夹具改 CJS；ESM 通道用运行时探测后跳过 |
+| 3 | Unit Tests | 两个服务端用例默认跑在 jsdom，间接引入 `@ginkgo/datasources` → Vite 8 拒绝打包 `node:sqlite` | 加 `// @vitest-environment node`（它们本就是服务端测试） |
+| 4 | Unit Tests | 两个真实浏览器动作用例 5s 默认超时（本地 1.6s / CI 更慢） | 用例超时放宽到 20s + 底层连接超时收窄到 3s |
+
+**共同教训**：本地环境的"额外能力"会系统性地掩盖可移植性问题——本地有 `config/`、
+本地 Node 的 `require(esm)`、本地有浏览器、本地机器快。因此：
+
+- 「全新克隆模拟」必须隐藏**所有** gitignore 目录（`.next` / `config` / `data` / `dist`），
+  而不只是 `dist`；
+- 测试夹具要选**最小可移植形态**（CJS 优先），环境相关能力用运行时探测后显式跳过；
+- 跑服务端逻辑的用例要显式声明 `node` 环境，不要继承根项目的 jsdom 默认；
+- 依赖真实外部资源的用例必须自带超时上界。
+
+最终 CI：`Lint, Typecheck & Build` **success**（176 files / 1492 tests / build 通过）。
+
+`Deploy Docs to GitHub Pages` 仍红，但 `Build docs site` 成功、失败在 `Setup Pages`
+（`Get Pages site failed`）——仓库未启用 GitHub Pages，属基础设施状态，需在
+Settings → Pages 选择 GitHub Actions 作为来源后才会通过，与代码无关。
