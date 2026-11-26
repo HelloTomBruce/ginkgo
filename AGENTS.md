@@ -10,7 +10,7 @@
   1. **契约先行**：一切扩展点在 app-sdk 声明——client 声明 UI 能力（`dashboardToolbar`/`workspaceView`/`workspaceMount`/`messageExtensions`/`resolvePresetQueries`/快捷动作 `Component`），server 声明运行时能力（`buildSystemPrompt`/`getTools`/`needsWorkspace`/`listArtifacts`/`refreshArtifact`）；
   2. **组合根唯一**：appId→实现的绑定只在 `src/lib/apps/registry.ts` / `runtimeServers.ts` / API 薄壳路由；宿主其余代码禁止 appId 比较、缺省值散布（一律 import registry 的 `DEFAULT_APP_ID`/`getOrDefault`）；
   3. **语义声明化**：宿主区分应用的判断必须是应用声明的**数据**（布尔/枚举/子串 pattern），禁止话术正则与硬编码文案；
-  4. **API 薄壳化**：Next.js 文件路由只做「拆包 → 委托应用/能力包 handler → 状态码映射」，业务校验与编排归包（如 `/api/dashboards/*` → `@ginkgo-apps/analytics/server`，datasources 管理器经 deps 注入）；
+  4. **API 薄壳化**：Next.js 文件路由只做「拆包 → 委托应用/能力包 handler → 状态码映射」，业务校验与编排归包（如 `/api/dashboards/*` → `@ginkgo/app-analytics/server`，datasources 管理器经 deps 注入）；
   5. **依赖单向**：壳→应用→能力→协议；应用间、能力间互不 import（经协议层类型）。
 - 领域中立红线：`packages/ginkgo-llm` 禁止任何应用领域语义——prompt/工具/交付物文案一律经 `resolveAppPrompt`/`resolveAppTools`/`deliverable`/`onTaskFinish` 四接缝由应用包注入。
 - 新应用接入（manifest/插槽/服务端契约/产物协议/注册）唯一规范：[docs/app-integration-guide.md](docs/app-integration-guide.md)；平台能力包扩展与第三方应用分发路线：[docs/platform-ecosystem-roadmap.md](docs/platform-ecosystem-roadmap.md)。
@@ -31,14 +31,20 @@
 - **代码里不写死任何数据源**（id/名称/产品名）：数据源全部由用户在「设置 → 数据源」或 `config/datasources.json` 配置，代码不得用关键词嗅探源 id/name 来推断能力。
 - **跨源联合分析**：由 `config/cross-source-map.json` 的 `mappings` 驱动（注册表在 `packages/apps/app-analytics/src/server/crossSource.ts`）——每条映射自带双侧数据源 id；「映射存在且双侧源当前激活」时 `cross_source_link` 工具、提示词规则段、欢迎语宣称三处经 `resolveCrossSourcePairs()` 同一判定联动开启，否则全部不出现。
 - **能力宣称**：由应用自治——`client.welcomeMessage` 是 defineApp 必填项（宿主兜底欢迎语领域中立，仅防 registry 异常形态）；依赖数据源的特性开关由服务端 `/api/datasources` 的 `features` 下发，客户端不做本地推断。
-- **推荐列表**：应用经 `client.resolvePresetQueries` 插槽运行时解析（analytics = 方法卡 `presetQuery` 合并集，实现在 `@ginkgo-apps/analytics/client`）；未声明则回落静态 `client.presetQueries`。新增方法卡即新增推荐项，不维护硬编码场景列表。
+- **推荐列表**：应用经 `client.resolvePresetQueries` 插槽运行时解析（analytics = 方法卡 `presetQuery` 合并集，实现在 `@ginkgo/app-analytics/client`）；未声明则回落静态 `client.presetQueries`。新增方法卡即新增推荐项，不维护硬编码场景列表。
 
 ## 常用命令
 
 - `pnpm dev`：开发服务器（端口 3006）
+- `pnpm dev:clean`：清掉 `.next` 后启动开发服务器（跨平台，等价 `rm -rf .next`）
 - `pnpm lint` / `pnpm typecheck` / `pnpm test` / `pnpm build`：质量门禁
 - `pnpm verify`：四道门禁串联（lint → typecheck → test → build），提交前跑这一条即可
 - `pnpm storage:migrate`：把本地 `./data`/`./config` 复制到显式配置的 `GINKGO_HOME`（只复制、不删除）
+
+> **dev 报错先清缓存**：跑过 `pnpm install`、改过 workspace 包名/依赖后，Turbopack 的
+> `.next/dev` chunk 里固化的绝对路径可能失效，表现为莫名其妙的
+> `Cannot find module 'next/dist/compiled/loader-runner'`、CSS loader 报错等。
+> 先 `pnpm dev:clean` 再判断是不是真 bug——模块本身通常是存在的。
 
 ### 架构守卫（CI 会跑的测试）
 

@@ -137,7 +137,7 @@ pnpm dev        # http://localhost:3006
 - **动态时间宏**：滚动宏（如 `TODAY - 30d`）使周期性看板随时间自动前滑，避免日期死编码
 - **可刷新率约束**：prompt 强制聚合下推 SQL、组件行原样复用查询结果——大多数看板直接命中直取绑定
 - **安全边界**：`kind:"tool"` 查询经**只读白名单**复核后才重放，写语义工具一律拒绝；单查询失败该组件保留旧数据并标「数据过期」，全部失败则整体不落盘
-- **实现**：`@ginkgo-apps/analytics/server`（`refreshDashboard` + 物化/重放引擎）+ 宿主薄壳 `POST /api/dashboards/[id]/refresh`
+- **实现**：`@ginkgo/app-analytics/server`（`refreshDashboard` + 物化/重放引擎）+ 宿主薄壳 `POST /api/dashboards/[id]/refresh`
 
 ## 筛选联动与事件总线（FilterBus）
 
