@@ -20,8 +20,16 @@ import { resetStorageRootCacheForTesting } from "@/lib/storagePaths";
  *   3. 单个应用载入失败不阻断引导，失败原因可被查询；
  *   4. 幂等单飞（dev 热重载 / 多入口调用不会重复注册）。
  */
+/**
+ * 夹具用 **CJS**（`module.exports`）而不是 ESM。
+ *
+ * 原因：`createRequire` 在 vitest 的 vm 沙箱里不会走 Node 的 require(esm) 通道，
+ * 对 `.mjs` 会尝试按 CJS 解析并抛 SyntaxError（CI 上就是这样红的，本地 Node 25
+ * 的 require(esm) 掩盖了它）。CJS 夹具在任何 Node 版本与沙箱里都稳定；
+ * ESM 入口的加载策略由 `appSpec.test.ts` 单独覆盖（不可用时跳过）。
+ */
 const FAKE_APP_SOURCE = `
-export default {
+module.exports = {
   manifest: {
     id: "demo",
     name: "演示插件",
@@ -56,15 +64,14 @@ describe("应用启动引导 bootstrapApps", () => {
         {
           name: packageName,
           version: "1.0.0",
-          type: "module",
-          main: "index.mjs",
+          main: "index.cjs",
         },
         null,
         2
       ),
       "utf-8"
     );
-    await fs.writeFile(path.join(dir, "index.mjs"), FAKE_APP_SOURCE, "utf-8");
+    await fs.writeFile(path.join(dir, "index.cjs"), FAKE_APP_SOURCE, "utf-8");
   }
 
   beforeEach(async () => {

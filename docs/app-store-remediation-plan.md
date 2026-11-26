@@ -826,6 +826,20 @@ $ pnpm verify
 lint ✅  typecheck ✅  test 176 files / 1492 passed ✅  build ✓ Compiled successfully ✅
 ```
 
+**第二次 CI 失败（同一提交链）**：`Run Unit Tests` 报
+
+```
+AssertionError: expected '包 "@demo/app" 载入失败（require: SyntaxErr…' to contain '不一致'
+```
+
+测试夹具用了 ESM（`.mjs` + `"type":"module"`）。`createRequire` 在 vitest 的 vm 沙箱里
+不走 Node 的 require(esm) 通道，对 `.mjs` 按 CJS 解析抛 SyntaxError；而原生 import 在
+vm 里又不可用。本地 Node 25 的 require(esm) 掩盖了这一点，CI 的 Node 22 沙箱暴露了它。
+
+修复：夹具改 **CJS**（任何 Node 版本与沙箱都稳定），ESM 入口的加载能力单独用
+`canDynamicImport()` 探测后显式跳过（vitest vm 不支持动态 import；真实 Next 服务端由
+Phase 3/4 的 e2e 覆盖）。**教训与上一节同源**：本地运行环境的特性会掩盖可移植性问题。
+
 > 另：同一次推送的 `Deploy Docs` 失败与本改动无关——文档站构建成功，失败在
 > `Setup Pages`（`Get Pages site failed`），属仓库未启用 GitHub Pages 的基础设施状态，
 > 需在仓库设置中开启后才能通过。
