@@ -157,6 +157,7 @@ describe("app-general 通用助手浏览器与沙箱能力集成", () => {
       }
     });
 
+    // 真实浏览器动作：CI runner 慢于本地，5s 默认超时不足以走完连接失败路径
     it("browser_capture_screenshot: 正常响应或优雅捕获错误状态", async () => {
       const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "ginkgo-gen-action-"));
       try {
@@ -170,7 +171,7 @@ describe("app-general 通用助手浏览器与沙箱能力集成", () => {
       } finally {
         await fs.rm(tempDir, { recursive: true, force: true });
       }
-    });
+    }, 20_000);
 
     it("未知 action 抛出显式异常", async () => {
       await expect(

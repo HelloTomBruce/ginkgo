@@ -127,8 +127,13 @@ describe("@ginkgo/browser 浏览器能力包", () => {
   });
 
   describe("异常捕获与流式收敛", () => {
-    it("工具执行失败时优雅收敛为结构化结果，绝不抛错阻断会话流", async () => {
-      const pkg = createBrowserTools(defaultOptions);
+    // 该用例会真实尝试连接浏览器并以失败收敛（本地 ~1.6s）。CI runner 明显更慢，
+    // 5s 默认超时不够；这里显式放宽用例超时，并把底层连接超时收窄到 3s，
+    // 让失败路径在慢机器上仍能确定性地走完。
+    it(
+      "工具执行失败时优雅收敛为结构化结果，绝不抛错阻断会话流",
+      async () => {
+      const pkg = createBrowserTools({ ...defaultOptions, timeoutMs: 3000 });
       const clickTool = pkg.tools.browser_click;
       const res = (await clickTool.execute!(
         { what: "不存在的目标元素" },
@@ -138,6 +143,8 @@ describe("@ginkgo/browser 浏览器能力包", () => {
       expect(res.success).toBe(false);
       expect(res.isError).toBe(true);
       expect(typeof res.error).toBe("string");
-    });
+      },
+      20_000
+    );
   });
 });
