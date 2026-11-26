@@ -3,10 +3,12 @@ import {
   compositeSink,
   createConsoleSink,
   createMetricsSink,
+  ModelPricingTable,
 } from "@ginkgo/harness-core";
 import { getMcpManager, loadMcpServers } from "@/lib/mcpStore";
 import { sessionStore } from "@/lib/sessionStore";
-import { DEFAULT_APP_ID } from "@/lib/apps/registry";
+import { appRegistry, DEFAULT_APP_ID } from "@/lib/apps/registry";
+import { gateAppTools } from "@/lib/apps/permissionGate";
 import {
   analyticsDeliverable,
   analyticsNoApiKeyMessage,
@@ -15,6 +17,10 @@ import {
 import { resolveRuntimeServer } from "@/lib/apps/runtimeServers";
 import { analyticsServer } from "@/lib/analyticsRuntime";
 import { resolveWorkspaceForSession } from "@/lib/workspaceResolver";
+import {
+  getModelPricingFile,
+  getTokenizerConfigFile,
+} from "@/lib/storagePaths";
 
 /**
  * WS-10 鉴权接缝桩：当前应用无成熟认证体系，开发模式全部放行并归入匿名租户
@@ -56,12 +62,21 @@ export const POST = createAnalyzeHandler({
       await sessionStore.update(sessionId, { context: patch });
     },
   },
+  // 计费口径与 tokenizer 映射随存储根解析（不再固定 cwd）：存储根外移后仍读同一份配置
+  pricing: new ModelPricingTable(getModelPricingFile()),
+  tokenizerConfigPath: getTokenizerConfigFile(),
   deliverable: analyticsDeliverable,
   noApiKeyMessage: analyticsNoApiKeyMessage,
   summaryPromptBuilder: buildAnalyticsSummaryPrompt,
   resolveAppPrompt: async (appId, ctx) => {
     const server = resolveRuntimeServer(appId);
-    if (!server?.buildSystemPrompt) return undefined;
+    if (!server?.buildSystemPrompt) {
+      // 已停用/未注册应用：调用方应回落默认应用；此处显式记录，避免"没工具"没人知道为什么
+      if (!appRegistry.isAppEnabled(appId)) {
+        console.warn(`[analyze] 应用 [${appId}] 未启用，跳过其系统提示注入`);
+      }
+      return undefined;
+    }
     const workspace = server.needsWorkspace
       ? await resolveWorkspaceForSession(appId, ctx.sessionId)
       : undefined;
@@ -79,7 +94,12 @@ export const POST = createAnalyzeHandler({
   },
   resolveAppTools: async (appId, ctx) => {
     const server = resolveRuntimeServer(appId);
-    if (!server?.getTools) return undefined;
+    if (!server?.getTools) {
+      if (!appRegistry.isAppEnabled(appId)) {
+        console.warn(`[analyze] 应用 [${appId}] 未启用，跳过其工具装配`);
+      }
+      return undefined;
+    }
     const workspace = server.needsWorkspace
       ? await resolveWorkspaceForSession(appId, ctx.sessionId)
       : undefined;
@@ -95,7 +115,18 @@ export const POST = createAnalyzeHandler({
       sessions: ctx.sessions,
       ...(ctx.warn ? { warn: ctx.warn } : {}),
     });
-    return tools as Record<string, never>;
+
+    // 权限门禁（模型 v1）：声明了 manifest.permissions 的应用按 toolPermissions
+    // 白名单过滤，未映射的工具一律丢弃；内置应用（未声明）不受影响。
+    const gated = gateAppTools(appId, server.toolPermissions, tools);
+    if (Object.keys(gated.stripped).length > 0) {
+      console.warn(
+        `[analyze] 应用 [${appId}] 有 ${Object.keys(gated.stripped).length} 个工具因权限被剥离:`,
+        gated.stripped
+      );
+    }
+
+    return gated.tools as Record<string, never>;
   },
   onTaskFinish: (event) =>
     analyticsServer.onTaskFinish({

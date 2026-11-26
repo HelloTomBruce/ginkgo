@@ -27,11 +27,18 @@ export async function POST(
   try {
     const { appId } = await context.params;
 
-    // 1. 白名单合法性守卫 (Strict AppId Allowlist)
+    // 1. 白名单合法性守卫：注册态与启用态都要过
+    //    只判 has() 的话「停用」仅是 UI 假象——动作网关仍会分发到已停用应用
     if (!appRegistry.has(appId)) {
       return NextResponse.json(
         { error: `App not found: ${appId}` },
         { status: 404 }
+      );
+    }
+    if (!appRegistry.isAppEnabled(appId)) {
+      return NextResponse.json(
+        { error: `App disabled: ${appId}` },
+        { status: 403 }
       );
     }
 

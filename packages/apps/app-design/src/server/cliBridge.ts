@@ -2,16 +2,107 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import path from "node:path";
 import fs from "node:fs/promises";
+import fsSync from "node:fs";
 
 const execFileAsync = promisify(execFile);
 
-function getEnhancedEnv(): NodeJS.ProcessEnv {
+/**
+ * 候选可执行文件名：Windows 下 npm 生成的是 `foo.cmd`（部分工具是 `.exe`），
+ * 直接找无后缀的 `foo` 会 miss。
+ */
+function binFileNames(binName: string): string[] {
+  if (process.platform !== "win32") return [binName];
+  return [`${binName}.cmd`, `${binName}.exe`, binName];
+}
+
+/** 在目录下按平台约定查找可执行文件，命中返回绝对路径 */
+function findInBinDir(binDir: string, binName: string): string | null {
+  for (const fileName of binFileNames(binName)) {
+    const candidate = path.join(binDir, fileName);
+    try {
+      if (fsSync.existsSync(candidate)) return candidate;
+    } catch {
+      // 权限问题等按未命中处理
+    }
+  }
+  return null;
+}
+
+/**
+ * 本地 node_modules/.bin 与插件隔离区自适应寻址（跨平台）。
+ */
+export function resolveBinExecutable(binName: string, cwd?: string): string {
+  // 1. 优先检查指定工作区目录下的 node_modules/.bin
+  if (cwd) {
+    const hit = findInBinDir(path.join(cwd, "node_modules", ".bin"), binName);
+    if (hit) return hit;
+  }
+  // 2. 检查应用进程根目录下的 node_modules/.bin
+  const projectHit = findInBinDir(
+    path.join(process.cwd(), "node_modules", ".bin"),
+    binName
+  );
+  if (projectHit) return projectHit;
+
+  // 3. 检查 GINKGO_HOME/plugins/node_modules/.bin
+  const home =
+    process.env.GINKGO_RESOLVED_HOME ||
+    process.env.GINKGO_HOME ||
+    (process.env.HOME || process.env.USERPROFILE
+      ? path.join(process.env.HOME || process.env.USERPROFILE || "", ".ginkgo")
+      : "");
+  if (home) {
+    const pluginHit = findInBinDir(
+      path.join(home, "plugins", "node_modules", ".bin"),
+      binName
+    );
+    if (pluginHit) return pluginHit;
+  }
+
+  // 4. 回退为直接使用 binName，由 PATH 寻址
+  return binName;
+}
+
+/**
+ * 探测外部 CLI 是否可用（跨平台）。
+ *
+ * 判定语义：ENOENT = 没装（false）；其它错误 = 命令存在但 `--version` 执行失败
+ * （仍算已安装，交由调用方决定是否降级），避免把"能执行但返回非 0"误判为缺失。
+ */
+export async function probeCliAvailable(binName: string): Promise<boolean> {
+  const resolved = resolveBinExecutable(binName);
+  try {
+    await execFileAsync(resolved, ["--version"], {
+      env: getEnhancedEnv(),
+      timeout: 8_000,
+      windowsHide: true,
+    });
+    return true;
+  } catch (err: unknown) {
+    return (err as { code?: string }).code !== "ENOENT";
+  }
+}
+
+function getEnhancedEnv(cwd?: string): NodeJS.ProcessEnv {
   const home = process.env.HOME || "";
   const npmGlobalBin = path.join(home, ".npm-global", "bin");
   const currentPath = process.env.PATH || "";
+  const cwdBin = cwd ? path.join(cwd, "node_modules", ".bin") : "";
+  const projectBin = path.join(process.cwd(), "node_modules", ".bin");
+
+  const pathSegments = [
+    cwdBin,
+    projectBin,
+    npmGlobalBin,
+    "/usr/local/bin",
+    "/opt/homebrew/bin",
+    currentPath,
+  ].filter(Boolean);
+
   return {
     ...process.env,
-    PATH: `${npmGlobalBin}:/usr/local/bin:/opt/homebrew/bin:${currentPath}`,
+    // Windows 的 PATH 分隔符是 ";"，不能用 ":"
+    PATH: pathSegments.join(path.delimiter),
   };
 }
 
@@ -62,10 +153,15 @@ export interface WorkspaceDesignMeta {
 }
 
 export class CliBridge {
-  static async runCommand(binName: string, args: string[], cwd?: string): Promise<{ stdout: string; stderr: string; code: number }> {
-    const env = getEnhancedEnv();
+  static async runCommand(
+    binName: string,
+    args: string[],
+    cwd?: string
+  ): Promise<{ stdout: string; stderr: string; code: number }> {
+    const resolvedBin = resolveBinExecutable(binName, cwd);
+    const env = getEnhancedEnv(cwd);
     try {
-      const { stdout, stderr } = await execFileAsync(binName, args, {
+      const { stdout, stderr } = await execFileAsync(resolvedBin, args, {
         cwd,
         env,
         timeout: 30000,
@@ -73,7 +169,23 @@ export class CliBridge {
       });
       return { stdout, stderr, code: 0 };
     } catch (err: unknown) {
-      const execErr = err as { stdout?: string; stderr?: string; code?: number; message?: string };
+      const execErr = err as {
+        stdout?: string;
+        stderr?: string;
+        code?: number | string;
+        message?: string;
+      };
+      // 拦截未找到命令 (ENOENT) 并返回友好指引与状态码 127
+      if (
+        execErr.code === "ENOENT" ||
+        (typeof execErr.message === "string" && execErr.message.includes("ENOENT"))
+      ) {
+        return {
+          stdout: "",
+          stderr: `[依赖缺失] 未在系统环境或本地 node_modules 中检测到 CLI 工具 "${binName}"。在独立/npm分发运行模式下，请先执行 "npm install -g ${binName}" 进行补齐。`,
+          code: 127,
+        };
+      }
       return {
         stdout: execErr.stdout || "",
         stderr: execErr.stderr || execErr.message || String(err),

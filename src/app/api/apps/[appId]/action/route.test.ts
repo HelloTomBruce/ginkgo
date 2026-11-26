@@ -6,7 +6,9 @@ const mockDispatchAction = vi.fn();
 
 vi.mock("@/lib/apps/registry", () => ({
   appRegistry: {
-    has: (id: string) => id === "test-app" || id === "design",
+    has: (id: string) => id === "test-app" || id === "design" || id === "disabled-app",
+    // 启用态门禁：停用应用必须与「不存在」可区分（403 vs 404）
+    isAppEnabled: (id: string) => id === "test-app" || id === "design",
   },
 }));
 
@@ -53,6 +55,19 @@ describe("POST /api/apps/[appId]/action (App Action Gateway)", () => {
     expect(res.status).toBe(404);
     const data = await res.json();
     expect(data.error).toContain("App not found");
+  });
+
+  it("当应用已注册但被停用时返回 403（与 404 语义区分）", async () => {
+    const req = new Request("http://localhost/api/apps/disabled-app/action", {
+      method: "POST",
+      body: JSON.stringify({ action: "test", sessionId: "sess-valid" }),
+    });
+    const res = await POST(req, {
+      params: Promise.resolve({ appId: "disabled-app" }),
+    });
+    expect(res.status).toBe(403);
+    const data = await res.json();
+    expect(data.error).toContain("disabled");
   });
 
   it("当缺少 action 或 sessionId 时返回 400", async () => {

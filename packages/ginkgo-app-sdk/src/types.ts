@@ -7,6 +7,43 @@ import type { ComponentType } from "react";
  * 遵循「外层暴露插槽 (Slots)，应用声明扩展点；能力归属于应用」的设计哲学。
  */
 
+export type AppPermission =
+  | "datasources.read"
+  | "workspace.write"
+  | "shell.execute"
+  | "network.outbound"
+  | "mcp.access";
+
+export interface AppInstallContext {
+  workspaceDir: string;
+  configDir: string;
+  pluginsDir: string;
+}
+
+export interface AppHealthCheckContext {
+  configDir: string;
+  env?: Record<string, string | undefined>;
+}
+
+export interface AppHealthCheckResult {
+  healthy: boolean;
+  status: "ready" | "degraded" | "missing_deps";
+  missingCapabilities?: string[];
+  remediationGuide?: string;
+  message?: string;
+}
+
+export interface AppLifecycleContract {
+  /** 应用安装时触发：准备目录、预置文件等 */
+  onInstall?: (ctx: AppInstallContext) => Promise<{ success: boolean; message?: string }>;
+  /** 应用卸载时触发：清理缓存、断开外部连接等 */
+  onUninstall?: (ctx: AppInstallContext) => Promise<void>;
+  /** 应用更新时触发：执行数据或状态迁移 */
+  onUpdate?: (ctx: AppInstallContext, fromVersion: string, toVersion: string) => Promise<void>;
+  /** 运行前健康检查探针：返回能力满足情况及修复指引 */
+  onHealthCheck?: (ctx: AppHealthCheckContext) => Promise<AppHealthCheckResult>;
+}
+
 export interface AppManifest {
   /** 唯一标识，如 "analytics", "general", "devops" */
   id: string;
@@ -18,12 +55,18 @@ export interface AppManifest {
   icon: string;
   /** 版本号 */
   version?: string;
+  /** 关联 npm 包名称，如 "@ginkgo-apps/design" */
+  package?: string;
   /** 业务分类，如 "数据智能", "通用助理", "研发效能" */
   category?: string;
   /** 标签 */
   tags?: string[];
   /** 作者或团队 */
   author?: string;
+  /** 最小权限申请声明清单 */
+  permissions?: AppPermission[];
+  /** 应用生命周期钩子 */
+  lifecycle?: AppLifecycleContract;
 }
 
 export interface AppPresetQuery {
@@ -551,6 +594,29 @@ export interface AppServerContract {
    * 属于应用的底层能力（如数据库探查 SQL、文件提取等）在此自理，不泄漏给宿主。
    */
   getTools?: (ctx: AppServerContext) => Promise<Record<string, unknown>> | Record<string, unknown>;
+
+  /**
+   * 工具 → 所需权限的显式声明（权限模型 v1）。
+   *
+   * 仅当 `manifest.permissions` 已声明时生效：宿主按此映射过滤工具集，
+   * **未声明的工具一律丢弃**（default deny）。宿主不猜测工具语义，
+   * 归属判断完全由应用自己声明。
+   */
+  toolPermissions?: Record<string, AppPermission>;
+
+  /**
+   * 运行前健康检查（可选，服务端专用）：返回依赖满足情况与修复指引。
+   *
+   * 归属原则：外部 CLI/服务类依赖由**应用**探测，宿主只负责调用与展示。
+   * 需要 node 内置模块的探测实现必须放在应用的服务端入口（`./server`），
+   * 不能进 manifest——manifest 会被客户端组件链引用。
+   *
+   * 第三方应用若在 `manifest.lifecycle.onHealthCheck` 里实现，注册时会被
+   * 适配到本字段（单一调用路径）。
+   */
+  healthCheck?: (
+    ctx: AppHealthCheckContext
+  ) => Promise<AppHealthCheckResult>;
 
   /** 是否需要挂载数据库探查工具（标志位） */
   requiresDataTools?: boolean;

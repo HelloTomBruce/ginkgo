@@ -8,6 +8,7 @@ import {
   getDesignTools as designGetTools,
   dispatchDesignAction,
   DesignService,
+  checkDesignHealth,
 } from "@ginkgo-apps/design/server";
 import { appRegistry } from "./registry";
 import type { AppServerContract } from "@ginkgo/app-sdk";
@@ -27,7 +28,8 @@ export function resolveRuntimeServer(appId: string):
   if (appId === "analytics") {
     return analyticsServer as unknown as AppServerContract;
   }
-  const staticContract = appRegistry.get(appId)?.server;
+  // 执行路径只认启用应用：停用后不得再返回工具/动作实现
+  const staticContract = appRegistry.getEnabled(appId)?.server;
   if (appId === "general") {
     // 组合根注入运行时实现：静态声明段（needsWorkspace 等）+ ./server 入口的工具装配与动作分发
     return {
@@ -42,6 +44,8 @@ export function resolveRuntimeServer(appId: string):
       ...staticContract,
       getTools: designGetTools,
       dispatchAction: dispatchDesignAction,
+      // 外部 CLI 依赖由应用自治探测（宿主不持有"能力→命令"映射）
+      healthCheck: checkDesignHealth,
       listArtifacts: async (ctx) => DesignService.listArtifacts(ctx.sandboxDir),
     };
   }
