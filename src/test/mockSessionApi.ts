@@ -92,6 +92,16 @@ export function installSessionServer(
       const method = (init?.method ?? "GET").toUpperCase();
       const match = pathname.match(/^\/api\/sessions(?:\/([^/?]+?))?(?:\/(fork))?$/);
       if (!match) {
+        if (pathname === "/api/apps") {
+          // 与真实平台一致的内置应用清单（启用态由服务端决定，客户端据此过滤）
+          return jsonResponse({
+            apps: [
+              { id: "analytics", name: "智能数据分析师", enabled: true, isRegistered: true, builtin: true, health: { healthy: true, status: "ready" } },
+              { id: "general", name: "通用智能助手", enabled: true, isRegistered: true, builtin: true, health: { healthy: true, status: "ready" } },
+              { id: "design", name: "体验设计工坊", enabled: true, isRegistered: true, builtin: true, health: { healthy: true, status: "ready" } },
+            ],
+          });
+        }
         return fallback
           ? fallback(rawUrl, init)
           : jsonResponse({ error: "not mocked" }, 404);

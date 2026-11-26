@@ -17,6 +17,7 @@ interface AppSwitcherProps {
   activeAppId: string;
   onSwitchApp: (appId: string) => void;
   apps?: AppDefinition[];
+  onOpenAppStore?: () => void;
 }
 
 function renderAppIcon(iconName: string, className = "w-4 h-4") {
@@ -38,6 +39,7 @@ export function AppSwitcher({
   activeAppId,
   onSwitchApp,
   apps = listApps(),
+  onOpenAppStore,
 }: AppSwitcherProps) {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -154,6 +156,28 @@ export function AppSwitcher({
               );
             })}
           </div>
+
+          {onOpenAppStore && (
+            <div className="border-t border-border mt-1.5 pt-1.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsOpen(false);
+                  onOpenAppStore();
+                }}
+                className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-left text-foreground-subtle hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
+                data-testid="open-app-store-button"
+              >
+                <div className="flex items-center gap-2">
+                  <LayoutGrid className="w-3.5 h-3.5 text-brand-fg" />
+                  <span className="text-xs font-medium">探索与管理应用中心</span>
+                </div>
+                <span className="text-[10px] bg-surface-sunken px-1.5 py-0.5 rounded text-foreground-faint font-mono border border-border">
+                  {apps.length}
+                </span>
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>

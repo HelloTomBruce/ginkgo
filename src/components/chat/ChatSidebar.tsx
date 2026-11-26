@@ -29,6 +29,7 @@ import {
   PanelLeftClose,
 } from "lucide-react";
 import type { SessionSummary } from "@/lib/sessionStore";
+import type { AppDefinition } from "@/types/app";
 import type { WorkspaceRecord } from "@/lib/workspaceStore";
 import { toast } from "@/lib/toast";
 // 仅取类型（编译期擦除）
@@ -85,11 +86,17 @@ interface ChatSidebarProps {
   isCollapsed?: boolean;
   /** 展开/收起切换回调 */
   onToggleCollapse?: () => void;
+  /** 打开应用中心回调 */
+  onOpenAppStore?: () => void;
+  /** 可用应用列表（由宿主注入已启用集合；缺省用 registry 全量） */
+  apps?: AppDefinition[];
 }
 
 export function ChatSidebar({
   activeAppId = DEFAULT_APP_ID,
   onSwitchApp,
+  onOpenAppStore,
+  apps,
   sessions,
   currentSessionId,
   editingSessionId,
@@ -300,6 +307,8 @@ export function ChatSidebar({
         <AppSwitcher
           activeAppId={activeAppId}
           onSwitchApp={onSwitchApp ?? (() => {})}
+          onOpenAppStore={onOpenAppStore}
+          {...(apps ? { apps } : {})}
         />
       </div>
 

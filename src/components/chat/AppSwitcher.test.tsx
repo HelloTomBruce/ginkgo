@@ -66,4 +66,26 @@ describe("AppSwitcher 组件", () => {
 
     expect(handleSwitch).toHaveBeenCalledWith("general");
   });
+
+  it("当下拉展开且传入 onOpenAppStore 时，渲染应用中心入口并可点击触发", () => {
+    const handleOpenAppStore = vi.fn();
+    render(
+      <AppSwitcher
+        activeAppId="analytics"
+        onSwitchApp={vi.fn()}
+        apps={mockApps}
+        onOpenAppStore={handleOpenAppStore}
+      />
+    );
+
+    const button = screen.getByTestId("app-switcher-button");
+    fireEvent.click(button);
+
+    const storeBtn = screen.getByTestId("open-app-store-button");
+    expect(storeBtn).toBeDefined();
+    expect(screen.getByText("探索与管理应用中心")).toBeDefined();
+
+    fireEvent.click(storeBtn);
+    expect(handleOpenAppStore).toHaveBeenCalled();
+  });
 });

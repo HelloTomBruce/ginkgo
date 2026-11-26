@@ -255,4 +255,18 @@ describe("ChatSidebar 底部功能栏", () => {
     expect(aside).toHaveAttribute("aria-hidden", "true");
     expect(aside.className).toContain("-ml-72");
   });
+
+  it("当传入 onOpenAppStore 时，可通过 AppSwitcher 触发应用中心打开", () => {
+    const onOpenAppStore = vi.fn();
+    render(<ChatSidebar {...baseProps} onOpenAppStore={onOpenAppStore} />);
+
+    const switcherBtn = screen.getByTestId("app-switcher-button");
+    fireEvent.click(switcherBtn);
+
+    const storeBtn = screen.getByTestId("open-app-store-button");
+    expect(storeBtn).toBeInTheDocument();
+    fireEvent.click(storeBtn);
+
+    expect(onOpenAppStore).toHaveBeenCalledTimes(1);
+  });
 });

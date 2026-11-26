@@ -22,13 +22,15 @@ import { MessageList } from "@/components/chat/MessageList";
 import { ChatInput } from "@/components/chat/ChatInput";
 import { useDatasourceList } from "@/components/chat/datasources/useDatasources";
 import { SettingsModal } from "@/components/chat/SettingsModal";
+import { AppStoreModal } from "@/components/chat/AppStoreModal";
 import { ModelSwitcher } from "@/components/chat/ModelSwitcher";
 import { ReasoningEffortSwitcher } from "@/components/chat/ReasoningEffortSwitcher";
 import { ContextUsageIndicator } from "@/components/chat/ContextUsageIndicator";
 import type { AppCanvasData, ModeEscalationPayload } from "@ginkgo/app-sdk";
 import { extractUiSpec } from "@/lib/extractUiSpec";
-import { appRegistry } from "@/lib/apps/registry";
+import { appRegistry, DEFAULT_APP_ID } from "@/lib/apps/registry";
 import { getInitialAppId, saveActiveAppId } from "@/lib/activeAppStorage";
+import { useEnabledApps } from "@/hooks/useEnabledApps";
 import {
   type ChatRequestMetadata,
   buildStreamErrorMessage,
@@ -134,16 +136,42 @@ function deriveContextUsage(
 
 export default function ChatDashboard() {
   const [activeAppId, setActiveAppId] = useState<string>(getInitialAppId);
+  const [showAppStore, setShowAppStore] = useState(false);
+  // 启用态以服务端为准（客户端 registry 是打包期常量，无法反映运行期启停）
+  const { ids: enabledAppIds, refresh: refreshEnabledApps } = useEnabledApps();
 
   const handleSwitchApp = useCallback((appId: string) => {
     if (!appRegistry.has(appId)) return;
     setActiveAppId(appId);
     saveActiveAppId(appId);
   }, []);
+
+  // 当前应用若已在服务端被停用/卸载 → 渲染时回落到默认应用
+  // （不在 effect 里 setState：派生值直接算，持久化交给用户操作路径）
+  const effectiveAppId =
+    enabledAppIds && !enabledAppIds.has(activeAppId)
+      ? DEFAULT_APP_ID
+      : activeAppId;
+
   const activeApp = useMemo(
-    () => appRegistry.getOrDefault(activeAppId),
-    [activeAppId]
+    () => appRegistry.getOrDefault(effectiveAppId),
+    [effectiveAppId]
   );
+
+  // 应用中心变更 → 重新拉取启用态；若当前应用已被停用/卸载则立即切到默认应用
+  const handleAppsChanged = useCallback(async () => {
+    const next = await refreshEnabledApps();
+    if (next && !next.has(activeAppId)) {
+      handleSwitchApp(DEFAULT_APP_ID);
+    }
+  }, [refreshEnabledApps, activeAppId, handleSwitchApp]);
+
+  // 侧栏只展示已启用应用；未加载完成时保持 registry 全量（不闪空）
+  const switcherApps = useMemo(() => {
+    const all = appRegistry.list();
+    if (!enabledAppIds) return all;
+    return all.filter((app) => enabledAppIds.has(app.manifest.id));
+  }, [enabledAppIds]);
   // 应用自治弹层（sidebarQuickActions 声明 Component 的快捷动作）：按 key 管理 open
   const [openQuickActionKey, setOpenQuickActionKey] = useState<string | null>(null);
   // 上下文用量兜底（仅在未收到 StreamData 时生效，按 sessionId 绑定）
@@ -1051,6 +1079,8 @@ export default function ChatDashboard() {
         onToggleCollapse={handleToggleSidebar}
         activeAppId={activeAppId}
         onSwitchApp={handleSwitchApp}
+        apps={switcherApps}
+        onOpenAppStore={() => setShowAppStore(true)}
         sessions={sessions}
         currentSessionId={currentSessionId}
         editingSessionId={editingSessionId}
@@ -1353,6 +1383,7 @@ export default function ChatDashboard() {
           onSaveProvider={saveProvider}
           onDeleteProvider={deleteProvider}
           onSwitchActiveModel={switchActiveModel}
+          onOpenAppStore={() => setShowAppStore(true)}
           // 设置中心应用分区：当前应用经 client.settingsSections 声明（未声明则仅平台 tab）
           appId={activeAppId}
           appSections={activeApp.client.settingsSections}
@@ -1382,6 +1413,13 @@ export default function ChatDashboard() {
           onProtocolChange={setProtocol}
           onSave={saveSettings}
           onClose={handleCloseSettings}
+        />
+      )}
+      {showAppStore && (
+        <AppStoreModal
+          isOpen={showAppStore}
+          onClose={() => setShowAppStore(false)}
+          onAppsChanged={handleAppsChanged}
         />
       )}
       <Toaster />

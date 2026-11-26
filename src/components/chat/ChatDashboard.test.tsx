@@ -930,4 +930,28 @@ describe("ChatDashboard 守护测试（重构行为锁定）", () => {
     expect(localStorage.getItem("ginkgo_sidebar_collapsed")).toBe("false");
     expect(screen.getAllByRole("button", { name: "收起侧边栏" }).length).toBeGreaterThanOrEqual(1);
   });
+
+  it("支持从侧栏 AppSwitcher 打开应用中心模态框并支持关闭", async () => {
+    render(<ChatDashboard />);
+
+    // 点击底部应用切换器
+    const switcherBtn = screen.getByTestId("app-switcher-button");
+    fireEvent.click(switcherBtn);
+
+    // 点击打开应用中心
+    const openStoreBtn = screen.getByTestId("open-app-store-button");
+    fireEvent.click(openStoreBtn);
+
+    // 应该渲染 AppStoreModal
+    expect(await screen.findByText(/Ginkgo 应用中心/)).toBeInTheDocument();
+
+    // 点击关闭按钮
+    const closeBtn = screen.getByRole("button", { name: "关闭" });
+    fireEvent.click(closeBtn);
+
+    // 模态框应被关闭
+    await waitFor(() => {
+      expect(screen.queryByText(/Ginkgo 应用中心/)).not.toBeInTheDocument();
+    });
+  });
 });

@@ -20,6 +20,8 @@ import {
   EyeOff,
   Check,
   icons,
+  Boxes,
+  ExternalLink,
 } from "lucide-react";
 import type { AppSettingsSectionSpec } from "@ginkgo/app-sdk";
 import {
@@ -106,6 +108,7 @@ export interface SettingsModalProps {
   activeModel?: string;
   onSaveProvider?: (provider: ConfiguredProvider) => void;
   onDeleteProvider?: (id: string) => void;
+  onOpenAppStore?: () => void;
   onSwitchActiveModel?: (providerId: string, model: string) => void;
 
   /** 当前应用 ID（应用分区 Props 注入） */
@@ -114,7 +117,7 @@ export interface SettingsModalProps {
   appSections?: AppSettingsSectionSpec[];
 }
 
-type SettingsTab = "model" | "datasources" | "mcp" | "engine" | "governance";
+type SettingsTab = "model" | "datasources" | "mcp" | "apps" | "engine" | "governance";
 
 const SETTINGS_TABS: {
   id: SettingsTab;
@@ -124,6 +127,7 @@ const SETTINGS_TABS: {
   { id: "model", label: "模型配置", Icon: Bot },
   { id: "datasources", label: "数据源", Icon: Database },
   { id: "mcp", label: "MCP 扩展", Icon: Puzzle },
+  { id: "apps", label: "应用生态", Icon: Boxes },
   { id: "engine", label: "引擎调度", Icon: Zap },
   { id: "governance", label: "治理观测", Icon: ShieldCheck },
 ];
@@ -748,6 +752,7 @@ export function SettingsModal({
   appId,
   /** 当前应用声明的设置分区（client.settingsSections）；空 = 仅平台 tab */
   appSections = [],
+  onOpenAppStore,
 }: SettingsModalProps) {
   const [activeTab, setActiveTab] = useState<string>("model");
   const { presets, loading } = useProviderCatalog();
@@ -1519,6 +1524,40 @@ export function SettingsModal({
             className="max-h-[60vh] overflow-y-auto pr-0.5 mt-0"
           >
             <McpSettings />
+          </TabsContent>
+
+          <TabsContent
+            value="apps"
+            className="max-h-[60vh] overflow-y-auto pr-0.5 mt-0 space-y-4"
+          >
+            <div className="p-4 rounded-xl border border-border bg-surface-sunken space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-info-soft text-info-fg flex items-center justify-center shrink-0">
+                    <Boxes className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-foreground text-xs">智能体应用与插件生态</h3>
+                    <p className="text-[11px] text-foreground-subtle">
+                      按需动态安装领域应用、启停扩展与自检外部 CLI 依赖
+                    </p>
+                  </div>
+                </div>
+                {onOpenAppStore && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      onOpenAppStore();
+                    }}
+                    className="px-3 py-1.5 rounded-lg bg-foreground text-background font-medium hover:bg-foreground-strong text-xs flex items-center gap-1.5 transition-colors cursor-pointer shrink-0"
+                  >
+                    <span>打开应用中心</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+            </div>
           </TabsContent>
 
           <TabsContent
