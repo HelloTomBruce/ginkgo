@@ -94,3 +94,8 @@ DashboardSpec 2.0 声明式状态树 + ChartSpec 图表语义契约 + RFC 6902 J
 - **扩展部件类型**：在看板部件的 `WidgetSpec` 枚举中追加类型，随后在组件库渲染器中补充对应的渲染分支；若需 LLM 生成则同步更新 Prompt 提示词中的组件清单。
 - **扩展图表类型**：在 `CHART_TYPES` 封闭词汇表中追加类型，并在展示组件库的图表注册表中实现对应的 Recharts 映射，无需修改底层数据物化流水线。
 - **调整防线阈值**：所有维度、指标和数据上限均由单一常量维护，更新上限常量即可同步生效至 Schema 验证逻辑。
+
+
+## License
+
+MIT © 2026 Ginkgo contributors — 完整条款见包内 `LICENSE`（或仓库根 `LICENSE`）。

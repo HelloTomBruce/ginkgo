@@ -6,8 +6,8 @@ describe("AppRegistry 配置驱动注册表", () => {
   it("初始化时按传入的配置正确加载应用与排序", () => {
     const registry = new AppRegistry({
       apps: [
-        { id: "design", package: "@ginkgo-apps/design", enabled: true },
-        { id: "analytics", package: "@ginkgo-apps/analytics", enabled: true },
+        { id: "design", package: "@ginkgo/app-design", enabled: true },
+        { id: "analytics", package: "@ginkgo/app-analytics", enabled: true },
       ],
     });
 

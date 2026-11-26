@@ -91,3 +91,8 @@ export const myAppPackage = defineApp({
 - 应用包经 `defineApp` 声明（id 形态与 welcomeMessage 必填在此强制）。
 
 接入全景见 [docs/app-integration-guide.md](../../docs/app-integration-guide.md)。
+
+
+## License
+
+MIT © 2026 Ginkgo contributors — 完整条款见包内 `LICENSE`（或仓库根 `LICENSE`）。

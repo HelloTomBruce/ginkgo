@@ -1,24 +1,22 @@
 {
-  "name": "@ginkgo-apps/analytics",
+  "name": "@ginkgo/app-analytics",
   "version": "0.1.0",
   "description": "Intelligent Data Analytics app for Ginkgo platform",
   "type": "module",
-  "main": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
-    "./isomorphic": "./src/isomorphic/index.ts",
     "./client": "./src/client/index.ts",
-    "./server": "./src/server/index.ts",
-    "./isomorphic/dashboardCapture": "./src/isomorphic/dashboardCapture.ts"
+    "./isomorphic": "./src/isomorphic/index.ts",
+    "./isomorphic/dashboardCapture": "./src/isomorphic/dashboardCapture.ts",
+    "./manifest": "./src/manifestMeta.ts",
+    "./server": "./src/server/index.ts"
   },
   "publishConfig": {
     "access": "public",
-    "main": "./dist/index.js",
-    "types": "./dist/index.d.ts",
     "exports": {
-      ".": {
-        "types": "./dist/index.d.ts",
-        "import": "./dist/index.js"
+      "./manifest": {
+        "types": "./dist/manifestMeta.d.ts",
+        "import": "./dist/manifestMeta.js"
       },
       "./isomorphic": {
         "types": "./dist/isomorphic.d.ts",
@@ -61,23 +59,13 @@
     "cn": "^0.5.2",
     "exceljs": "^4.4.0",
     "lucide-react": "^1.73.0",
-    "mysql2": "^3.24.5",
     "pg": "^8.23.1",
     "radix-ui": "^1.8.1",
-    "recharts": "^3.10.1",
-    "use-sync-external-store": "^1.4.0"
+    "recharts": "^3.10.1"
   },
   "peerDependencies": {
     "react": ">=18",
     "react-dom": ">=18"
-  },
-  "peerDependenciesMeta": {
-    "react": {
-      "optional": true
-    },
-    "react-dom": {
-      "optional": true
-    }
   },
   "devDependencies": {
     "@ginkgo/llm": "workspace:*",
@@ -86,8 +74,14 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "jsdom": "^30.1.2",
+    "mysql2": "^3.24.5",
     "tsup": "^9.0.0",
     "typescript": "^5",
+    "use-sync-external-store": "^1.4.0",
     "vitest": "^5.1.0"
-  }
+  },
+  "engines": {
+    "node": ">=22.12"
+  },
+  "license": "MIT"
 }

@@ -165,3 +165,8 @@ ai@4.3 的 `asSchema` 对 zod@4（standard schema）做模型侧 JSON Schema 转
   在上下文引擎中传入 `isProtectedMessage(msg, index, total)`，为特定的交互卡片或系统指令提供豁免保护。
 - **添加新中间件与状态机节点**：
   实现 `HarnessMiddleware` 挂载到 `HarnessPipeline`，或使用 `StateGraph` 构建复杂的循环/分支工作流。
+
+
+## License
+
+MIT © 2026 Ginkgo contributors — 完整条款见包内 `LICENSE`（或仓库根 `LICENSE`）。

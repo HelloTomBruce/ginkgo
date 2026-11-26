@@ -88,3 +88,8 @@ const merged = dedupeModels([
 pnpm --filter @ginkgo/models test
 ```
 全量单测覆盖类型归一化、推理判断、上下文窗口计算、去重合并与动态目录拉取转换。
+
+
+## License
+
+MIT © 2026 Ginkgo contributors — 完整条款见包内 `LICENSE`（或仓库根 `LICENSE`）。

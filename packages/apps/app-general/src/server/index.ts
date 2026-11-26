@@ -6,7 +6,7 @@ import { createBrowserTools } from "@ginkgo/browser";
 import type { BrowserToolsPackage } from "@ginkgo/browser";
 
 /**
- * 通用助手的沙箱与浏览器工具装配（运行时实现，仅服务端经 `@ginkgo-apps/general/server`
+ * 通用助手的沙箱与浏览器工具装配（运行时实现，仅服务端经 `@ginkgo/app-general/server`
  * 入口消费——宿主组合根 runtimeServers 注入；不得进应用包主入口，否则 Node
  * 内置模块泄漏进客户端 bundle）。
  *

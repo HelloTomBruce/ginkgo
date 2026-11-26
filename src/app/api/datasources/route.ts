@@ -1,6 +1,6 @@
 import { datasources } from "@/lib/datasources";
 import { describeDynamicSource } from "@ginkgo/datasources";
-import { resolveCrossSourcePairs } from "@ginkgo-apps/analytics/server";
+import { resolveCrossSourcePairs } from "@ginkgo/app-analytics/server";
 
 /**
  * GET /api/datasources

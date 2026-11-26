@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { GET, PUT } from "./route";
-import { reloadCrossSourceMap } from "@ginkgo-apps/analytics/server";
+import { reloadCrossSourceMap } from "@ginkgo/app-analytics/server";
 
 vi.mock("@/lib/datasources", () => ({
   datasources: {

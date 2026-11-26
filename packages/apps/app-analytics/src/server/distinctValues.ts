@@ -11,7 +11,7 @@
 import type { DynamicSourceConfig, McpConnection } from "@ginkgo/datasources";
 import { parseMcpToolResult } from "@ginkgo/datasources/parseToolResult";
 import { SOURCE_ID_RE } from "@ginkgo/chart-spec";
-import { extractQueryRows } from "@ginkgo-apps/analytics/isomorphic";
+import { extractQueryRows } from "@ginkgo/app-analytics/isomorphic";
 import { TABLE_RE } from "./specMaterialize";
 
 export const DISTINCT_VALUES_CAP = 200;

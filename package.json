@@ -12,7 +12,7 @@
     "lint": "eslint",
     "test": "vitest run",
     "verify": "pnpm lint && pnpm typecheck && pnpm test && pnpm build",
-    "eval:tier-b": "pnpm --filter @ginkgo-apps/analytics eval:tier-b",
+    "eval:tier-b": "pnpm --filter @ginkgo/app-analytics eval:tier-b",
     "typecheck": "tsc --noEmit",
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs",
@@ -21,9 +21,9 @@
   },
   "dependencies": {
     "@ai-sdk/react": "1.1.20",
-    "@ginkgo-apps/analytics": "workspace:*",
-    "@ginkgo-apps/design": "workspace:*",
-    "@ginkgo-apps/general": "workspace:*",
+    "@ginkgo/app-analytics": "workspace:*",
+    "@ginkgo/app-design": "workspace:*",
+    "@ginkgo/app-general": "workspace:*",
     "@ginkgo/app-sdk": "workspace:*",
     "@ginkgo/chart-spec": "workspace:*",
     "@ginkgo/components": "workspace:*",
@@ -62,5 +62,6 @@
     "vitepress": "^1.6.4",
     "vitest": "^5.1.0"
   },
-  "packageManager": "pnpm@12.10.1"
+  "packageManager": "pnpm@12.10.1",
+  "license": "MIT"
 }

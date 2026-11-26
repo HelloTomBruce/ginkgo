@@ -1,4 +1,4 @@
-# @ginkgo-apps/analytics · 智能数据分析师
+# @ginkgo/app-analytics · 智能数据分析师
 
 Ginkgo 平台的**深度应用**范例：多源数据探查、指标计算、深度归因与敏捷可视化大屏。
 完整接入规范见 [docs/app-integration-guide.md](../../../docs/app-integration-guide.md)。
@@ -38,3 +38,8 @@ server 模块——datasources 依赖含 DuckDB 原生绑定）；运行时逻�
 看板收藏（`type: "dashboard"`）实现平台产物协议：`appId` 归属、`listArtifacts`
 枚举、`refreshArtifact` 活看板零 LLM 刷新（查询重放 + transforms 重算 + SpecChart
 物化，compute-only，持久化在平台薄壳路由）。
+
+
+## License
+
+MIT © 2026 Ginkgo contributors — 完整条款见包内 `LICENSE`（或仓库根 `LICENSE`）。

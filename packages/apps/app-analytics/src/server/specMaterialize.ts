@@ -24,12 +24,12 @@ import {
   type McpConnection,
 } from "@ginkgo/datasources";
 import { parseMcpToolResult } from "@ginkgo/datasources/parseToolResult";
-import { extractQueryRows } from "@ginkgo-apps/analytics/isomorphic";
+import { extractQueryRows } from "@ginkgo/app-analytics/isomorphic";
 import {
   applyTransform,
   isValidTransformSpec,
   type TransformSpec,
-} from "@ginkgo-apps/analytics/isomorphic";
+} from "@ginkgo/app-analytics/isomorphic";
 
 // ===== 常量与标识符规则 =====
 

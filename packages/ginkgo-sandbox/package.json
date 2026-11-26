@@ -9,7 +9,9 @@
     "./prompt": "./src/prompt.ts"
   },
   "scripts": {
-    "test": "vitest run"
+    "test": "vitest run",
+    "build": "tsup",
+    "prepublishOnly": "pnpm build"
   },
   "dependencies": {
     "@ginkgo/harness-core": "workspace:*",
@@ -18,7 +20,35 @@
   },
   "devDependencies": {
     "@types/node": "^22",
+    "tsup": "^9.0.0",
     "typescript": "^5",
     "vitest": "^5.1.0"
-  }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      },
+      "./tools": {
+        "types": "./dist/tools.d.ts",
+        "import": "./dist/tools.js"
+      },
+      "./prompt": {
+        "types": "./dist/prompt.d.ts",
+        "import": "./dist/prompt.js"
+      }
+    }
+  },
+  "engines": {
+    "node": ">=22.12"
+  },
+  "license": "MIT"
 }

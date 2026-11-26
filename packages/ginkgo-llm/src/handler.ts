@@ -533,11 +533,35 @@ export interface AnalyzeRequestBody {
 }
 
 /**
+ * `createAnalyzeHandler` 的返回面：可调用的 POST 处理函数 + 运行时观测/控制出口。
+ *
+ * 显式声明（而非依赖推断）的两个理由：
+ *   1. 发布 dts 可移植性——推断会把 `@types/node` 的 undici fetch 类型族带进产物（TS2742）；
+ *   2. 契约可见性——宿主经这些字段做探针（isSessionRunning）、指标（streamHub）、
+ *      账本读取（costLedger），属于公共 API 面。
+ */
+export interface AnalyzeHandler {
+  (req: Request): Promise<Response>;
+  /** 会话是否有运行中的任务（GET /api/analyze 探针） */
+  isSessionRunning(sessionId: string, tenantId?: string): Promise<boolean>;
+  /** 主动中止会话任务（用户停止） */
+  abortSession(sessionId: string, tenantId?: string): Promise<unknown>;
+  /** 会话流中继（指标聚合、探针） */
+  streamHub: SessionStreamHub;
+  /** 成本台账（未启用时为 undefined，GET /api/usage 经此读取） */
+  costLedger?: CostLedger;
+}
+
+/**
  * LLM 编排门面（领域中立）：注入平台设施与应用接缝，返回可直接作为 Next POST
  * 路由的处理函数。应用领域逻辑（prompt/工具装配/交付物语义）全部经
  * resolveAppPrompt / resolveAppTools / deliverable / onTaskFinish 注入。
  */
-export function createAnalyzeHandler(opts: AnalyzeHandlerOptions) {
+export function createAnalyzeHandler(
+  opts: AnalyzeHandlerOptions
+  // 显式返回类型：避免 dts 推断穿透到 undici-types（@types/node 的 fetch 类型族），
+  // 导致发布产物类型声明不可移植（TS2742）。接口在下方 AnalyzeHandler 定义。
+): AnalyzeHandler {
   const { sessions } = opts;
   // 注入替换缺省(需要 console+OTel 双写时由 app 侧传 compositeSink(consoleSink, otelSink))
   const telemetry = opts.telemetry ?? createConsoleSink();

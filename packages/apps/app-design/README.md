@@ -1,4 +1,4 @@
-# @ginkgo-apps/design
+# @ginkgo/app-design
 
 **体验设计工坊（Ginkgo Design Studio）**：基于 `claude-design`、`claude-design-system` 与 `claude-data` CLI 打造的专业 UI/UX 体验设计、响应式多画板视觉原型、Design Tokens 规范管理与代码合规审计应用。
 
@@ -17,3 +17,8 @@
    - **Plan 规划模式**：梳理信息架构与视觉风格，未获用户确认前禁止写操作；
    - **Build 执行模式**：落地生成画板代码并调用静态 check 检查；
    - **操作审批 (ApprovalCard)**：修改全局设计系统文件或覆写已有画板触发风险审批。
+
+
+## License
+
+MIT © 2026 Ginkgo contributors — 完整条款见包内 `LICENSE`（或仓库根 `LICENSE`）。

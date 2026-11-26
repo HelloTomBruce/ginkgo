@@ -13,7 +13,7 @@ import {
   analyticsDeliverable,
   analyticsNoApiKeyMessage,
   buildAnalyticsSummaryPrompt,
-} from "@ginkgo-apps/analytics/server";
+} from "@ginkgo/app-analytics/server";
 import { resolveRuntimeServer } from "@/lib/apps/runtimeServers";
 import { analyticsServer } from "@/lib/analyticsRuntime";
 import { resolveWorkspaceForSession } from "@/lib/workspaceResolver";
@@ -42,7 +42,7 @@ export const metrics = createMetricsSink();
  * resolveAppPrompt / resolveAppTools 接缝注入（无 appId 特判：general 的沙箱
  * 工具在应用包内消费 ginkgo-sandbox 能力包装配，宿主只按 needsWorkspace 声明
  * 注入会话沙箱）；analytics 的深度编排（schema 摘要、方法卡、认证口径、跨源
- * 工具）在 @ginkgo-apps/analytics 服务端自治。
+ * 工具）在 @ginkgo/app-analytics 服务端自治。
  * telemetry：NDJSON console（可 grep）+ 进程内指标聚合双写；接 OTel 时换
  * compositeSink(console, otelSink, metrics.sink)。
  */

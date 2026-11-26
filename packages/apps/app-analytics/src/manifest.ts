@@ -1,4 +1,5 @@
-import type { AppManifest, AppClientContract } from "@ginkgo/app-sdk";
+import type { AppClientContract } from "@ginkgo/app-sdk";
+import { analyticsManifest } from "./manifestMeta";
 import { analyticsLibrary } from "@ginkgo/components";
 import { AnalysisCanvas } from "./client/AnalysisCanvas";
 import { SourcePicker } from "./client/SourcePicker";
@@ -7,16 +8,7 @@ import { MethodologyModal } from "./client/MethodologyModal";
 import { ComponentCatalogModal } from "./client/ComponentCatalogModal";
 import { CrossSourceSettings } from "./client/CrossSourceSettings";
 
-export const analyticsManifest: AppManifest = {
-  id: "analytics",
-  name: "智能数据分析师",
-  description: "多源数据探查、指标计算、深度归因与敏捷可视化大屏",
-  icon: "TrendingUp",
-  version: "1.0.0",
-  category: "数据智能",
-  tags: ["BI", "数据看板", "SQL", "指标分析"],
-  author: "Ginkgo Team",
-};
+export { analyticsManifest };
 
 export const analyticsClient: AppClientContract = {
   welcomeMessage:

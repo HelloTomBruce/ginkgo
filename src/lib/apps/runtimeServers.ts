@@ -3,13 +3,13 @@ import {
   getGeneralTools as generalGetTools,
   dispatchGeneralAction,
   onSessionEnd as generalOnSessionEnd,
-} from "@ginkgo-apps/general/server";
+} from "@ginkgo/app-general/server";
 import {
   getDesignTools as designGetTools,
   dispatchDesignAction,
   DesignService,
   checkDesignHealth,
-} from "@ginkgo-apps/design/server";
+} from "@ginkgo/app-design/server";
 import { appRegistry } from "./registry";
 import type { AppServerContract } from "@ginkgo/app-sdk";
 

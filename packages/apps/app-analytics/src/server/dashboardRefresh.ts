@@ -19,15 +19,15 @@ import {
   jsonToUiSpec,
   serverLibrary,
 } from "@ginkgo/components/server";
-import { extractQueryRows, rowPropFor } from "@ginkgo-apps/analytics/isomorphic";
+import { extractQueryRows, rowPropFor } from "@ginkgo/app-analytics/isomorphic";
 import { materializeSpecRows } from "./specMaterialize";
 import { parseChartSpec, type ChartSpec } from "@ginkgo/chart-spec";
 import {
   applyTransform,
   isValidTransformSpec,
   type TransformSpec,
-} from "@ginkgo-apps/analytics/isomorphic";
-import { evaluateTimeMacros } from "@ginkgo-apps/analytics/isomorphic";
+} from "@ginkgo/app-analytics/isomorphic";
+import { evaluateTimeMacros } from "@ginkgo/app-analytics/isomorphic";
 import type { DashboardRecord, DashboardQuery } from "./dashboardStore";
 
 /** 数据源网关（datasource manager 的结构子集，便于测试注入） */

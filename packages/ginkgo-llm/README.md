@@ -5,7 +5,7 @@ streamText 生命周期、模型链韧性（WS-9）、流中继（StreamHub）�
 三维熔断、上下文投影治理与多应用接缝；底层执行、韧性、计量与状态图由通用底座
 `@ginkgo/harness-core` 驱动。**本包零应用领域语义**——任何应用的
 prompt、工具、交付物文案全部经四接缝由应用包注入
-（如 `@ginkgo-apps/analytics`）。
+（如 `@ginkgo/app-analytics`）。
 
 ## 包定位
 
@@ -73,7 +73,7 @@ enabledSources / activeSources（MCP 源摘要）/ sessions（会话上下文通
 - `src/evals/trajectories.test.ts`（Tier A，CI）：脚本化模型剧本全链路断言——
   事件序列、单步锚点、投影、不变量门。
 - 真实模型评测（Tier B）在应用包：`pnpm eval:tier-b`
-  （`@ginkgo-apps/analytics/src/evals/`）。
+  （`@ginkgo/app-analytics/src/evals/`）。
 
 ## 扩展指南
 
@@ -81,3 +81,8 @@ enabledSources / activeSources（MCP 源摘要）/ sessions（会话上下文通
   保持缺省行为中立（不注入 = 零行为变化）。
 - **平台提示词纪律**：新增强制段加到 `platformPrompt.ts` 的
   `withPlatformGuardrails`，并做去重标记。
+
+
+## License
+
+MIT © 2026 Ginkgo contributors — 完整条款见包内 `LICENSE`（或仓库根 `LICENSE`）。

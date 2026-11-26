@@ -57,3 +57,8 @@ const section = sandboxToolsPromptSection("atomic", "readonly");
 - 本包不 import 任何应用包与宿主代码；`sandboxDir` 由消费方注入
 - 全部工具经 `zodTool` 包装：模型侧收到完整参数 JSON Schema（properties/required），校验失败返回结构化 `{ error, isError }` 反馈给模型自我纠正，不上抛终结会话流
 - 错误约定与其他工具面一致：`{ error, isError: true }`（遥测切面按 `isError` 判定 `ok:false`）
+
+
+## License
+
+MIT © 2026 Ginkgo contributors — 完整条款见包内 `LICENSE`（或仓库根 `LICENSE`）。

@@ -14,8 +14,8 @@ const mocks = vi.hoisted(() => ({
   sourceConnect: vi.fn(),
 }));
 
-vi.mock("@ginkgo-apps/analytics/server", async (importOriginal) => {
-  const mod = await importOriginal<typeof import("@ginkgo-apps/analytics/server")>();
+vi.mock("@ginkgo/app-analytics/server", async (importOriginal) => {
+  const mod = await importOriginal<typeof import("@ginkgo/app-analytics/server")>();
   return {
     ...mod,
     dashboardStore: {
@@ -179,7 +179,7 @@ describe("POST /api/dashboards/from-template", () => {
 
 describe("审查回归：真实 store 语义（不经 mock 的字段校验）", () => {
   it("取消模板（PUT kind=favorite）清空 templateMeta 且无残留", async () => {
-    const { createDashboardStore } = await import("@ginkgo-apps/analytics/server");
+    const { createDashboardStore } = await import("@ginkgo/app-analytics/server");
     const { mkdtempSync, rmSync } = await import("node:fs");
     const { tmpdir } = await import("node:os");
     const { join } = await import("node:path");

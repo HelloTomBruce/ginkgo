@@ -68,7 +68,7 @@ factory 级测试 + 接入规范增量章节。
 > **未落地**：`runtimeServers` 的工厂装配仍未配置驱动（当前为 appId 分支，属组合根既有形态）；
 > 待 devops 这类"纯配置接入"应用出现时再收敛。
 
-- `config/apps.json`：`{apps: [{package: "@ginkgo-apps/devops", enabled: true, runtime?: {...}}]}`
+- `config/apps.json`：`{apps: [{package: "@ginkgo/app-devops", enabled: true, runtime?: {...}}]}`
   ——符合仓库「配置零硬编码」原则；
 - `appRegistry` 启动时按配置 `await import(pkg)` 动态注册；`src/lib/apps/runtimeServers.ts`
   的工厂装配改为配置驱动（工厂包名 + 依赖映射进 config）；
@@ -94,17 +94,26 @@ factory 级测试 + 接入规范增量章节。
   权限审批 UX（安装时展示所需权限清单）；
 - 应用级配额（⑦）本阶段落地。
 
-### P2.5 · 预打包发布（独立里程碑 · 未开始）
+### P2.5 · 预打包发布（✅ 已落地 · 2026-11 · 见 docs/package-publishing.md）
 
-当前仓库形态下应用包以源码 `.ts` 出口被 Next 直接编译，靠**文件级** `"use client"` 维持 RSC 边界。对外发布 npm 包必须同时满足：
+**落地内容**：10 个包（8 平台包 + 2 应用包）已具备 publishConfig / tsup 构建 / engines /
+依赖分类，按 DAG 四层发布，并通过真实消费者冒烟（安装 tarball → 全链 import → 服务端入口
+可执行 → 根入口被封禁）。scope 统一为 `@ginkgo/*`（原 `@ginkgo-apps/*` → `@ginkgo/app-*`）。
 
-1. 构建为**不打包**的 ESM（保留每个文件的指令），或让消费方自己编译；
-2. 消费方配置 `transpilePackages`；
-3. CI 增加 `next build` 冒烟（只跑 tsc/vitest 发现不了边界问题）。
+最初判断需要满足的三条，最终落地方式：
+
+1. 构建为 ESM，**每个入口单独一组产物**，客户端入口加 `"use client"` banner、服务端入口不加；
+2. 依赖链整体发布，包间用正常 npm 依赖（不再内联），消费方无需 `transpilePackages`；
+3. 应用包**不发布根入口**（混合了客户端组件），只给 `./manifest` / `./server` / `./client`；
+4. 仓库 CI 仍跑 `next build`（只跑 tsc/vitest 发现不了 RSC 边界问题）。
 
 任何「整包 bundle + 全局 banner」方案都会破坏边界（实测：单包 bundle 时服务端 `manifest` 为 undefined；去掉 banner 则 recharts 进入 RSC 报 106 错）。
 
-同里程碑需一并决策：**`@ginkgo/datasources` 是否继续内联进 `dist/server.js`**。当前内联（`noExternal`）迫使 app-analytics 显式声明 5 个数据库/文件驱动；改为正常 npm 依赖可消除该耦合。另需用 `npm pack --dry-run` 验证 `publishConfig` 对 `main`/`exports` 的覆盖是否生效。
+**已决策**：`@ginkgo/datasources` 不再内联（`noExternal` 清空），包间走正常依赖 —— 应用包
+产物因此从 956K/1.1M 降到 140K/64K，也顺带消除了「内联 CJS 依赖导致 ESM 产物动态 require
+报错」的问题。`publishConfig` 覆盖语义已实测：**`pnpm pack` 生效、`npm pack` 不生效**。
+
+剩余待办：首版发布后引入 changesets 做多包版本协同（许可证已定为 MIT）。
 
 ### P3 · 运行时沙箱分发（远期 · 应用商店终态 · 前两段验证生态成立后再投入）
 

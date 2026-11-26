@@ -11,7 +11,9 @@
     "./ui/dialog": "./src/ui/dialog.tsx"
   },
   "scripts": {
-    "test": "vitest run"
+    "test": "vitest run",
+    "build": "tsup",
+    "prepublishOnly": "pnpm build"
   },
   "dependencies": {
     "@ginkgo/chart-spec": "workspace:*",
@@ -33,7 +35,43 @@
     "@types/react": "^19",
     "jsdom": "^30.1.2",
     "react": "19.3.1",
+    "tsup": "^9.0.0",
     "typescript": "^5",
     "vitest": "^5.1.0"
-  }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      },
+      "./server": {
+        "types": "./dist/server.d.ts",
+        "import": "./dist/server.js"
+      },
+      "./ui/button": {
+        "types": "./dist/ui/button.d.ts",
+        "import": "./dist/ui/button.js"
+      },
+      "./ui/copy-button": {
+        "types": "./dist/ui/copy-button.d.ts",
+        "import": "./dist/ui/copy-button.js"
+      },
+      "./ui/dialog": {
+        "types": "./dist/ui/dialog.d.ts",
+        "import": "./dist/ui/dialog.js"
+      }
+    }
+  },
+  "engines": {
+    "node": ">=22.12"
+  },
+  "license": "MIT"
 }

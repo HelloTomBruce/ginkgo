@@ -114,7 +114,7 @@
 
 该形态同时满足两点：仓库内构建不依赖 `dist`（全新克隆可 verify），发布意图不被删除。**遗留待验证项**：`publishConfig` 对 `main`/`exports` 的覆盖语义需在发布里程碑用 `npm pack --dry-run` 实测确认（`publishConfig` 官方保证覆盖的字段有限，社区有将其用于 `main`/`exports` 的先例，但未经本仓库验证）。若实测不成立，届时切换为 `prepublishOnly` 脚本改写 `package.json` 的方案。
 
-三包（app-analytics / app-design / ginkgo-app-sdk）统一为该形态；`@ginkgo-apps/general` 保持 `private: true` + 源码出口（未纳入发布范围）。
+三包（app-analytics / app-design / ginkgo-app-sdk）统一为该形态；`@ginkgo/app-general` 保持 `private: true` + 源码出口（未纳入发布范围）。
 
 ### D2 · 存储根：默认零变更，显式配置才搬家
 
@@ -463,7 +463,7 @@ pnpm verify    # lint && typecheck && test && build —— 四门禁全绿
 ```
 1. 全新克隆 → pnpm install → pnpm verify            ✅ 无预构建需求
 2. pnpm dev → 打开应用中心 → 停用 design             ✅ 侧栏消失、无法调用其动作
-3. 开启 GINKGO_ALLOW_APP_INSTALL=1 装 @ginkgo-apps/analytics（本地 tarball）
+3. 开启 GINKGO_ALLOW_APP_INSTALL=1 装 @ginkgo/app-analytics（本地 tarball）
 4. 重启 dev server                                  ✅ 应用仍在、状态保持
 5. 卸载                                             ✅ 目录/配置/注册表三处清空
 6. 关闭开关后 curl install                           ✅ 403

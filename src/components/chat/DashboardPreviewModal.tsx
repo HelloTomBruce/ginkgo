@@ -6,9 +6,9 @@ import { UiSpecRenderer } from "@/components/UiSpecRenderer";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Hint } from "@/components/ui/hint";
 // 仅取类型（编译期擦除）
-import type { DashboardRecord } from "@ginkgo-apps/analytics/server";
+import type { DashboardRecord } from "@ginkgo/app-analytics/server";
 import { toast } from "@/lib/toast";
-import { downloadDashboardSnapshot } from "@ginkgo-apps/analytics/isomorphic";
+import { downloadDashboardSnapshot } from "@ginkgo/app-analytics/isomorphic";
 import { formatSessionTime } from "./SessionListItem";
 
 /** 预览内刷新结果：成功附刷新后的完整记录与 stale 组件列表（由父层接线 get+refresh） */

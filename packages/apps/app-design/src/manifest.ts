@@ -1,16 +1,8 @@
-import type { AppManifest, AppClientContract } from "@ginkgo/app-sdk";
+import type { AppClientContract } from "@ginkgo/app-sdk";
+import { designManifest } from "./manifestMeta";
 import { DesignStudioViewer } from "./client/DesignStudioViewer";
 
-export const designManifest: AppManifest = {
-  id: "design",
-  name: "体验设计工坊",
-  description: "交互式画板视觉设计、Design System Token 规范管理与前端合规代码审查",
-  icon: "Palette",
-  version: "1.0.0",
-  category: "设计与创意",
-  tags: ["UI/UX", "画板", "设计系统", "Tokens", "原型"],
-  author: "Ginkgo Team",
-};
+export { designManifest };
 
 export const designClient: AppClientContract = {
   welcomeMessage:

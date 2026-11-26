@@ -23,7 +23,7 @@ import { Hint } from "@/components/ui/hint";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MarkdownContent } from "./MarkdownContent";
 import { extractUiSpec } from "@/lib/extractUiSpec";
-import { captureDashboardQueries } from "@ginkgo-apps/analytics/isomorphic/dashboardCapture";
+import { captureDashboardQueries } from "@ginkgo/app-analytics/isomorphic/dashboardCapture";
 import { toast } from "@/lib/toast";
 import type { FavoriteDashboardInput, FavoriteResult } from "@/hooks/useDashboards";
 

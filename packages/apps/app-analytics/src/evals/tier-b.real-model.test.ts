@@ -3,7 +3,7 @@
  * WS-6 Tier B:真实模型行为评估(手动/夜间,需要真实 API Key)。
  *
  * 运行方式:在环境变量提供 OPENAI_API_KEY(/ LLM_API_KEY)后执行
- *   pnpm --filter @ginkgo-apps/analytics exec vitest run src/evals/tier-b.real-model.test.ts
+ *   pnpm --filter @ginkgo/app-analytics exec vitest run src/evals/tier-b.real-model.test.ts
  * 无 Key 时整组自动跳过(CI 默认不跑)。
  *
  * 固定夹具:文件数据源(CSV→DuckDB)加载确定性渠道营销数据,问题集固定,

@@ -1,4 +1,4 @@
-# @ginkgo-apps/general · 通用智能助手
+# @ginkgo/app-general · 通用智能助手
 
 Ginkgo 平台的**轻应用**范例：知识问答、方案撰写、代码审查与工作区文件协同。
 完整接入规范见 [docs/app-integration-guide.md](../../../docs/app-integration-guide.md)。
@@ -27,3 +27,8 @@ readonly**（只装配只读工具，写入与命令执行在方案确认进入 
 readonly 权限档、env 白名单、prompt 片段全部来自 `@ginkgo/sandbox`
 能力包。需要工具丰富度变化（如只读探索 list_dir）时改声明
 `preset: "explorer"` 即可，零工具代码。
+
+
+## License
+
+MIT © 2026 Ginkgo contributors — 完整条款见包内 `LICENSE`（或仓库根 `LICENSE`）。

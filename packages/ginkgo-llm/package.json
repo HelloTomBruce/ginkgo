@@ -8,7 +8,9 @@
     "./context": "./src/context.ts"
   },
   "scripts": {
-    "test": "vitest run"
+    "test": "vitest run",
+    "build": "tsup",
+    "prepublishOnly": "pnpm build"
   },
   "dependencies": {
     "@ginkgo/app-sdk": "workspace:*",
@@ -23,7 +25,31 @@
     "@types/node": "^22",
     "ioredis": "^5.6.0",
     "ioredis-mock": "^8.13.1",
+    "tsup": "^9.0.0",
     "typescript": "^5",
     "vitest": "^5.1.0"
-  }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      },
+      "./context": {
+        "types": "./dist/context.d.ts",
+        "import": "./dist/context.js"
+      }
+    }
+  },
+  "engines": {
+    "node": ">=22.12"
+  },
+  "license": "MIT"
 }

@@ -12,11 +12,11 @@ import { useDashboards, type FavoriteDashboardInput } from "@/hooks/useDashboard
 import { DashboardPreviewModal } from "@/components/chat/DashboardPreviewModal";
 import { WorkspaceErrorBoundary } from "@/components/chat/WorkspaceErrorBoundary";
 // 仅取类型（编译期擦除）
-import type { DashboardRecord } from "@ginkgo-apps/analytics/server";
+import type { DashboardRecord } from "@ginkgo/app-analytics/server";
 import {
   downloadDashboardSnapshot,
   parseDashboardSnapshot,
-} from "@ginkgo-apps/analytics/isomorphic";
+} from "@ginkgo/app-analytics/isomorphic";
 import { ChatSidebar } from "@/components/chat/ChatSidebar";
 import { MessageList } from "@/components/chat/MessageList";
 import { ChatInput } from "@/components/chat/ChatInput";

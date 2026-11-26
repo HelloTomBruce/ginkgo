@@ -35,6 +35,7 @@ export default defineConfig({
             text: "应用中心整改实施文档",
             link: "/app-store-remediation-plan",
           },
+          { text: "包发布手册", link: "/package-publishing" },
           { text: "主题 Token 规范", link: "/theme-tokens" },
           { text: "LLM Harness 加固方案", link: "/llm-harness-hardening-plan" },
           {

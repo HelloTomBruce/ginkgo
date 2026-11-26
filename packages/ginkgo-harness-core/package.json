@@ -7,8 +7,6 @@
     ".": "./src/index.ts",
     "./pipeline": "./src/pipeline/index.ts",
     "./graph": "./src/graph/index.ts",
-    "./guardrails": "./src/guardrails/index.ts",
-    "./providers": "./src/providers/index.ts",
     "./finops": "./src/finops/index.ts",
     "./stream": "./src/stream/index.ts",
     "./telemetry": "./src/telemetry/index.ts",
@@ -21,7 +19,9 @@
     "./lifecycle": "./src/lifecycle/index.ts"
   },
   "scripts": {
-    "test": "vitest run"
+    "test": "vitest run",
+    "build": "tsup",
+    "prepublishOnly": "pnpm build"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "1.2.12",
@@ -37,7 +37,75 @@
     "ioredis": "^5.6.0",
     "ioredis-mock": "^8.13.1",
     "js-tiktoken": "^1.0.21",
+    "tsup": "^9.0.0",
     "typescript": "^5",
     "vitest": "^5.1.0"
-  }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      },
+      "./pipeline": {
+        "types": "./dist/pipeline.d.ts",
+        "import": "./dist/pipeline.js"
+      },
+      "./graph": {
+        "types": "./dist/graph.d.ts",
+        "import": "./dist/graph.js"
+      },
+      "./finops": {
+        "types": "./dist/finops.d.ts",
+        "import": "./dist/finops.js"
+      },
+      "./stream": {
+        "types": "./dist/stream.d.ts",
+        "import": "./dist/stream.js"
+      },
+      "./telemetry": {
+        "types": "./dist/telemetry.d.ts",
+        "import": "./dist/telemetry.js"
+      },
+      "./mcp": {
+        "types": "./dist/mcp.d.ts",
+        "import": "./dist/mcp.js"
+      },
+      "./registry": {
+        "types": "./dist/registry.d.ts",
+        "import": "./dist/registry.js"
+      },
+      "./config": {
+        "types": "./dist/config.d.ts",
+        "import": "./dist/config.js"
+      },
+      "./context": {
+        "types": "./dist/context.d.ts",
+        "import": "./dist/context.js"
+      },
+      "./tokenizer": {
+        "types": "./dist/tokenizer.d.ts",
+        "import": "./dist/tokenizer.js"
+      },
+      "./tools": {
+        "types": "./dist/tools.d.ts",
+        "import": "./dist/tools.js"
+      },
+      "./lifecycle": {
+        "types": "./dist/lifecycle.d.ts",
+        "import": "./dist/lifecycle.js"
+      }
+    }
+  },
+  "engines": {
+    "node": ">=22.12"
+  },
+  "license": "MIT"
 }

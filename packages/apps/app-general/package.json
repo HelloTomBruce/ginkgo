@@ -1,5 +1,5 @@
 {
-  "name": "@ginkgo-apps/general",
+  "name": "@ginkgo/app-general",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -24,5 +24,6 @@
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
     "jsdom": "^30.1.2"
-  }
+  },
+  "license": "MIT"
 }

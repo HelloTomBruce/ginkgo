@@ -119,3 +119,8 @@ UiSpec 规范展示组件库：聚合展示组件、分析布局模板、图表�
   4. 同步更新 `@ginkgo/llm` 服务端组件定义与 Few-Shot 示例。
 - **新增图表渲染器**：
   在图表注册表中按图表类型枚举增加分支并对接组件，确保与 `@ginkgo/chart-spec` 的图表词汇表完全闭合。
+
+
+## License
+
+MIT © 2026 Ginkgo contributors — 完整条款见包内 `LICENSE`（或仓库根 `LICENSE`）。

@@ -18,7 +18,7 @@ appId→实现的绑定**只在** `src/lib/apps/registry.ts` / `runtimeServers.t
 
 ## 4. API 薄壳化
 
-Next.js 文件路由只做「拆包 → 委托应用/能力包 handler → 状态码映射」，业务校验与编排归包（如 `/api/dashboards/*` → `@ginkgo-apps/analytics/server`，datasources 管理器经 deps 注入）。
+Next.js 文件路由只做「拆包 → 委托应用/能力包 handler → 状态码映射」，业务校验与编排归包（如 `/api/dashboards/*` → `@ginkgo/app-analytics/server`，datasources 管理器经 deps 注入）。
 
 ## 5. 依赖单向
 

@@ -106,3 +106,8 @@ Ginkgo 结构化数据源连接、工具装配、安全查询网关与语义层�
   在应用层通过 `createCertifiedStore` 注册新的认证指标公式与规范 SQL 模板。
 - **调整安全扫描预算**：
   在 `createDatasourceManager` 初始化时传入 `explainOptions`，调整单次查询最大扫描行数阈值或全表扫描拦截策略。
+
+
+## License
+
+MIT © 2026 Ginkgo contributors — 完整条款见包内 `LICENSE`（或仓库根 `LICENSE`）。

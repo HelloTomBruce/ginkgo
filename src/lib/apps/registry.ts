@@ -1,7 +1,7 @@
 import { KNOWN_APP_CAPABILITIES, type AppPackageDefinition } from "@ginkgo/app-sdk";
-import analyticsAppPackage from "@ginkgo-apps/analytics";
-import generalAppPackage from "@ginkgo-apps/general";
-import designAppPackage from "@ginkgo-apps/design";
+import analyticsAppPackage from "@ginkgo/app-analytics";
+import generalAppPackage from "@ginkgo/app-general";
+import designAppPackage from "@ginkgo/app-design";
 import { DEFAULT_APPS_CONFIG } from "./defaultAppsConfig";
 
 /**

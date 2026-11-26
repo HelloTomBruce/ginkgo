@@ -14,7 +14,9 @@
     "./certified": "./src/certified/certifiedStore.ts"
   },
   "scripts": {
-    "test": "vitest run"
+    "test": "vitest run",
+    "build": "tsup",
+    "prepublishOnly": "pnpm build"
   },
   "dependencies": {
     "@clickhouse/client": "^1.12.1",
@@ -26,6 +28,7 @@
   "devDependencies": {
     "@types/node": "^22",
     "@types/pg": "^8.23.1",
+    "tsup": "^9.0.0",
     "typescript": "^5",
     "vitest": "^5.1.0"
   },
@@ -36,5 +39,52 @@
     "ai": {
       "optional": true
     }
-  }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      },
+      "./adapters/ai": {
+        "types": "./dist/adapters/ai.d.ts",
+        "import": "./dist/adapters/ai.js"
+      },
+      "./schema/card": {
+        "types": "./dist/schema/card.d.ts",
+        "import": "./dist/schema/card.js"
+      },
+      "./schema/store": {
+        "types": "./dist/schema/store.d.ts",
+        "import": "./dist/schema/store.js"
+      },
+      "./sqlGuard": {
+        "types": "./dist/sqlGuard.d.ts",
+        "import": "./dist/sqlGuard.js"
+      },
+      "./parseToolResult": {
+        "types": "./dist/parseToolResult.d.ts",
+        "import": "./dist/parseToolResult.js"
+      },
+      "./gateway": {
+        "types": "./dist/gateway.d.ts",
+        "import": "./dist/gateway.js"
+      },
+      "./certified": {
+        "types": "./dist/certified.d.ts",
+        "import": "./dist/certified.js"
+      }
+    }
+  },
+  "engines": {
+    "node": ">=22.12"
+  },
+  "license": "MIT"
 }

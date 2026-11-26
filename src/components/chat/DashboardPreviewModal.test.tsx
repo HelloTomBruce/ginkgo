@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, cleanup, fireEvent, act } from "@testing-library/react";
 import { DashboardPreviewModal, type PreviewRefreshResult } from "./DashboardPreviewModal";
-import type { DashboardRecord } from "@ginkgo-apps/analytics/server";
+import type { DashboardRecord } from "@ginkgo/app-analytics/server";
 
 vi.mock("@/components/UiSpecRenderer", () => ({
   UiSpecRenderer: ({
@@ -20,7 +20,7 @@ vi.mock("@/components/UiSpecRenderer", () => ({
 
 vi.mock("@/lib/toast", () => ({ toast: vi.fn() }));
 
-vi.mock("@ginkgo-apps/analytics/isomorphic", () => ({
+vi.mock("@ginkgo/app-analytics/isomorphic", () => ({
   downloadDashboardSnapshot: vi.fn(),
 }));
 
@@ -123,7 +123,7 @@ describe("DashboardPreviewModal 只读预览", () => {
   });
 
   it("导出快照：调用下载工具并成功 toast", async () => {
-    const { downloadDashboardSnapshot } = await import("@ginkgo-apps/analytics/isomorphic");
+    const { downloadDashboardSnapshot } = await import("@ginkgo/app-analytics/isomorphic");
     vi.mocked(downloadDashboardSnapshot).mockResolvedValueOnce(undefined);
     renderModal();
 

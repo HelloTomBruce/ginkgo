@@ -55,7 +55,7 @@ export interface AppManifest {
   icon: string;
   /** 版本号 */
   version?: string;
-  /** 关联 npm 包名称，如 "@ginkgo-apps/design" */
+  /** 关联 npm 包名称，如 "@ginkgo/app-design" */
   package?: string;
   /** 业务分类，如 "数据智能", "通用助理", "研发效能" */
   category?: string;

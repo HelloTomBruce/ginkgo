@@ -1,11 +1,11 @@
 import {
   createAnalyticsServer,
   type AnalyticsArtifactServices,
-} from "@ginkgo-apps/analytics/server";
+} from "@ginkgo/app-analytics/server";
 import { datasources } from "@/lib/datasources";
-import { createAppMethodology } from "@ginkgo-apps/analytics/server";
-import { dashboardStore } from "@ginkgo-apps/analytics/server";
-import { refreshDashboard } from "@ginkgo-apps/analytics/server";
+import { createAppMethodology } from "@ginkgo/app-analytics/server";
+import { dashboardStore } from "@ginkgo/app-analytics/server";
+import { refreshDashboard } from "@ginkgo/app-analytics/server";
 import { getStoragePath } from "@/lib/storagePaths";
 
 /**

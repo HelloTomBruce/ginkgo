@@ -1,9 +1,9 @@
 import { io } from "next/cache";
-import { buildMethodologyOverview } from "@ginkgo-apps/analytics/server";
+import { buildMethodologyOverview } from "@ginkgo/app-analytics/server";
 
 /**
  * GET /api/methodology — 分析方法论查看入口的数据源（宿主薄壳）。
- * 响应组装与卡集合并全在 @ginkgo-apps/analytics/server（领域自治），
+ * 响应组装与卡集合并全在 @ginkgo/app-analytics/server（领域自治），
  * 鉴权由 middleware 统一拦截 /api/*。
  *
  * 卡集是同步读盘的运行时状态：cacheComponents 下不做声明的纯同步 GET

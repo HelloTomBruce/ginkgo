@@ -204,7 +204,7 @@ import {
   rowPassesSpecFilters,
   specToTransformSpec,
 } from "./specMaterialize";
-import { isValidTransformSpec, applyTransform } from "@ginkgo-apps/analytics/isomorphic";
+import { isValidTransformSpec, applyTransform } from "@ginkgo/app-analytics/isomorphic";
 
 describe("rowMatchesSpecFilter 行级谓词", () => {
   const row = { channel: "TikTok Ads", spend: 120, title: "某告警事件", score: "3.5" };

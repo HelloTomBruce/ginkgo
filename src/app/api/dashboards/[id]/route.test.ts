@@ -1,11 +1,11 @@
 // @vitest-environment node
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { GET, PUT, DELETE } from "./route";
-import { dashboardStore } from "@ginkgo-apps/analytics/server";
-import type { DashboardRecord } from "@ginkgo-apps/analytics/server";
+import { dashboardStore } from "@ginkgo/app-analytics/server";
+import type { DashboardRecord } from "@ginkgo/app-analytics/server";
 
-vi.mock("@ginkgo-apps/analytics/server", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@ginkgo-apps/analytics/server")>();
+vi.mock("@ginkgo/app-analytics/server", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@ginkgo/app-analytics/server")>();
   return {
     ...actual,
     dashboardStore: {
