@@ -1,6 +1,6 @@
 {
   "name": "@ginkgolab/app-sdk",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "SDK and lifecycle contracts for Ginkgo agent application ecosystem",
   "type": "module",
   "main": "./src/index.ts",

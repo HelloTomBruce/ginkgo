@@ -201,7 +201,42 @@ async function nestConflictingDeps(runtimeNm, edges, pinned) {
   return nested;
 }
 
-/** 递归统计目录下的软链数量（终检用，正常应为 0） */
+/**
+ * 剔除平台原生包（@duckdb/node-bindings-<platform>、@img/sharp-<platform>、
+ * @img/sharp-libvips-<platform>）。
+ *
+ * 为什么要剔除：这些包按平台分发且单个 60~100MB，若打进主包只能包含组装机
+ * 所在平台（CI = linux-x64），macOS/Windows 用户装上会因缺 native 二进制而
+ * 加载失败。改为由 CLI 包 package.json 的 optionalDependencies 声明，
+ * npm 安装时按目标平台自动取对应包（esbuild / sharp 同款做法），
+ * 装在安装根 node_modules 下，runtime 内的 require 可沿目录向上解析到。
+ */
+const PLATFORM_PKG_PATTERNS = [
+  /^@duckdb[+/]node-bindings-(darwin|linux|win32)/,
+  /^@img[+/]sharp-(darwin|linux|win32)/,
+  /^@img[+/]sharp-libvips-/,
+];
+
+function isPlatformPackageName(name) {
+  return PLATFORM_PKG_PATTERNS.some((re) => re.test(name));
+}
+
+async function prunePlatformNativePackages(runtimeDir) {
+  const removed = [];
+  const scopeDirs = ["@duckdb", "@img"];
+  for (const scope of scopeDirs) {
+    const dir = path.join(runtimeDir, "node_modules", scope);
+    if (!fssync.existsSync(dir)) continue;
+    for (const entry of await fs.readdir(dir)) {
+      const fullName = `${scope}/${entry}`;
+      if (isPlatformPackageName(fullName)) {
+        await fs.rm(path.join(dir, entry), { recursive: true, force: true });
+        removed.push(fullName);
+      }
+    }
+  }
+  return removed;
+}
 async function countSymlinks(dir) {
   let count = 0;
   const entries = await fs.readdir(dir, { withFileTypes: true });
@@ -277,6 +312,9 @@ async function rebuildNodeModulesHoisted(runtimeDir) {
         name: "ginkgo-standalone-runtime",
         version: "0.0.0",
         private: true,
+        // 注：原生依赖（duckdb/sharp）的平台包在安装后由 prunePlatformNativePackages
+        // 剔除，改由 CLI 包 optionalDependencies 按用户平台分发，故此处无需
+        // supportedArchitectures（它只影响组装机自身能装到哪些平台的可选依赖）。
         dependencies: Object.fromEntries(Object.entries(pinned).sort(([a], [b]) => a.localeCompare(b))),
       },
       null,
@@ -303,6 +341,13 @@ async function rebuildNodeModulesHoisted(runtimeDir) {
 
   const nested = await nestConflictingDeps(nm, edges, pinned);
   if (nested > 0) console.log(`     ✓ 按依赖边嵌套了 ${nested} 个冲突版本的私有副本`);
+
+  // 剔除平台原生包：由 CLI 包 optionalDependencies 在用户安装时按平台分发，
+  // 主包若只含组装机平台会让其它平台用户缺 native 二进制
+  const prunedNative = await prunePlatformNativePackages(runtimeDir);
+  if (prunedNative.length > 0) {
+    console.log(`     ✓ 剔除平台原生包 ${prunedNative.length} 个（改由 optionalDependencies 分发）`);
+  }
 
   // hoisted 重装后 .next/node_modules 里仍残留 Next 对 serverExternalPackages
   // 的装载软链（目标 .pnpm 已删），从 standalone 源树取实体副本补上
@@ -425,24 +470,28 @@ async function main() {
   if (links > 0) {
     throw new Error(`组装校验失败：node_modules 仍含 ${links} 个软链，npm registry 会拒收 tarball`);
   }
-  // Native 库必须随包（此前 standalone 的 pnpm 软链目标会丢二进制，重装后应完整）
-  const findLib = async (dir) => {
-    for (const entry of await fs.readdir(dir, { withFileTypes: true })) {
-      const full = path.join(dir, entry.name);
-      if (entry.isDirectory()) {
-        const hit = await findLib(full);
-        if (hit) return hit;
-      } else if (/^libduckdb\.(dylib|so|dll)$/.test(entry.name)) {
-        return full;
-      }
+  // 平台原生包必须已剔除（改由 CLI 包 optionalDependencies 分发）；
+  // 残留会让主包只含组装机平台二进制，其它平台用户加载失败
+  const leftoverNative = [];
+  for (const scope of ["@duckdb", "@img"]) {
+    const dir = path.join(CLI_RUNTIME_DIR, "node_modules", scope);
+    if (!fssync.existsSync(dir)) continue;
+    for (const entry of await fs.readdir(dir)) {
+      if (isPlatformPackageName(`${scope}/${entry}`)) leftoverNative.push(`${scope}/${entry}`);
     }
-    return null;
-  };
-  const duckdbLib = await findLib(path.join(CLI_RUNTIME_DIR, "node_modules"));
-  if (!duckdbLib) {
-    throw new Error("组装校验失败：node_modules 中未找到 libduckdb.*（DuckDB 数据源将不可用）");
   }
-  console.log(`     ✓ native 库就绪: ${path.relative(CLI_RUNTIME_DIR, duckdbLib)}`);
+  if (leftoverNative.length > 0) {
+    throw new Error(
+      `组装校验失败：runtime 仍含平台原生包 ${leftoverNative.join(", ")}（应改由 optionalDependencies 分发）`
+    );
+  }
+  // 纯 JS 侧必须仍在（否则数据源功能缺失）
+  for (const required of ["@duckdb/node-api", "@duckdb/node-bindings", "sharp"]) {
+    if (!fssync.existsSync(path.join(CLI_RUNTIME_DIR, "node_modules", required))) {
+      throw new Error(`组装校验失败：runtime 缺少 ${required}（数据源/图片能力将不可用）`);
+    }
+  }
+  console.log(`     ✓ 平台原生包已剔除，纯 JS 侧完整（native 由 optionalDependencies 分发）`);
 
   console.log(`✅ [assemble-cli] 组装完成！产物位于 packages/ginkgo-cli/`);
 }

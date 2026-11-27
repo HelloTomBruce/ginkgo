@@ -53,6 +53,34 @@ describe("打包/分发守卫", () => {
     }
   });
 
+  it("CLI 包必须声明平台原生包的可选依赖（跨平台分发守卫）", async () => {
+    const manifest = JSON.parse(
+      await fs.readFile(path.join(REPO_ROOT, "packages", "ginkgo-cli", "package.json"), "utf-8")
+    );
+
+    // runtime 里剔除平台原生包、改由 optionalDependencies 分发（见 assemble-cli）。
+    // 若声明缺失，用户安装后拿不到本平台 native 二进制，duckdb/sharp 加载失败。
+    if (!Array.isArray(manifest.files) || !manifest.files.includes("runtime")) {
+      console.warn("[packaging-guards] CLI 包未声明 runtime，跳过原生依赖检查");
+      return;
+    }
+
+    const optional = Object.keys(manifest.optionalDependencies ?? {});
+    for (const prefix of ["@duckdb/node-bindings-", "@img/sharp-"]) {
+      expect(
+        optional.some((name) => name.startsWith(prefix)),
+        `CLI 包 optionalDependencies 缺少 ${prefix}* 平台原生包（跨平台安装会缺 native 二进制）`
+      ).toBe(true);
+    }
+    // 至少覆盖 macOS / Linux / Windows 三个平台家族
+    for (const platform of ["darwin", "linux", "win32"]) {
+      expect(
+        optional.some((name) => name.includes(platform)),
+        `CLI 包 optionalDependencies 未覆盖 ${platform} 平台`
+      ).toBe(true);
+    }
+  });
+
   it("vitest projects 清单覆盖 packages/ 全部包（ginkgo-cli 分发包除外）", () => {
     // ginkgo-cli 是纯 launcher + 组装产物目录，无自身单测，被显式排除；
     // 其余任何新增包必须登记进清单，否则其测试会静默不跑。

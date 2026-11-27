@@ -1,6 +1,6 @@
 {
   "name": "@ginkgolab/app-analytics",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Intelligent Data Analytics app for Ginkgo platform",
   "type": "module",
   "exports": {
