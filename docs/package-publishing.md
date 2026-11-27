@@ -154,7 +154,8 @@ pnpm --filter @ginkgolab/app-design    publish --access public --no-git-checks
 | `ERR_PNPM_OTP_NON_INTERACTIVE` / `EOTP` | 账号启用了 auth-and-writes 两步验证，CI 无法交互输入 OTP | 换成带 **Bypass 2FA** 的 Granular Access Token 作为 `NPM_TOKEN`（见下） |
 | `EOTP` 只在本地出现 | 同一次发布会话 OTP 超时 | 连续发布时可复用同一 OTP（约 30s 窗口）或改用 bypass token |
 | `EPUBLISHCONFLICT` / 版本已存在 | 重跑同一 tag | 脚本会跳过已存在版本，直接重跑即可 |
-| 发布后 `npm i` 报 `ETARGET`/`E404` | registry 传播延迟（秒级） | 已内置处理：`smoke-published.mjs` 会先轮询 `npm view` 等待 10 个包可见（默认最多 180s，可用 `SMOKE_WAIT_TIMEOUT_MS` 调整）再安装 |
+| 发布后 `npm i` 报 `ETARGET`/`E404` | registry 传播延迟 | 已内置处理：`smoke-published.mjs` 轮询 `npm view` 等 10 个包可见（默认最多 **300s**，可用 `SMOKE_WAIT_TIMEOUT_MS` 调整）再安装 |
+| 发布后冒烟超时，但 publish 步骤显示 ✅ | 元数据传播滞后（实测有包晚约 4 分钟才可见；tarball 已上传成功） | **不是发布失败**。稍后重跑同一 workflow 即可（幂等，会跳过已发布版本） |
 | `private: true` 拒绝发布 | 漏删 private 字段 | `pnpm pkg:verify` 会提前拦住 |
 
 ### 2FA 与 CI 发布

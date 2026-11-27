@@ -50,7 +50,7 @@ const PACKAGES = [
  * 直接安装会得到 ETARGET/E404。这是发布后冒烟的唯一假失败源，故显式等待。
  */
 async function waitForAvailability(names, version) {
-  const timeoutMs = Number(process.env.SMOKE_WAIT_TIMEOUT_MS ?? 180_000);
+  const timeoutMs = Number(process.env.SMOKE_WAIT_TIMEOUT_MS ?? 300_000);
   const intervalMs = Number(process.env.SMOKE_WAIT_INTERVAL_MS ?? 8_000);
   const deadline = Date.now() + timeoutMs;
   let pending = [...names];
@@ -67,14 +67,20 @@ async function waitForAvailability(names, version) {
     }
     if (missing.length === 0) return;
     console.log(
-      `  等待 registry 传播：${missing.length} 个包尚不可见（${missing.slice(0, 3).join(", ")}${missing.length > 3 ? " …" : ""}）`
+      `  等待 registry 传播（已等 ${Math.round((Date.now() - (deadline - timeoutMs)) / 1000)}s）：` +
+        `${missing.length} 个包尚不可见（${missing.slice(0, 3).join(", ")}${missing.length > 3 ? " …" : ""}）`
     );
     pending = missing;
     await new Promise((resolve) => setTimeout(resolve, intervalMs));
   }
 
+  // 实测过 180s 不够：v0.1.2 有两个包的 packument 比同批其它包晚约 4 分钟才可见
+  //（tarball 上传成功、publish 返回 ✅，只是元数据异步注册）。
+  // 因此这通常是"发布成功但传播未完成"，而不是发布失败——重跑本 workflow 即可（幂等）。
   throw new Error(
-    `等待 registry 传播超时（${Math.round(timeoutMs / 1000)}s）：${pending.join(", ")} 未见 @${version}`
+    `等待 registry 传播超时（${Math.round(timeoutMs / 1000)}s）：${pending.join(", ")} 未见 @${version}。\n` +
+      "  若 publish 步骤已成功，说明只是 CDN/元数据传播未完成；稍后重跑即可（脚本会跳过已发布版本）。\n" +
+      "  可通过 SMOKE_WAIT_TIMEOUT_MS 调大等待上限。"
   );
 }
 
