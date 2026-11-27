@@ -48,6 +48,16 @@
 - 改 `config/*.json` 后必须重跑 `pnpm cli:assemble` 同步 seeds（`src/lib/packaging-guards.test.ts` 会拦截漂移）；发布链路在 publish.yml 内已自动 assemble + 冒烟
 - 发布：`git tag -a vX.Y.Z && git push origin vX.Y.Z` 触发 `.github/workflows/publish.yml`（详见 [docs/package-publishing.md](docs/package-publishing.md)）
 
+> **发布成功 ≠ 立即可见（npm validating）**：`@ginkgolab/cli` 是大包（约 60MB / 1.6 万文件），
+> 上传后 npm 会进入 **validating 阶段**。此期间 CI 日志里的 `✅ Published package` 是**真实的**
+> （上传已成功），但对外表现为：
+> - `https://registry.npmjs.org/<pkg>/-/<pkg>-<ver>.tgz` 返回 **404**
+> - packument 的 `versions` 里没有该版本，`time.modified` 停在上一版
+>
+> **这是正常现象，不要因此重跑发布**——重跑时 `exists()` 查不到会再次 publish，npm 大概率回
+> 「版本已存在」，反而制造一个假失败。判断是否真正上线的唯一可靠信号是 **tarball 直链返回 200**
+> （`npm view <pkg>@<ver> version` 有缓存与传播延迟，不作准）。等待期间不要反复触发 workflow。
+
 > **dev 报错先清缓存**：跑过 `pnpm install`、改过 workspace 包名/依赖后，Turbopack 的
 > `.next/dev` chunk 里固化的绝对路径可能失效，表现为莫名其妙的
 > `Cannot find module 'next/dist/compiled/loader-runner'`、CSS loader 报错等。
