@@ -60,3 +60,4 @@ docs/.vitepress/cache/
 # 构建产物
 dist/
 *.tsbuildinfo
+packages/ginkgo-cli/runtime/

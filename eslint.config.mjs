@@ -17,6 +17,8 @@ const eslintConfig = defineConfig([
     // VitePress 文档站构建产物与缓存（源码 config/theme 仍参与检查）
     "docs/.vitepress/dist/**",
     "docs/.vitepress/cache/**",
+    // CLI 预打包独立运行时产物
+    "packages/ginkgo-cli/runtime/**",
   ]),
   // 主题护栏：业务代码禁止硬编码 Tailwind 色板类（如 bg-slate-50、
   // dark:text-blue-400）。颜色一律使用 globals.css 中的语义 token，

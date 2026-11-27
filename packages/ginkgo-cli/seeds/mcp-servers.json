@@ -1,0 +1,14 @@
+[
+  {
+    "id": "gitlab",
+    "name": "gitlab",
+    "transport": "streamable_http",
+    "timeoutMs": 30000,
+    "url": "http://127.0.0.1:5002/mcp",
+    "headers": {
+      "Private-Token": "ooC46EqqsfpddcJzz_u1",
+      "Authorization": "Bearer ooC46EqqsfpddcJzz_u1"
+    },
+    "enabled": true
+  }
+]

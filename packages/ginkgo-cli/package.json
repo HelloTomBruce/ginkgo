@@ -1,0 +1,23 @@
+{
+  "name": "@ginkgolab/cli",
+  "version": "0.1.2",
+  "description": "CLI launcher and standalone distribution for Ginkgo Agent Platform",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "ginkgo": "./bin/ginkgo.mjs"
+  },
+  "files": [
+    "bin",
+    "runtime",
+    "seeds",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=22.12"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

@@ -43,6 +43,9 @@
 - `pnpm pkg:bump <patch|minor|major|X.Y.Z>`：10 个包统一升版本（断言一致 → 写入 → 回读校验）
 - `pnpm pkg:verify`：打包校验（private/license/engines/发布出口是否都指向真实产物）
 - `pnpm pkg:smoke`：用本地 tarball 在临时工程模拟真实消费者安装 + 导入
+- `pnpm cli:assemble`：把 `.next/standalone` 组装成 `@ginkgolab/cli` 的 runtime + seeds（需先 `pnpm build`；会白名单裁剪，禁止 `data/`/`designs/`/`config/` 混入）
+- `pnpm cli:smoke`：CLI 真实启动冒烟（隔离 GINKGO_HOME + 动态端口 + 优雅停机断言）
+- 改 `config/*.json` 后必须重跑 `pnpm cli:assemble` 同步 seeds（`src/lib/packaging-guards.test.ts` 会拦截漂移）；发布链路在 publish.yml 内已自动 assemble + 冒烟
 - 发布：`git tag -a vX.Y.Z && git push origin vX.Y.Z` 触发 `.github/workflows/publish.yml`（详见 [docs/package-publishing.md](docs/package-publishing.md)）
 
 > **dev 报错先清缓存**：跑过 `pnpm install`、改过 workspace 包名/依赖后，Turbopack 的

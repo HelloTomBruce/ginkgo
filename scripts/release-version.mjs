@@ -18,6 +18,7 @@ const PACKAGES = [
   "packages/ginkgo-llm",
   "packages/apps/app-analytics",
   "packages/apps/app-design",
+  "packages/ginkgo-cli",
 ];
 
 const tag = (process.argv[2] ?? process.env.GITHUB_REF_NAME ?? "").trim();

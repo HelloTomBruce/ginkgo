@@ -49,6 +49,15 @@ jobs:
       - name: Quality gates (lint / typecheck / test / next build)
         run: pnpm verify
 
+      # @ginkgolab/cli 的 runtime 依赖 .next/standalone（由上一步 next build 产出），
+      # 且 runtime 被 gitignore——不在 CI 现场组装就会发布出只有 bin 壳的坏包
+      - name: Assemble @ginkgolab/cli runtime
+        run: node scripts/assemble-cli.mjs
+
+      # 用真实启动链路冒烟 CLI（隔离 GINKGO_HOME + 动态端口 + 优雅停机）
+      - name: Smoke test CLI launcher
+        run: pnpm cli:smoke
+
       - name: Build publishable packages
         run: pnpm -r --filter "./packages/**" run build
 

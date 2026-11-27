@@ -18,6 +18,8 @@
     "docs:build": "vitepress build docs",
     "docs:preview": "vitepress preview docs",
     "storage:migrate": "node scripts/storage-migrate.mjs",
+    "cli:assemble": "node scripts/assemble-cli.mjs",
+    "cli:smoke": "node scripts/smoke-cli.mjs",
     "dev:clean": "node -e \"require('node:fs').rmSync('.next',{recursive:true,force:true})\" && next dev -p 3006",
     "pkg:verify": "node scripts/verify-pack.mjs",
     "pkg:smoke": "node scripts/smoke-published.mjs --from-pack",

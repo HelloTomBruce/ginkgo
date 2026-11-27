@@ -27,6 +27,7 @@ const PACKAGES = [
   "packages/ginkgo-llm",
   "packages/apps/app-analytics",
   "packages/apps/app-design",
+  "packages/ginkgo-cli",
 ];
 
 /** 刻意不发布根入口的包（根入口内联客户端插槽组件，只能作客户端件） */
@@ -81,32 +82,58 @@ async function main() {
       if (manifest.private) fail(name, "含 private: true，npm 会拒绝发布");
       if (!manifest.license) fail(name, "缺少 license");
       if (!manifest.engines?.node) fail(name, "缺少 engines.node");
-      // 注意：publishConfig 在打包时被"应用并裁剪"——tarball 里的 exports/main 已是
-      // dist 指向的最终形态，校验必须针对顶层字段而不是 publishConfig。
-      if (!manifest.exports || typeof manifest.exports !== "object") {
-        fail(name, "tarball 缺少 exports（publishConfig 未生效？）");
-      }
       if (!fileSet.has("README.md")) fail(name, "tarball 缺 README.md");
       if (!fileSet.has("LICENSE")) fail(name, "tarball 缺 LICENSE");
 
-      // 每个发布出口的目标必须真实存在于 tarball 内
-      for (const [sub, target] of Object.entries(manifest.exports ?? {})) {
-        const js = typeof target === "string" ? target : target.import;
-        const rel = js.replace(/^\.\//, "");
-        if (!fileSet.has(rel)) fail(name, `出口 ${sub} 指向 ${rel}，但 tarball 内不存在`);
-        const dts = typeof target === "string" ? null : target.types;
-        if (dts && !fileSet.has(dts.replace(/^\.\//, ""))) {
-          fail(name, `出口 ${sub} 的类型 ${dts} 不存在`);
+      if (manifest.bin) {
+        // npm 规范允许 bin 为字符串（单命令包，命令名取包名末段）；
+        // Object.entries 对字符串会按字符迭代产生误报，先归一化为对象。
+        const binMap =
+          typeof manifest.bin === "string"
+            ? { [String(manifest.name ?? "").split("/").pop() || "cli"]: manifest.bin }
+            : manifest.bin;
+        // CLI 工具包：校验 bin 入口文件是否存在
+        for (const [cmd, binTarget] of Object.entries(binMap)) {
+          const rel = String(binTarget).replace(/^\.\//, "");
+          if (!fileSet.has(rel)) fail(name, `bin ${cmd} 指向 ${rel}，但 tarball 内不存在`);
         }
-      }
+        // 声明了 runtime 目录的分发包：runtime/server.js 与 seeds 必须真实在 tarball 内。
+        // runtime 由 scripts/assemble-cli.mjs 组装且被 gitignore——CI 干净 checkout 上
+        // 不跑 assemble 就发布，会打出一个只有 bin 壳的坏包，这里作为硬闸拦住。
+        if (Array.isArray(manifest.files) && manifest.files.includes("runtime")) {
+          if (!fileSet.has("runtime/server.js")) {
+            fail(name, "tarball 缺 runtime/server.js（发布前需跑 pnpm cli:assemble）");
+          }
+          const hasSeeds = [...fileSet].some(
+            (f) => f.startsWith("seeds/") && f.endsWith(".json")
+          );
+          if (!hasSeeds) fail(name, "tarball 缺少 seeds/*.json 种子配置");
+        }
+      } else {
+        // 库包：校验 exports 规范
+        if (!manifest.exports || typeof manifest.exports !== "object") {
+          fail(name, "tarball 缺少 exports（publishConfig 未生效？）");
+        }
 
-      // 应用包刻意不发布根入口（根入口内联客户端组件），其余包必须有 "."
-      const isApp = ROOTLESS.has(name);
-      if (isApp && manifest.exports?.["."]) {
-        fail(name, '应用包不应暴露根入口 "."（会带来 RSC 边界问题）');
-      }
-      if (!isApp && !manifest.exports?.["."]) {
-        fail(name, '缺少根出口 "."');
+        // 每个发布出口的目标必须真实存在于 tarball 内
+        for (const [sub, target] of Object.entries(manifest.exports ?? {})) {
+          const js = typeof target === "string" ? target : target.import;
+          const rel = js.replace(/^\.\//, "");
+          if (!fileSet.has(rel)) fail(name, `出口 ${sub} 指向 ${rel}，但 tarball 内不存在`);
+          const dts = typeof target === "string" ? null : target.types;
+          if (dts && !fileSet.has(dts.replace(/^\.\//, ""))) {
+            fail(name, `出口 ${sub} 的类型 ${dts} 不存在`);
+          }
+        }
+
+        // 应用包刻意不发布根入口（根入口内联客户端组件），其余包必须有 "."
+        const isApp = ROOTLESS.has(name);
+        if (isApp && manifest.exports?.["."]) {
+          fail(name, '应用包不应暴露根入口 "."（会带来 RSC 边界问题）');
+        }
+        if (!isApp && !manifest.exports?.["."]) {
+          fail(name, '缺少根出口 "."');
+        }
       }
       if (manifest.main && !fileSet.has(manifest.main.replace(/^\.\//, ""))) {
         fail(name, `main 指向 ${manifest.main}，但 tarball 内不存在`);

@@ -1,0 +1,36 @@
+{
+  "sources": [
+    {
+      "id": "psql",
+      "name": "psql-销售",
+      "kind": "db",
+      "dbType": "postgres",
+      "connectionString": "postgresql://localhost:5432/ginkgo_analytics",
+      "enabled": true
+    },
+    {
+      "id": "psql-saas",
+      "name": "psql-SaaS增长运营",
+      "kind": "db",
+      "dbType": "postgres",
+      "connectionString": "postgresql://localhost:5432/ginkgo_saas",
+      "enabled": true
+    },
+    {
+      "id": "psql-ecommerce",
+      "name": "psql-电商履约交易",
+      "kind": "db",
+      "dbType": "postgres",
+      "connectionString": "postgresql://localhost:5432/ginkgo_ecommerce",
+      "enabled": true
+    },
+    {
+      "id": "psql-devops",
+      "name": "psql-研发效能DORA",
+      "kind": "db",
+      "dbType": "postgres",
+      "connectionString": "postgresql://localhost:5432/ginkgo_devops",
+      "enabled": true
+    }
+  ]
+}

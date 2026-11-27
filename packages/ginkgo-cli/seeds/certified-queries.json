@@ -1,0 +1,20 @@
+[
+  {
+    "id": "cq_marketing_cac",
+    "sourceId": "*",
+    "title": "获客成本 CAC 标准口径",
+    "description": "按渠道统计广告营销投放产出每一位有效线索/客户的平均成本",
+    "businessMetricFormula": "CAC = 营销投放总金额 (SUM(spend)) / 获客成交客户总数 (COUNT(DISTINCT customer_id))",
+    "sqlTemplate": "SELECT channel, SUM(spend) AS total_spend, COUNT(DISTINCT customer_id) AS total_deals, ROUND(SUM(spend) / NULLIF(COUNT(DISTINCT customer_id), 0), 2) AS cac FROM marketing_attribution GROUP BY channel ORDER BY cac ASC",
+    "tags": ["cac", "获客", "渠道", "投放", "成本"]
+  },
+  {
+    "id": "cq_monthly_net_revenue",
+    "sourceId": "*",
+    "title": "月度净营收 Net Revenue",
+    "description": "财务标准月度确认净营收，剔除当月退款、原路退回与渠道抵扣补贴",
+    "businessMetricFormula": "净营收 = 账面交易总流水 (SUM(gross_revenue)) - 退款总额 (SUM(refund_amount)) - 渠道优惠贴息 (SUM(discount_amount))",
+    "sqlTemplate": "SELECT DATE_TRUNC('month', transaction_date) AS month, SUM(gross_revenue) - SUM(COALESCE(refund_amount, 0)) - SUM(COALESCE(discount_amount, 0)) AS net_revenue FROM financial_settlement GROUP BY 1 ORDER BY 1 DESC",
+    "tags": ["营收", "收入", "财务", "净利润", "退款"]
+  }
+]

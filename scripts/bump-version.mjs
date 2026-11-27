@@ -25,6 +25,7 @@ const PACKAGES = [
   "packages/ginkgo-llm",
   "packages/apps/app-analytics",
   "packages/apps/app-design",
+  "packages/ginkgo-cli",
 ];
 
 const args = process.argv.slice(2);

@@ -23,6 +23,7 @@ const LAYERS = [
   ["packages/ginkgo-components", "packages/ginkgo-harness-core"],
   ["packages/ginkgo-sandbox", "packages/ginkgo-llm"],
   ["packages/apps/app-analytics", "packages/apps/app-design"],
+  ["packages/ginkgo-cli"],
 ];
 
 const exists = async (name, version) => {
