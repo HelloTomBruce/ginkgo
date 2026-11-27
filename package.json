@@ -21,7 +21,8 @@
     "dev:clean": "node -e \"require('node:fs').rmSync('.next',{recursive:true,force:true})\" && next dev -p 3006",
     "pkg:verify": "node scripts/verify-pack.mjs",
     "pkg:smoke": "node scripts/smoke-published.mjs --from-pack",
-    "release:check": "node scripts/release-version.mjs"
+    "release:check": "node scripts/release-version.mjs",
+    "pkg:bump": "node scripts/bump-version.mjs"
   },
   "dependencies": {
     "@ai-sdk/react": "1.1.20",

@@ -43,7 +43,10 @@
 
 ```bash
 # 1) 统一升版本（10 个包必须同版本，tag 要和它一致）
-#    pnpm -r 的版本提升可手改或后续接 changesets
+pnpm pkg:bump patch          # 或 minor / major / 显式版本如 0.1.2
+#    脚本会：断言当前版本一致 → 批量写入 → 回读校验
+#    若上次批量写被中断（半新半旧），会拒绝并提示：
+#      node scripts/bump-version.mjs <目标版本> --force
 # 2) 本地先跑一遍完整预检
 pnpm verify
 pnpm -r --filter "./packages/**" run build
