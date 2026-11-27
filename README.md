@@ -84,7 +84,7 @@
 
 ## 新应用接入质量准入清单（Checklist）
 
-所有新应用（`packages/apps/*`）接入或架构评审时，必须满足以下六道质量门禁（完整范式详见 [ginkgo-agent-application-paradigm.md](file:///Users/zhangbei/code/prd/ai-design/ginkgo-agent-application-paradigm.md) 与 [docs/app-integration-guide.md](docs/app-integration-guide.md)）：
+所有新应用（`packages/apps/*`）接入或架构评审时，必须满足以下七道质量门禁（完整范式详见 [docs/app-integration-guide.md](docs/app-integration-guide.md) 与 [docs/guide/quality-checklist.md](docs/guide/quality-checklist.md)）：
 
 - [ ] **1. 交付物中心（WorkspaceView）**：右侧必须有专属的领域交付物工作台（如数据看板、代码树/Git/终端、架构拓扑等），拒绝纯单栏聊天。
 - [ ] **2. 规划与执行断层隔离（Plan-first）**：实现 `Plan` 与 `Build/Execute` 模式状态隔离；规划期权限档自动收敛为只读，明确用户确认信号。
@@ -92,6 +92,7 @@
 - [ ] **4. 真实环境感知（Workspace as Ground Truth）**：严禁模型凭记忆空想；通过原子工具实时从沙箱文件系统、Git 或数据源感知真实状态，动态修剪上下文防注意力涣散。
 - [ ] **5. 工具闭环与自愈指导**：工具保持高内聚原子化；执行报错返回必须具备建设性指引（带自愈线索），赋能智能体自主修复。
 - [ ] **6. 架构单向依赖与语义规范**：禁止应用逆向穿透宿主（不配 `@/*` 别名）；颜色与主题 100% 消费 CSS 语义 Token，严禁硬编码色板类。
+- [ ] **7. 契约声明与可发布性**：需要数据/沙箱/命令能力时成对声明 `manifest.permissions` 与 `server.toolPermissions`（default deny，未映射的工具不会被挂载）；外部依赖（CLI/服务）由 `server.healthCheck` 自治探测；发布出口按 `./manifest` / `./server` / `./definition` / `./client` 拆分，**不暴露混合根入口**，并以 `pnpm pkg:verify` + `pnpm pkg:smoke` 把关。
 
 ## 快速开始
 
@@ -178,11 +179,11 @@ pnpm dev        # http://localhost:3006
 ## 评测体系（Evals）
 
 - **Tier A 轨迹回归（进 CI）**：`packages/ginkgo-llm/src/evals/trajectories.test.ts` 脚本化模型剧本驱动全链路，锁定工具调用序列、终态类型、token 锚点、上下文投影与不变量门
-- **Tier B 真实模型评估（手动/夜间）**：`packages/ginkgo-llm/src/evals/tier-b.real-model.test.ts` 真实模型跑固定问题集，轨迹指标落盘基线对比；无 Key 自动跳过。**prompt/模型变更前后各跑一次**
+- **Tier B 真实模型评估（手动/夜间）**：`packages/apps/app-analytics/src/evals/tier-b.real-model.test.ts` 真实模型跑固定问题集，轨迹指标落盘基线对比；无 Key 自动跳过。**prompt/模型变更前后各跑一次**
 
 ## 会话存储与操作
 
-会话（消息历史、数据源选择、标题）持久化在服务端 `data/sessions/`（单会话单 JSON，原子写入）——换浏览器、清缓存会话不丢。接口：`GET/POST/PUT /api/sessions` 与 `GET/PUT/DELETE /api/sessions/:id`；旧版 localStorage 会话首次加载一次性自动迁移。
+会话（消息历史、数据源选择、标题）持久化在服务端**存储根**下的 `data/sessions/`（默认 `./data/sessions`，可用 `GINKGO_HOME` 外移，见 [环境变量](docs/guide/environment-variables.md)）（单会话单 JSON，原子写入）——换浏览器、清缓存会话不丢。接口：`GET/POST/PUT /api/sessions` 与 `GET/PUT/DELETE /api/sessions/:id`；旧版 localStorage 会话首次加载一次性自动迁移。
 
 - **分叉**：任意消息「分叉」把到此为止的对话复制为新会话（继承数据源选择），适合从中间结论探索不同方向
 - **回滚重问**：用户消息「回滚重问」截断其后全部对话，内容回填输入框修订重发；token 锚点与摘要缓存随之重置
@@ -218,9 +219,39 @@ pnpm test         # Vitest 全仓测试
 pnpm lint         # ESLint
 pnpm typecheck    # tsc --noEmit
 pnpm build        # 生产构建
+pnpm verify       # 四道门禁串联（lint → typecheck → test → build）
+pnpm dev:clean    # 清掉 .next 后启动（Turbopack 缓存失效时用）
+pnpm pkg:verify   # 打包校验（发布出口是否都指向真实产物）
+pnpm pkg:smoke    # 用本地 tarball 模拟真实消费者安装 + 导入
 pnpm docs:dev     # 文档站本地预览（VitePress）
 pnpm docs:build   # 文档站构建（产物 docs/.vitepress/dist）
 ```
+
+## npm 分发（`@ginkgolab/*`）
+
+10 个包已发布到 npm 公共 registry（MIT）：8 个平台包 + 2 个应用包，按依赖分四层。
+
+| 层 | 包 |
+| --- | --- |
+| 1 · 协议与基础 | `@ginkgolab/app-sdk` · `@ginkgolab/models` · `@ginkgolab/chart-spec` · `@ginkgolab/datasources` |
+| 2 · 能力 | `@ginkgolab/components` · `@ginkgolab/harness-core` |
+| 3 · 能力 | `@ginkgolab/sandbox` · `@ginkgolab/llm` |
+| 4 · 应用 | `@ginkgolab/app-analytics` · `@ginkgolab/app-design` |
+
+```bash
+npm i @ginkgolab/app-sdk @ginkgolab/harness-core @ginkgolab/app-analytics
+```
+
+应用包**不暴露根入口**（根入口内联客户端组件，服务端 import 会踩 RSC 边界）：
+
+| 子路径 | 用途 | 运行环境 |
+| --- | --- | --- |
+| `./manifest` | 纯元数据 | 服务端安全 |
+| `./server` | 运行时能力（工具/prompt/动作） | 服务端 |
+| `./definition` | 完整应用定义（含 client 契约与插槽组件） | 客户端 |
+| `./client` | 纯 UI 组件 | 客户端 |
+
+要求 Node ≥ 22.12（`@ginkgolab/datasources` 使用内置 `node:sqlite`）。发布流程与排障见 [docs/package-publishing.md](docs/package-publishing.md)。
 
 ## 文档站（GitHub Pages）
 

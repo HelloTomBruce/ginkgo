@@ -5,6 +5,22 @@
 > 缺口集中在六个维度。本方案逐项给出可落地的设计、文件级改动、测试策略与排期。
 > 原则:**全部改动向后兼容**(新增选项可选注入、默认行为不变或仅增强),不破坏现有 1007 个测试锁定的语义。
 
+> ⚠️ **历史快照（2026-11-16，v1.0）**：本文记录当时的实施方案与文件布局，用于追溯决策，
+> **不代表当前实现**。此后 `telemetry` / `streamHub` / `taskStore` / `costLedger` / `otelSink` /
+> `resilience` 等模块已迁入 `packages/ginkgo-harness-core/src/**`；`prompt.ts` 现为
+> `packages/ginkgo-llm/src/platformPrompt.ts`，`serverLibrary` 在 `@ginkgolab/components`；
+> 评测入口现为 `pnpm eval:tier-b`（runner 位于 `packages/apps/app-analytics/src/evals/`）。
+> 以当前代码与 [docs/package-publishing.md](package-publishing.md) 为准。
+>
+> **文中路径 → 当前位置**：
+>
+> | 文中的路径 | 现在的位置 |
+> | --- | --- |
+> | `packages/ginkgo-llm/src/telemetry.ts`、`src/telemetry.ts` | `packages/ginkgo-harness-core/src/telemetry/`（含 `otelSink.ts`） |
+> | `packages/ginkgo-llm/src/streamHub.ts`、`src/streamHub.ts` | `packages/ginkgo-harness-core/src/stream/streamHub.ts` |
+> | `packages/ginkgo-llm/src/serverLibrary.ts` | `@ginkgolab/components`（`src/server.ts` 的 `serverLibrary`） |
+> | `packages/ginkgo-llm/src/prompt.ts` | `packages/ginkgo-llm/src/platformPrompt.ts` |
+
 ---
 
 ## 总览:六个工作流与实施顺序
@@ -302,7 +318,7 @@ finish_task.execute: 若 status === "completed" && !hasDashboardOutput && !hasPl
 
 - **固定夹具**:文件数据源(CSV→DuckDB)加载确定性 `evals/fixtures/analytics.csv`(自建,含已知趋势/
   离群值/漏斗数据),不依赖活 GitLab/禅道;问题集 `evals/questions/*.json` 10-20 条覆盖 10 张方法卡。
-- **运行器**:`evals/run.mjs`(`pnpm eval:llm`,显式 env key 才跑):逐题发起真实 /api/analyze 流,
+- **运行器**:Tier B 用 `pnpm eval:tier-b`（`packages/apps/app-analytics/src/evals/tier-b.real-model.test.ts`，显式 env key 才跑）:逐题发起真实 /api/analyze 流,
   记录轨迹 JSON——工具调用序列、步数、token、终态类型、看板代码块是否产出且过 `parseDashboardSpec`/DSL 解析。
 - **基线对比**:`evals/baselines/<date>.json`;对比器输出四指标——任务成功率(看板产出+解析通过)、
   步数中位数、token 总量中位数、终态分布;阈值外(如成功率掉 >10%)标红。

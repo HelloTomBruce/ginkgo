@@ -43,7 +43,8 @@
 
 ```text
 packages/apps/app-<id>/
-├── package.json          # exports: "." / "./client" / "./server" 三出口
+├── package.json          # 开发期源码出口；发布期经 publishConfig 指向 dist
+│                          # 出口：./manifest / ./server / ./definition / ./client（+ ./isomorphic）
 ├── tsconfig.json         # 无 paths 穿透宿主
 ├── vitest.config.ts      # node 环境，include src/**/*.test.ts
 └── src/
@@ -335,7 +336,8 @@ server: {
 ## 9. 接入检查清单
 
 - [ ] `defineApp()` 定义静态包；manifest.id 匹配 `^[a-z0-9_-]{1,64}$`
-- [ ] 三出口 exports（`.` / `./client` / `./server`）；tsconfig 无宿主 paths 穿透
+- [ ] 出口按用途拆分（`./manifest` 服务端安全 / `./server` 运行时 / `./definition` 完整定义 / `./client` 纯 UI）；
+      发布形态**不暴露根入口**；tsconfig 无宿主 paths 穿透
 - [ ] welcomeMessage / presetQueries 已配置；默认交互模式已声明
 - [ ] 需要数据工具 → `requiresDataTools: true` + 工厂内 resolveActive 装配（失败源降级）
 - [ ] System Prompt 由 `buildSystemPrompt` 自治产出（勿依赖平台内置业务段；注入防御段

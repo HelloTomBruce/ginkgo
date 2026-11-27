@@ -1,6 +1,6 @@
 # 新应用接入质量准入清单
 
-所有新应用（`packages/apps/*`）接入或架构评审时，必须满足以下六道质量门禁。完整范式见 [应用接入规范](/app-integration-guide)。
+所有新应用（`packages/apps/*`）接入或架构评审时，必须满足以下七道质量门禁。完整范式见 [应用接入规范](/app-integration-guide)。
 
 ## 准入清单
 
@@ -21,6 +21,13 @@
 
 - [ ] **6. 架构单向依赖与语义规范**
       禁止应用逆向穿透宿主（不配 `@/*` 别名）；颜色与主题 100% 消费 CSS 语义 Token，严禁硬编码色板类。
+
+- [ ] **7. 契约声明与可发布性**
+      权限：需要数据/沙箱/命令能力时成对声明 `manifest.permissions` 与 `server.toolPermissions`——
+      宿主按映射做 default deny 门禁，未声明的工具不会被挂载。
+      外部依赖：CLI/服务类依赖由 `server.healthCheck` 自治探测（宿主不猜你的命令名）。
+      发布：出口按 `./manifest` / `./server` / `./definition` / `./client` 拆分，不暴露混合根入口；
+      `pnpm pkg:verify` + `pnpm pkg:smoke` 全过才可发版（详见 [包发布手册](/package-publishing)）。
 
 ## 内置应用对照
 

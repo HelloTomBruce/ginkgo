@@ -7,7 +7,7 @@ Ginkgo 平台的**深度应用**范例：多源数据探查、指标计算、深
 
 - `src/manifest.ts` — manifest + 客户端插槽声明：AnalysisCanvas 工作台（`workspaceView: "canvas"`）/ SourcePicker 输入挂件 / 看板+推荐侧栏 / 方法论快捷动作（`Component` 弹层）/ `settingsSections`（跨源映射设置分区）/ `dashboardToolbar`（看板操作能力）/ `messageExtensions`（规划确认 + 终态总结卡 + 过渡文案）/ `resolvePresetQueries`（方法卡合并集）
 - `src/client/` — 插槽组件与自持 UI：AnalysisCanvas / SourcePicker / MethodologyModal / CrossSourceSettings（设置中心应用分区，读写 `/api/cross-source`） / `methodologyPresets.ts`（推荐 resolver，拉 `/api/methodology` 合并卡集）
-- `src/methodology/` — 方法论资产（自持，原 `packages/ginkgo-methodology` 并入）：`builtinMethodCards` 10 张内置卡 + 用户卡契约 + 注册表合并 + 字节预算受限的 prompt 渲染纯函数
+- `src/methodology/` — 方法论资产（自持，原独立 methodology 能力包已并入本应用包）：`builtinMethodCards` 10 张内置卡 + 用户卡契约 + 注册表合并 + 字节预算受限的 prompt 渲染纯函数
 - `src/isomorphic/` — **client-safe 领域层**（零 node/零 React）：声明式变换管线（transforms）、时间宏引擎（timeMacros）、查询行提取（queryRows）、活看板捕获（dashboardCapture）、快照导入导出（dashboardSnapshot）、记录类型（dashboardTypes）。宿主消息区收藏链路与本包服务端共用
 - `src/server/` — **运行时全量**：`createAnalyticsServer(deps)` 工厂（宿主组合根注入 datasources / methodology / certified / crossSource / artifacts 五类依赖）+ **看板产物域**（收藏存储 dashboardStore / SQL 物化 specMaterialize / 活看板重放 dashboardRefresh / 筛选联动 distinctValues / 模板重绑定 templateRetarget / 厚路由编排 dashboardRoutes）+ 方法卡装配（methodologyLoader）
 - `src/prompt.ts` — 三模式 System Prompt 文案（direct/plan/execute）
@@ -38,6 +38,31 @@ server 模块——datasources 依赖含 DuckDB 原生绑定）；运行时逻�
 看板收藏（`type: "dashboard"`）实现平台产物协议：`appId` 归属、`listArtifacts`
 枚举、`refreshArtifact` 活看板零 LLM 刷新（查询重放 + transforms 重算 + SpecChart
 物化，compute-only，持久化在平台薄壳路由）。
+
+
+## npm 发布出口
+
+本包在 npm 上**不暴露根入口**（根入口内联客户端插槽组件，服务端 import 会触发 RSC 边界错误），
+按用途拆成显式子路径：
+
+| 子路径 | 用途 | 运行环境 |
+| --- | --- | --- |
+| `./manifest` | 纯元数据（`AppManifest`） | 服务端安全 |
+| `./server` | 运行时能力（工具装配 / prompt / 动作分发） | 服务端 |
+| `./definition` | 完整应用定义（manifest + client 契约 + 插槽组件），带 `"use client"` | 客户端 |
+| `./client` | 纯 UI 组件 | 客户端 |
+| `./isomorphic` / `./isomorphic/dashboardCapture` | 同构工具（按需） | 双端 |
+
+```ts
+// 服务端注册
+import { analyticsManifest } from "@ginkgolab/app-analytics/manifest";
+// 客户端渲染
+import appPackage from "@ginkgolab/app-analytics/definition";
+// ❌ 根入口不存在：import appPackage from "@ginkgolab/app-analytics";
+```
+
+安装应用（宿主侧）默认关闭，需要 `GINKGO_ALLOW_APP_INSTALL=1` + 安装令牌；
+应用声明了 `permissions` 时须在 UI 确认后才会启用（详见仓库 `docs/package-publishing.md`）。
 
 
 ## License

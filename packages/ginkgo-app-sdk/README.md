@@ -93,6 +93,63 @@ export const myAppPackage = defineApp({
 接入全景见 [docs/app-integration-guide.md](../../docs/app-integration-guide.md)。
 
 
+## 权限声明与工具门禁（权限模型 v1）
+
+应用申请能力、宿主执行门禁，**default deny**：`manifest.permissions` 声明申请，
+`server.toolPermissions` 声明「工具名 → 所需权限」。宿主只做集合判定，不猜工具语义。
+
+```ts
+export default defineApp({
+  manifest: {
+    id: "my-app",
+    name: "我的应用",
+    description: "…",
+    icon: "Bot",
+    // 申请（安装时向用户展示并二次确认）
+    permissions: ["datasources.read", "workspace.write"],
+  },
+  server: {
+    // 工具 → 所需权限；未在此声明的工具**不会被挂载**
+    toolPermissions: {
+      my_query: "datasources.read",
+      my_write: "workspace.write",
+    },
+    getTools: () => ({ my_query, my_write }),
+  },
+});
+```
+
+| 情况 | 宿主行为 |
+| --- | --- |
+| 未声明 `permissions`（平台内置应用） | 不过滤 |
+| 声明了 `permissions` | 只放行「已声明 toolPermissions 且权限已授予」的工具 |
+| 工具未写入 `toolPermissions` | 丢弃（default deny） |
+
+可用的权限值见 `APP_PERMISSION_LABELS`；`filterToolsByPermission()` 与
+`diffUnacknowledgedPermissions()` 是本模型的公开纯函数。
+
+## 健康检查（`server.healthCheck`）
+
+外部 CLI/服务类依赖由**应用自己探测**，宿主只调用与展示——平台层不持有「能力 → 命令」映射。
+
+```ts
+server: {
+  healthCheck: async () => ({
+    healthy: false,
+    status: "missing_deps",                 // ready | degraded | missing_deps
+    missingCapabilities: ["cli:my-cli"],
+    remediationGuide: "npm install -g my-cli",
+    message: "缺少 my-cli，导出功能不可用",
+  }),
+}
+```
+
+放在 `server` 而非 `manifest`：manifest 会被客户端组件链引用，而探测通常依赖
+`node:child_process`。第三方应用若写在 `manifest.lifecycle.onHealthCheck`，
+注册时会被适配到 `server.healthCheck`（运行时只有一条调用路径）。
+宿主侧结果缓存 30s。
+
+
 ## License
 
 MIT © 2026 Ginkgo contributors — 完整条款见包内 `LICENSE`（或仓库根 `LICENSE`）。

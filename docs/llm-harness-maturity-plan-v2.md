@@ -3,6 +3,23 @@
 > 版本：v2.1 · 2026-11-18（v2.0 修订：定位从「单进程产品级」升级为「**可水平扩展的多进程 harness**」，
 > WS-8 的 Redis 后端从后置可选项提升为核心交付物，并发准入/配额/abort 全部改为分布式语义）
 >
+> ⚠️ **历史快照（2026-11-18，v2.1）**：本文是当时的成熟化方案，用于追溯决策，**不代表当前文件布局**。
+> 文中提到的 `packages/ginkgo-llm/src/{costLedger,otelSink,resilience,streamHub,taskStore}.ts`
+> 均已迁入 `packages/ginkgo-harness-core/src/**`（finops / telemetry / providers / stream）；
+> `config/model-pricing.json`、`config/model-tokenizer.json` 的语义现为「**存储根**下 `config/`」
+> （见 [docs/guide/environment-variables.md](guide/environment-variables.md)）。以当前代码为准。
+>
+> **文中路径 → 当前位置**：
+>
+> | 文中的路径 | 现在的位置 |
+> | --- | --- |
+> | `packages/ginkgo-llm/src/resilience.ts` | `packages/ginkgo-harness-core/src/providers/resilience.ts` |
+> | `packages/ginkgo-llm/src/streamHub.ts` | `packages/ginkgo-harness-core/src/stream/streamHub.ts` |
+> | `packages/ginkgo-llm/src/taskStore.ts` | `packages/ginkgo-harness-core/src/stream/taskStore.ts` |
+> | `packages/ginkgo-llm/src/costLedger.ts` | `packages/ginkgo-harness-core/src/finops/costLedger.ts` |
+> | `packages/ginkgo-llm/src/otelSink.ts` | `packages/ginkgo-harness-core/src/telemetry/otelSink.ts` |
+> | `config/model-pricing.json`、`config/model-tokenizer.json` | **存储根**下 `config/`（默认 `./config/`，可随 `GINKGO_HOME` 外移）；仓库不预置，属可选配置 |
+>
 > 背景：`docs/llm-harness-hardening-plan.md`（v1.0）的 WS-1~6 已全部落地（结构化遥测、看门狗、
 > 预算熔断、结构化交接、模型面防御、双层 eval），WS-7 留了接口设计未实施。当前评审结论：
 > 单进程形态已成熟，本方案目标——**向市场成熟框架（LiteLLM Router / Langfuse / LangGraph

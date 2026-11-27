@@ -2,7 +2,7 @@
 
 ## 环境要求
 
-- **Node.js** ≥ 20（推荐 22+）
+- **Node.js** ≥ 22.12（`@ginkgolab/datasources` 依赖内置 `node:sqlite`，vitest 5 亦要求 22.12+）
 - **pnpm** ≥ 10
 - 一个 LLM Provider 的 API Key（DeepSeek / OpenAI / Anthropic / 智谱 / Kimi 等 20+ 预设任选）
 
@@ -39,7 +39,7 @@ pnpm dev        # http://localhost:3006
 
 结构化数据源在 **「设置 → 数据源」** 中配置（或写入 `config/datasources.json`）：
 
-- **dbType 四选**：postgres / mysql / sqlite / clickhouse，全部只读双保险（词法守卫 + 引擎级只读）；
+- **dbType 五选**：postgres / mysql / sqlite / clickhouse / duckdb，全部只读双保险（词法守卫 + 引擎级只读）；
 - **GitLab**：页面设置中配置 MCP Endpoint 与 Token（存浏览器 localStorage）；
 - **禅道**：依赖本机已登录的 `zentao` CLI（`zentao mcp --read-only`），无需额外配置；
 - **文件**：CSV / Excel 拖入即转 DuckDB 查询。
@@ -54,6 +54,9 @@ pnpm lint         # ESLint（含主题 token 护栏）
 pnpm typecheck    # TypeScript 类型检查
 pnpm test         # Vitest 全量测试
 pnpm build        # 生产构建
+pnpm verify       # 四道门禁串联（提交前跑这一条）
+pnpm dev:clean    # 清掉 .next 后启动（Turbopack 缓存失效时用）
+pnpm pkg:verify   # 打包校验（发布前）
 pnpm docs:dev     # 本文档站本地预览
 ```
 

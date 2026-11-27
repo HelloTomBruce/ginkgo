@@ -603,7 +603,7 @@ Phase 0 (0.5h) ─→ Phase 1 (2h) ─→ Phase 2 (4h) ─→ Phase 3 (6h)
 
 | 模式 | 启动日志 | `/api/apps` |
 |---|---|---|
-| 默认（仓库内已有 `./data`） | `[storage] 数据根: /Users/zhangbei/code/ginkgo` | 200，3 个应用 |
+| 默认（仓库内已有 `./data`） | `[storage] 数据根: <repo>（cwd）` | 200，3 个应用 |
 | 显式 `GINKGO_HOME=/tmp/...` | 数据根随之外移 + 打印「本地与显式根并存、不自动迁移」告警 | 200 |
 | 迁移助手 `--dry-run` | 正确识别 39 个待复制文件，不写入 | — |
 
@@ -734,7 +734,7 @@ Phase 0 (0.5h) ─→ Phase 1 (2h) ─→ Phase 2 (4h) ─→ Phase 3 (6h)
 
 ### 9.7 Phase 7 实施记录：架构守卫、接入规范与全量验收
 
-**架构守卫（把原则变成 CI 会跑的断言）**：新增 `src/lib/architecture-guards.test.ts`（5 个用例，随 `pnpm test` 在 CI 执行）：
+**架构守卫（把原则变成 CI 会跑的断言）**：新增 `src/lib/architecture-guards.test.ts`（6 条用例，随 `pnpm test` 在 CI 执行）：
 
 | 守卫 | 断言 | 为什么用测试而非 eslint |
 |---|---|---|

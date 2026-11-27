@@ -83,6 +83,17 @@ enabledSources / activeSources（MCP 源摘要）/ sessions（会话上下文通
   `withPlatformGuardrails`，并做去重标记。
 
 
+## 应用契约与发布形态
+
+本包是平台能力包（领域中立）。契约（manifest / client 插槽 / server 契约 / 权限 / 健康检查）
+统一在 [`@ginkgolab/app-sdk`](https://www.npmjs.com/package/@ginkgolab/app-sdk) 声明；
+应用接入规范见仓库 `docs/app-integration-guide.md`。
+
+- 开发期消费源码（`exports` → `src`）；发布期为 ESM + `.d.ts`（`main → dist`），`engines.node >= 22.12`
+- 内部依赖按正常 npm 依赖解析（不再内联）；多入口包开启代码分割
+- 编排层领域中立：禁止任何应用领域语义，prompt/工具/交付物经四接缝注入。
+
+
 ## License
 
 MIT © 2026 Ginkgo contributors — 完整条款见包内 `LICENSE`（或仓库根 `LICENSE`）。

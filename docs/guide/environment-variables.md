@@ -23,9 +23,46 @@
 | `LLM_BUILD_MAX_STEPS` | execute/build 模式独立步数预算 | 50 |
 | `LLM_PLAN_MAX_STEPS` | plan 模式独立步数预算 | 25 |
 
+| `LLM_TENANT_TOKEN_LIMIT` | 租户 token 配额（跨任务累计；未设置则零拦截） | 无 |
+| `LLM_EXECUTE_MAX_STEPS` | execute 模式的旧名称，等价 `LLM_BUILD_MAX_STEPS`（保留兼容） | 50 |
+
 ::: tip 部署建议
 本地单人使用缺省不限制 token 预算即可；**多人或公网部署时建议显式设置 `LLM_TASK_TOKEN_BUDGET`**（如 `600000`），与 `LLM_TASK_TIMEOUT_MS`、`LLM_MAX_CONCURRENT_TASKS` 构成成本护栏三道闸。
 :::
+
+## 任务存储与多副本
+
+| 变量 | 说明 | 默认值 |
+| --- | --- | --- |
+| `LLM_TASK_STORE` | 任务存储后端：`memory` / `file` / `redis` | `memory` |
+| `LLM_TASK_STORE_DIR` | `file` 后端的落盘目录（**相对 cwd**，建议显式给绝对路径） | `data/stream-tasks` |
+| `REDIS_URL` | `LLM_TASK_STORE=redis` 必填（如 `redis://localhost:6379`） | 无 |
+| `LLM_INSTANCE_ID` | 实例标识（遥测/多副本区分来源） | `hostname:pid` |
+| `HARNESS_*` | 能力包的分层配置面（流式、熔断、MCP、遥测、图编排等约 40 个变量，另有 `LLM_*` 兼容别名）；完整清单见 `packages/ginkgo-harness-core/src/config/envLoader.ts` | — |
+
+> 多副本部署请阅读 [LLM Harness 多副本部署指南](../llm-harness-multi-instance)，其中的「必须」项不可省略。
+
+## 模型韧性与回退
+
+| 变量 | 说明 | 默认值 |
+| --- | --- | --- |
+| `LLM_MAX_RETRIES` | 单次模型调用最大重试次数（指数退避） | 见 `resilience.ts` 缺省 |
+| `LLM_REQUEST_TIMEOUT_MS` | 单次模型请求超时（毫秒） | 见 `resilience.ts` 缺省 |
+| `LLM_FALLBACK_MODELS` | 回退模型链，JSON 数组（如 `["gpt-4o-mini","claude-3-5-haiku"]`）；请求体同名字段优先 | 无 |
+| `LLM_TOKENIZER` | 设为 `tiktoken` 时按 `model-tokenizer.json` 映射加载真实 tokenizer（否则启发式估算） | 关闭 |
+
+> `LLM_FALLBACK_MODELS` / `LLM_MAX_RETRIES` / `LLM_REQUEST_TIMEOUT_MS` 的**请求体优先级高于环境变量**（单次请求可覆盖）。
+
+## 应用专属变量
+
+| 变量 | 说明 | 默认值 |
+| --- | --- | --- |
+| `CLAUDE_DESIGN_PORT` | 体验设计工坊（design）启动 `claude-design` 画板服务的端口 | 由 CLI 决定 |
+| `CLAUDE_DS_PORT` | design 启动 `claude-design-system` 服务的端口 | 由 CLI 决定 |
+
+> 这两项属于 **design 应用**的领域配置，平台层不感知；其他应用请在自己的 `server.healthCheck` / 配置中自持同类变量。
+>
+> 仅评测内部使用：`LLM_TIER_B_BUDGET`（Tier B 评测预算）、`OPENAI_API_AUTH_TOKEN`（测试桩），正常部署无需设置。
 
 ## 数据源
 

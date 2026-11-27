@@ -45,6 +45,39 @@ const PACKAGES = [
   "@ginkgolab/app-design",
 ];
 
+/**
+ * 等待 registry 传播：刚 publish 完的版本在 CDN 上可能还不可见（秒级），
+ * 直接安装会得到 ETARGET/E404。这是发布后冒烟的唯一假失败源，故显式等待。
+ */
+async function waitForAvailability(names, version) {
+  const timeoutMs = Number(process.env.SMOKE_WAIT_TIMEOUT_MS ?? 180_000);
+  const intervalMs = Number(process.env.SMOKE_WAIT_INTERVAL_MS ?? 8_000);
+  const deadline = Date.now() + timeoutMs;
+  let pending = [...names];
+
+  while (Date.now() < deadline) {
+    const missing = [];
+    for (const name of pending) {
+      try {
+        const { stdout } = await execFileAsync("npm", ["view", `${name}@${version}`, "version"]);
+        if (stdout.trim() !== version) missing.push(name);
+      } catch {
+        missing.push(name);
+      }
+    }
+    if (missing.length === 0) return;
+    console.log(
+      `  等待 registry 传播：${missing.length} 个包尚不可见（${missing.slice(0, 3).join(", ")}${missing.length > 3 ? " …" : ""}）`
+    );
+    pending = missing;
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+
+  throw new Error(
+    `等待 registry 传播超时（${Math.round(timeoutMs / 1000)}s）：${pending.join(", ")} 未见 @${version}`
+  );
+}
+
 async function resolveVersion() {
   const idx = process.argv.indexOf("--version");
   if (idx > -1) return process.argv[idx + 1];
@@ -88,6 +121,7 @@ async function main() {
     installSpecs = await packAll(packDir);
     console.log(`已打包 ${installSpecs.length} 个本地 tarball`);
   } else {
+    await waitForAvailability(PACKAGES, version);
     installSpecs = PACKAGES.map((n) => `${n}@${version}`);
   }
 
