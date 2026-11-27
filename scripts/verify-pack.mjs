@@ -40,17 +40,24 @@ const ROOTLESS = new Set([
 const failures = [];
 const fail = (pkg, msg) => failures.push(`${pkg}: ${msg}`);
 
-/** 读取 tarball 内的 package.json 与文件清单 */
+/** 读取 tarball 内的 package.json、文件清单与符号链接列表 */
 async function inspectTarball(tgz, cwd) {
-  const [{ stdout: listing }, { stdout: manifest }] = await Promise.all([
-    execFileAsync("tar", ["-tzf", tgz], { cwd, maxBuffer: 32 * 1024 * 1024 }),
+  const [{ stdout: listing }, { stdout: verbose }, { stdout: manifest }] = await Promise.all([
+    execFileAsync("tar", ["-tzf", tgz], { cwd, maxBuffer: 128 * 1024 * 1024 }),
+    // verbose 格式权限位首字符：l=软链。npm registry 拒收含软链的 tarball（415）
+    execFileAsync("tar", ["-tvzf", tgz], { cwd, maxBuffer: 128 * 1024 * 1024 }),
     execFileAsync("tar", ["-xzOf", tgz, "package/package.json"], {
       cwd,
-      maxBuffer: 32 * 1024 * 1024,
+      maxBuffer: 128 * 1024 * 1024,
     }),
   ]);
+  const symlinks = verbose
+    .split("\n")
+    .filter((line) => line.startsWith("l"))
+    .map((line) => line.split(" -> ")[1] ?? line);
   return {
     files: listing.split("\n").filter(Boolean).map((f) => f.replace(/^package\//, "")),
+    symlinks,
     manifest: JSON.parse(manifest),
   };
 }
@@ -65,7 +72,8 @@ async function main() {
         const { stdout } = await execFileAsync(
           "pnpm",
           ["pack", "--pack-destination", tmp],
-          { cwd: abs }
+          // CLI 包 runtime 含数万文件，pnpm pack 会把完整文件清单打到 stdout
+          { cwd: abs, maxBuffer: 512 * 1024 * 1024 }
         );
         tgzName = stdout.trim().split("\n").pop();
       } catch (err) {
@@ -75,9 +83,18 @@ async function main() {
 
       // pnpm 可能输出绝对路径（--pack-destination 为绝对路径时）
       const tgz = path.isAbsolute(tgzName) ? tgzName : path.join(tmp, tgzName);
-      const { files, manifest } = await inspectTarball(tgz, abs);
+      const { files, symlinks, manifest } = await inspectTarball(tgz, abs);
       const name = manifest.name ?? pkgDir;
       const fileSet = new Set(files);
+
+      // npm registry 对含符号链接的 tarball 直接 415 拒收，必须在本地拦住
+      if (symlinks.length > 0) {
+        fail(
+          name,
+          `tarball 含 ${symlinks.length} 个符号链接，npm registry 会拒收（如 ${symlinks[0]}）；` +
+            `需在打包前物化软链（scripts/assemble-cli.mjs 已处理 runtime，其余包检查构建产物）`
+        );
+      }
 
       if (manifest.private) fail(name, "含 private: true，npm 会拒绝发布");
       if (!manifest.license) fail(name, "缺少 license");
