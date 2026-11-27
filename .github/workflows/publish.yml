@@ -1,0 +1,69 @@
+name: Publish
+
+# 打 tag 触发（vX.Y.Z）。tag 必须与所有待发布包的 version 一致，否则第一步就失败。
+# 幂等：已存在的版本会被跳过，失败后可直接重跑同一 tag。
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish @ginkgolab/* to npm
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: "pnpm"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # 失败最快的一步放最前面：tag 与版本不一致时立刻停
+      - name: Verify tag matches package versions
+        run: node scripts/release-version.mjs "${GITHUB_REF_NAME}"
+
+      - name: Verify npm credentials
+        run: npm whoami
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Quality gates (lint / typecheck / test / next build)
+        run: pnpm verify
+
+      - name: Build publishable packages
+        run: pnpm -r --filter "./packages/**" run build
+
+      - name: Validate packed manifests
+        run: node scripts/verify-pack.mjs
+
+      # 发布前最后一关：用本地 tarball 模拟真实消费者安装与导入
+      - name: Smoke test local artifacts
+        run: node scripts/smoke-published.mjs --from-pack
+
+      - name: Publish by dependency layer
+        run: node scripts/publish-packages.mjs
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      # 发布后从**公网 registry** 重新安装一遍，验证传播与真实消费者视角
+      - name: Smoke test published packages
+        run: node scripts/smoke-published.mjs --version "${GITHUB_REF_NAME#v}"

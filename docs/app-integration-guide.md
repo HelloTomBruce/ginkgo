@@ -347,3 +347,27 @@ server: {
 - [ ] 外部依赖（CLI/服务）→ `server.healthCheck` 自治探测（不要指望平台知道你的命令名）
 - [ ] 需要数据/沙箱/命令能力 → `manifest.permissions` + `server.toolPermissions` 成对声明
 - [ ] `pnpm verify` 全绿（lint + typecheck + test + build）；prompt 变更跑一次 `pnpm eval:tier-b`
+
+### 4.11 发布出口（npm 分发时的入口约定）
+
+应用包在 npm 上**不暴露根入口**，而是按用途拆成显式子路径（避免消费方在服务端误 import 到含客户端组件的混合入口）：
+
+| 子路径 | 内容 | 运行环境 |
+| --- | --- | --- |
+| `./manifest` | 纯元数据（`AppManifest`） | 服务端安全 |
+| `./server` | 运行时能力（工具装配、prompt、动作分发） | 服务端 |
+| `./definition` | 完整应用定义（manifest + client 契约数据 + 插槽组件） | 客户端（带 `"use client"`） |
+| `./client` | 纯 UI 组件集合 | 客户端 |
+| `./isomorphic/*` | 同构工具（如看板快照捕获） | 双端 |
+
+```ts
+// ✅ 服务端注册 / 能力协商
+import { analyticsManifest } from "@ginkgolab/app-analytics/manifest";
+import { createAnalyticsServer } from "@ginkgolab/app-analytics/server";
+
+// ✅ 客户端渲染（需要 client 契约与插槽组件时）
+import analyticsAppPackage from "@ginkgolab/app-analytics/definition";
+
+// ❌ 根入口在发布形态下不存在（ERR_PACKAGE_PATH_NOT_EXPORTED）
+import analyticsAppPackage from "@ginkgolab/app-analytics";
+```

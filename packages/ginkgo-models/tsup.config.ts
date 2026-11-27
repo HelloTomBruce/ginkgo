@@ -12,7 +12,8 @@ const external = [
 const shared = {
   format: ["esm" as const],
   dts: true,
-  splitting: false,
+  // 多入口共享代码分割：避免同一批依赖被内联进每个入口
+  splitting: true,
   target: "node22",
   platform: "node" as const,
   external,

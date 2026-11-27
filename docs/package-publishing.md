@@ -35,10 +35,42 @@
 | 打包 | `tsup`，`format: esm`，`dts: true`，`platform: node`，`target: node22` |
 | 外部依赖 | 全部 `external`（含 `@ginkgolab/*`）——不再内联 |
 | 服务端/客户端边界 | 客户端入口加 `"use client"` banner；服务端入口（`./server`、`./manifest`）不加 |
-| 根入口 | 两个应用包**不发布**根入口（混合了客户端组件）；服务端用 `./manifest` / `./server`，UI 用 `./client` |
+| 根入口 | 两个应用包**不发布**根入口（混合了客户端组件）；服务端用 `./manifest` / `./server`，完整应用定义（含 client 契约数据与插槽组件）用 `./definition`，纯 UI 用 `./client` |
+| 代码分割 | 多入口的服务端包开启 `splitting`：harness-core 的 `.js` 从 1226KB 降到 466KB（同一批依赖不再按入口重复内联） |
 | engines | `node >= 22.12`（`@ginkgolab/datasources` 依赖 `node:sqlite`，Node 22 仍为 experimental） |
 
-## 3. 发布前校验（每次必做）
+## 3. 发布：CI 为主路径（打 tag）
+
+```bash
+# 1) 统一升版本（10 个包必须同版本，tag 要和它一致）
+#    pnpm -r 的版本提升可手改或后续接 changesets
+# 2) 本地先跑一遍完整预检
+pnpm verify
+pnpm -r --filter "./packages/**" run build
+pnpm pkg:verify        # 打包校验：private/license/engines/出口文件是否存在
+pnpm pkg:smoke         # 用本地 tarball 模拟真实消费者安装 + 导入
+
+# 3) 打 tag 推送，触发 .github/workflows/publish.yml
+git tag -a v0.1.1 -m "v0.1.1"
+git push origin v0.1.1
+```
+
+CI 流水线（`.github/workflows/publish.yml`）依次执行：tag/版本一致性 → npm 凭证 → `pnpm verify`
+→ 构建 → 打包校验 → 本地产物冒烟 → **分层发布** → 发布后从 registry 重新安装冒烟。
+
+- **幂等**：`scripts/publish-packages.mjs` 会跳过已存在的版本，失败后直接重跑同一 tag 即可；
+- **必需 secret**：仓库 Settings → Secrets → `NPM_TOKEN`（granular token，Read and write + `@ginkgolab` scope）；
+- 想启用 npm provenance：给发布步骤的脚本加 `--provenance` 并声明 `permissions: id-token: write`。
+
+## 3.1 手动发布（无 CI 时）
+
+```bash
+node scripts/publish-packages.mjs --dry-run   # 先看计划
+node scripts/publish-packages.mjs             # 按四层真发（跳过已存在版本）
+node scripts/smoke-published.mjs --version 0.1.1
+```
+
+## 3.2 发布前校验明细（脚本已覆盖）
 
 ```bash
 # 1) 全量门禁
@@ -92,6 +124,10 @@ pnpm --filter @ginkgolab/app-design    publish --access public --no-git-checks
 2. **根入口不发布**：应用包根入口因内联了客户端插槽组件，只能是客户端件；发布形态只给
    显式子路径，避免消费方在服务端误 import 触发 RSC 边界错误。
 3. **`node:sqlite` 为实验特性**：Node 22 会打印 ExperimentalWarning，属预期。
+4. **`./definition` 是客户端件**：它含插槽组件，带 `"use client"` banner。服务端只需要
+   manifest/运行时能力时请用 `./manifest` / `./server`，不要 import `./definition`。
+5. **版本必须整体推进**：10 个包共享同一版本号，`release-version.mjs` 会强制校验；
+   将来接 changesets 后可改为独立版本，但需同步调整该脚本与流水线。
 
 ## 6. 许可证：MIT（已落地）
 

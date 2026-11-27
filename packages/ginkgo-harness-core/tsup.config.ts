@@ -17,7 +17,9 @@ const external = [
 const shared = {
   format: ["esm" as const],
   dts: true,
-  splitting: false,
+  // 多入口共享代码分割：关闭 splitting 会把同一批依赖内联进每个入口
+  // （实测 13 个入口共 1226KB，其中 index/stream/finops 各含完整副本）
+  splitting: true,
   target: "node22",
   platform: "node" as const,
   external,
