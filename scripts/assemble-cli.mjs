@@ -202,40 +202,159 @@ async function nestConflictingDeps(runtimeNm, edges, pinned) {
 }
 
 /**
- * 剔除平台原生包（@duckdb/node-bindings-<platform>、@img/sharp-<platform>、
- * @img/sharp-libvips-<platform>）。
+ * 同步平台原生包的分发声明。
  *
- * 为什么要剔除：这些包按平台分发且单个 60~100MB，若打进主包只能包含组装机
- * 所在平台（CI = linux-x64），macOS/Windows 用户装上会因缺 native 二进制而
- * 加载失败。改为由 CLI 包 package.json 的 optionalDependencies 声明，
- * npm 安装时按目标平台自动取对应包（esbuild / sharp 同款做法），
- * 装在安装根 node_modules 下，runtime 内的 require 可沿目录向上解析到。
+ * 背景：原生依赖（duckdb 的 @duckdb/node-bindings-*、sharp 的 @img/sharp-*）
+ * 按平台分发、单个 60~100MB。若打进主包，只能包含组装机所在平台（CI =
+ * linux-x64），macOS/Windows 用户装上会因缺 native 二进制而加载失败。
+ *
+ * 做法（esbuild / sharp 同款）：
+ *   1. 从原生宿主包（@duckdb/node-bindings、sharp）的 optionalDependencies
+ *      读取**完整**平台包清单与精确版本——这是权威来源，覆盖 musl / 各 CPU
+ *      架构，避免手工挑选漏平台；
+ *   2. 剔除 runtime 内实际存在的平台包（按 package.json 的 os/cpu 字段通用
+ *      识别，不硬编码 scope，新增原生依赖也能覆盖）；
+ *   3. 把清单写入 CLI 包的 optionalDependencies，用户安装时按平台自动获取。
+ *
+ * 版本由 runtime 实际安装的宿主包声明推导，故与 runtime 内 js 层天然一致，
+ * 不存在手工维护版本漂移（duckdb 的 native 与 js 层强绑定版本）。
  */
-const PLATFORM_PKG_PATTERNS = [
-  /^@duckdb[+/]node-bindings-(darwin|linux|win32)/,
-  /^@img[+/]sharp-(darwin|linux|win32)/,
-  /^@img[+/]sharp-libvips-/,
-];
+const NATIVE_HOST_PACKAGES = ["@duckdb/node-bindings", "sharp"];
 
-function isPlatformPackageName(name) {
-  return PLATFORM_PKG_PATTERNS.some((re) => re.test(name));
+/**
+ * 运行期按需 require、但**没有静态 import** 的外部包（见
+ * packages/ginkgo-datasources/src/connectors/duckdbLoader.ts 用 createRequire
+ * 运行时加载以绕过 Turbopack 的 eager external 提升）。
+ *
+ * 代价：Turbopack 的 output file tracing 基于静态分析，看不到这些包，
+ * 不会把它们放进 .next/standalone。必须在组装时从仓库依赖树显式补齐，
+ * 否则 runtime 里缺 js 层，首次使用 DuckDB 时直接报模块不存在。
+ */
+const RUNTIME_REQUIRED_EXTERNALS = ["@duckdb/node-api", "@duckdb/node-bindings"];
+
+/** 从仓库 pnpm store 解析某包的实际安装版本（不经网络，与 lockfile 一致） */
+async function resolveRepoPackageVersion(name) {
+  const storeDir = path.join(REPO_ROOT, "node_modules", ".pnpm");
+  const escaped = name.replace("/", "+");
+  const entries = await fs.readdir(storeDir).catch(() => []);
+  for (const entry of entries) {
+    if (!entry.startsWith(`${escaped}@`)) continue;
+    const manifest = await readJsonSafe(
+      path.join(storeDir, entry, "node_modules", ...name.split("/"), "package.json")
+    );
+    if (manifest?.name === name && manifest.version) return manifest.version;
+  }
+  return null;
 }
 
-async function prunePlatformNativePackages(runtimeDir) {
-  const removed = [];
-  const scopeDirs = ["@duckdb", "@img"];
-  for (const scope of scopeDirs) {
-    const dir = path.join(runtimeDir, "node_modules", scope);
-    if (!fssync.existsSync(dir)) continue;
-    for (const entry of await fs.readdir(dir)) {
-      const fullName = `${scope}/${entry}`;
-      if (isPlatformPackageName(fullName)) {
-        await fs.rm(path.join(dir, entry), { recursive: true, force: true });
-        removed.push(fullName);
+/**
+ * 构建期专用、运行期不需要的平台原生包：直接剔除且**不**声明为可选依赖。
+ * @next/swc-* 是 Next 的编译器（单平台 86MB），standalone 产物已预编译完毕，
+ * 服务运行时不再需要它；声明出去只会让用户白下载 86MB。
+ * 注意：若将来启用了运行时编译（如 MDX/自定义 loader 的 runtime 模式），
+ * 需要把它移回 NATIVE_HOST_PACKAGES 由 optionalDependencies 分发。
+ */
+const BUILD_TIME_ONLY_PLATFORM_PKGS = [/^@next\/swc-/];
+
+/** 遍历 runtime node_modules 顶层与 scoped 一层，返回带 os/cpu 的平台限定包 */
+async function findPlatformPackages(runtimeNm) {
+  const found = [];
+  const inspect = async (dir, fullName) => {
+    const manifest = await readJsonSafe(path.join(dir, "package.json"));
+    if (!manifest) return;
+    // os / cpu 字段是 npm 的平台过滤标记，等价于「按平台分发的原生包」
+    if (manifest.os || manifest.cpu) {
+      found.push({ name: manifest.name ?? fullName, version: manifest.version, dir, fullName });
+    }
+  };
+
+  for (const entry of await fs.readdir(runtimeNm, { withFileTypes: true })) {
+    if (entry.name.startsWith(".")) continue;
+    const full = path.join(runtimeNm, entry.name);
+    if (entry.name.startsWith("@")) {
+      const subs = await fs.readdir(full, { withFileTypes: true }).catch(() => []);
+      for (const sub of subs) {
+        await inspect(path.join(full, sub.name), `${entry.name}/${sub.name}`);
       }
+    } else if (entry.isDirectory()) {
+      await inspect(full, entry.name);
     }
   }
-  return removed;
+  return found;
+}
+
+/**
+ * 剔除 runtime 内平台原生包，并把完整平台清单同步进 CLI 包 optionalDependencies。
+ * 返回 { pruned, declared, undeclared }。
+ */
+async function syncNativeOptionalDependencies(runtimeDir, cliPkgDir) {
+  const runtimeNm = path.join(runtimeDir, "node_modules");
+
+  // 1) 权威清单：原生宿主包声明的全部平台包（含 musl / 各 CPU 架构）
+  const declared = new Map();
+  for (const host of NATIVE_HOST_PACKAGES) {
+    const manifest = await readJsonSafe(path.join(runtimeNm, ...host.split("/"), "package.json"));
+    if (!manifest) continue;
+    for (const [name, version] of Object.entries(manifest.optionalDependencies ?? {})) {
+      declared.set(name, version);
+    }
+  }
+  if (declared.size === 0) {
+    throw new Error(
+      `未能从 ${NATIVE_HOST_PACKAGES.join(" / ")} 读到平台可选依赖清单（原生依赖声明异常）`
+    );
+  }
+
+  // 2) 剔除 runtime 内实际存在的平台包；不在权威清单里的要报出来（有未声明的原生依赖）
+  const present = await findPlatformPackages(runtimeNm);
+  const undeclared = [];
+  let buildTimePruned = 0;
+  for (const pkg of present) {
+    // 构建期专用（如 @next/swc）：剔除即可，无需声明
+    if (BUILD_TIME_ONLY_PLATFORM_PKGS.some((re) => re.test(pkg.name))) {
+      await fs.rm(pkg.dir, { recursive: true, force: true });
+      buildTimePruned++;
+      continue;
+    }
+    if (!declared.has(pkg.name)) {
+      undeclared.push(`${pkg.name}@${pkg.version}`);
+      continue;
+    }
+    // 版本必须与宿主包声明的完全一致（duckdb 的 native 与 js 层强绑定版本）
+    const expected = declared.get(pkg.name);
+    if (pkg.version !== expected) {
+      throw new Error(
+        `平台包版本漂移：${pkg.name} 实际 ${pkg.version}，但宿主包声明 ${expected}`
+      );
+    }
+    await fs.rm(pkg.dir, { recursive: true, force: true });
+  }
+  if (undeclared.length > 0) {
+    throw new Error(
+      `发现未声明的平台原生包 ${undeclared.join(", ")}：` +
+        `请在 assemble-cli.mjs 的 NATIVE_HOST_PACKAGES 中登记其宿主包，否则用户安装后会缺该平台二进制`
+    );
+  }
+
+  // 3) 写入 CLI 包 optionalDependencies（排序保证输出稳定、无意义 diff 归零）
+  const cliManifestPath = path.join(cliPkgDir, "package.json");
+  const cliManifest = await readJsonSafe(cliManifestPath);
+  if (!cliManifest) throw new Error(`未找到 ${cliManifestPath}`);
+  cliManifest.optionalDependencies = Object.fromEntries(
+    [...declared.entries()].sort(([a], [b]) => a.localeCompare(b))
+  );
+  await fs.writeFile(cliManifestPath, `${JSON.stringify(cliManifest, null, 2)}\n`);
+
+  // 4) 回读校验：写入必须完整（防止手改/序列化异常）
+  const written = await readJsonSafe(cliManifestPath);
+  const writtenNames = Object.keys(written?.optionalDependencies ?? {});
+  if (writtenNames.length !== declared.size) {
+    throw new Error(
+      `optionalDependencies 回读不一致：写入 ${writtenNames.length} 项，期望 ${declared.size} 项`
+    );
+  }
+
+  return { pruned: present.length, declared: declared.size, buildTimePruned };
 }
 async function countSymlinks(dir) {
   let count = 0;
@@ -302,6 +421,17 @@ async function rebuildNodeModulesHoisted(runtimeDir) {
   if (!pinned.next || !pinned.react) {
     throw new Error("未能从 standalone node_modules 收集到 next/react 精确版本，中断重建");
   }
+
+  // 补齐无静态引用的运行时外部包（Turbopack 不 tracing，见上方常量注释）
+  for (const name of RUNTIME_REQUIRED_EXTERNALS) {
+    if (pinned[name]) continue;
+    const version = await resolveRepoPackageVersion(name);
+    if (!version) {
+      throw new Error(`未能在仓库 pnpm store 中解析 ${name} 的版本（运行时必需）`);
+    }
+    pinned[name] = version;
+    console.log(`     ✓ 补齐运行时外部包 ${name}@${version}（Turbopack 未 tracing）`);
+  }
   for (const c of conflicts) console.warn(`     ⚠️ 版本冲突: ${c}`);
   console.log(`     ✓ 收集到 ${Object.keys(pinned).length} 个依赖的精确版本`);
 
@@ -312,8 +442,8 @@ async function rebuildNodeModulesHoisted(runtimeDir) {
         name: "ginkgo-standalone-runtime",
         version: "0.0.0",
         private: true,
-        // 注：原生依赖（duckdb/sharp）的平台包在安装后由 prunePlatformNativePackages
-        // 剔除，改由 CLI 包 optionalDependencies 按用户平台分发，故此处无需
+        // 注：原生依赖（duckdb/sharp）的平台包在安装后由 syncNativeOptionalDependencies
+        // 剔除并同步到 CLI 包 optionalDependencies，故此处无需
         // supportedArchitectures（它只影响组装机自身能装到哪些平台的可选依赖）。
         dependencies: Object.fromEntries(Object.entries(pinned).sort(([a], [b]) => a.localeCompare(b))),
       },
@@ -342,12 +472,12 @@ async function rebuildNodeModulesHoisted(runtimeDir) {
   const nested = await nestConflictingDeps(nm, edges, pinned);
   if (nested > 0) console.log(`     ✓ 按依赖边嵌套了 ${nested} 个冲突版本的私有副本`);
 
-  // 剔除平台原生包：由 CLI 包 optionalDependencies 在用户安装时按平台分发，
-  // 主包若只含组装机平台会让其它平台用户缺 native 二进制
-  const prunedNative = await prunePlatformNativePackages(runtimeDir);
-  if (prunedNative.length > 0) {
-    console.log(`     ✓ 剔除平台原生包 ${prunedNative.length} 个（改由 optionalDependencies 分发）`);
-  }
+  // 剔除平台原生包并同步 CLI 包的 optionalDependencies（用户安装时按平台获取）
+  const nativeSync = await syncNativeOptionalDependencies(runtimeDir, CLI_PKG_DIR);
+  console.log(
+    `     ✓ 剔除平台原生包 ${nativeSync.pruned} 个（其中构建期专用 ${nativeSync.buildTimePruned} 个不声明）；` +
+      `optionalDependencies 同步 ${nativeSync.declared} 个平台包`
+  );
 
   // hoisted 重装后 .next/node_modules 里仍残留 Next 对 serverExternalPackages
   // 的装载软链（目标 .pnpm 已删），从 standalone 源树取实体副本补上
@@ -471,18 +601,12 @@ async function main() {
     throw new Error(`组装校验失败：node_modules 仍含 ${links} 个软链，npm registry 会拒收 tarball`);
   }
   // 平台原生包必须已剔除（改由 CLI 包 optionalDependencies 分发）；
-  // 残留会让主包只含组装机平台二进制，其它平台用户加载失败
-  const leftoverNative = [];
-  for (const scope of ["@duckdb", "@img"]) {
-    const dir = path.join(CLI_RUNTIME_DIR, "node_modules", scope);
-    if (!fssync.existsSync(dir)) continue;
-    for (const entry of await fs.readdir(dir)) {
-      if (isPlatformPackageName(`${scope}/${entry}`)) leftoverNative.push(`${scope}/${entry}`);
-    }
-  }
+  // 用 os/cpu 字段通用识别，不硬编码 scope（新增原生依赖也能覆盖）
+  const leftoverNative = await findPlatformPackages(path.join(CLI_RUNTIME_DIR, "node_modules"));
   if (leftoverNative.length > 0) {
     throw new Error(
-      `组装校验失败：runtime 仍含平台原生包 ${leftoverNative.join(", ")}（应改由 optionalDependencies 分发）`
+      `组装校验失败：runtime 仍含平台原生包 ${leftoverNative.map((p) => p.name).join(", ")}` +
+        `（应改由 optionalDependencies 分发）`
     );
   }
   // 纯 JS 侧必须仍在（否则数据源功能缺失）

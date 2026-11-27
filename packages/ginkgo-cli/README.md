@@ -49,11 +49,27 @@ ginkgo version
 
 ---
 
-## 数据持久化说明
+## 运行环境与平台支持
+
+- **Node.js >= 22.12**（见 `engines`）
+- 支持 macOS / Linux / Windows，x64 与 arm64；Linux 同时覆盖 glibc 与 musl（Alpine）
+
+### 原生依赖是怎么来的
+
+DuckDB（文件数据源、`.duckdb` 方言）与 sharp（图片处理）依赖平台原生二进制，体积较大（单个 60~100MB），因此**不随主包分发**，而是通过 `optionalDependencies` 声明全部平台包，由 npm 在安装时自动挑选与当前平台匹配的那一个。
+
+> **重要：不要使用 `--omit=optional` / `--no-optional` 安装。**
+> 那样会跳过原生包，导致 DuckDB 相关功能不可用。服务本身仍能正常启动、其它数据源（PostgreSQL / MySQL / ClickHouse 等）与页面不受影响——DuckDB 缺失是**降级**而非崩溃，只在使用文件数据源或 `.duckdb` 方言时给出明确错误提示。
+>
+> 若使用 `pnpm` 安装且配置了 `auto-install-peers=false` 等严格模式，请确认 `@duckdb/node-bindings-*` 与 `@img/sharp-*` 被实际装入。
+
+### 数据持久化说明
 
 Ginkgo CLI 服务启动后，所有用户配置、数据源连接、会话历史、看板记录以及插件扩展均持久化在用户本地主目录：
 - 默认目录：`~/.ginkgo`（支持通过 `GINKGO_HOME` 环境变量或 `--home` 命令行参数覆盖）；
 - 升级 `@ginkgolab/cli` 版本**完全不会丢失或覆盖既有数据**。
+
+首次启动时会把内置的默认配置模板（`seeds/*.json`）复制到 `~/.ginkgo/config/`，已存在的文件不会被覆盖。
 
 ## 许可证
 

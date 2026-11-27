@@ -1,7 +1,7 @@
-import { DuckDBInstance } from "@duckdb/node-api";
 import type { DuckDBConnection } from "@duckdb/node-api";
 import type { DbDialect, DbDialectClient } from "./dialect";
 import { guardReadOnlySql } from "./sqlGuard";
+import { loadDuckDBApi } from "../duckdbLoader";
 
 const QUERY_TIMEOUT_MS = 5000;
 
@@ -57,6 +57,9 @@ export const duckdbDialect: DbDialect = {
   dbType: "duckdb",
 
   async connect(dbPath: string): Promise<DbDialectClient> {
+    // 懒加载：原生二进制缺失时抛 DuckDBNativeUnavailableError，
+    // 只影响 duckdb 相关能力，不拖垮整个模块图（详见 duckdbLoader）
+    const { DuckDBInstance } = await loadDuckDBApi();
     const instance = await DuckDBInstance.create(dbPath, {
       access_mode: "READ_ONLY",
     });

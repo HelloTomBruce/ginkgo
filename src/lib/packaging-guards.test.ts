@@ -79,6 +79,30 @@ describe("打包/分发守卫", () => {
         `CLI 包 optionalDependencies 未覆盖 ${platform} 平台`
       ).toBe(true);
     }
+
+    // 版本一致性：CLI 声明的平台包版本必须与 runtime 内宿主包（@duckdb/node-bindings、
+    // sharp）的 optionalDependencies 声明逐项相同。duckdb 的 native 与 js 层强绑定
+    // 版本，漂移会导致 ABI 不匹配。runtime 是 gitignore 的组装产物，CI 的 test 阶段
+    // 可能尚未生成——那时跳过（assemble-cli 内部另有同规则强校验）。
+    const runtimeNm = path.join(REPO_ROOT, "packages", "ginkgo-cli", "runtime", "node_modules");
+    if (!fsSync.existsSync(runtimeNm)) {
+      console.warn("[packaging-guards] runtime 未组装，跳过平台包版本一致性检查");
+      return;
+    }
+    for (const host of ["@duckdb/node-bindings", "sharp"]) {
+      const hostManifestPath = path.join(runtimeNm, ...host.split("/"), "package.json");
+      if (!fsSync.existsSync(hostManifestPath)) continue;
+      const hostManifest = JSON.parse(await fs.readFile(hostManifestPath, "utf-8"));
+      for (const [depName, depVersion] of Object.entries(
+        hostManifest.optionalDependencies ?? {}
+      )) {
+        expect(
+          manifest.optionalDependencies[depName],
+          `平台包版本漂移：${depName} CLI 声明 ${manifest.optionalDependencies[depName] ?? "(缺失)"}，` +
+            `runtime 宿主 ${host} 声明 ${depVersion}（重跑 pnpm cli:assemble 同步）`
+        ).toBe(depVersion);
+      }
+    }
   });
 
   it("vitest projects 清单覆盖 packages/ 全部包（ginkgo-cli 分发包除外）", () => {

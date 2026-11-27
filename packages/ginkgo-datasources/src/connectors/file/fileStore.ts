@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { DuckDBInstance } from "@duckdb/node-api";
 import ExcelJS from "exceljs";
+import { loadDuckDBApi } from "../duckdbLoader";
 
 /**
  * 文件数据源落盘层：CSV/Excel/Parquet/JSON → DuckDB 完全覆盖式灌库 + manifest 读写。
@@ -337,6 +337,8 @@ async function buildDuckDb(
   specs: IngestTableSpec[]
 ): Promise<FileTableInfo[]> {
   const dbPath = path.join(stagingDir, FILE_SOURCE_DB_FILENAME);
+  // 懒加载：原生二进制缺失时抛 DuckDBNativeUnavailableError（仅影响文件数据源）
+  const { DuckDBInstance } = await loadDuckDBApi();
   const instance = await DuckDBInstance.create(dbPath);
   const connection = await instance.connect();
   const tables: FileTableInfo[] = [];

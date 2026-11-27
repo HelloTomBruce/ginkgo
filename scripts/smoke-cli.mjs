@@ -32,7 +32,7 @@ const TMP_ROOT = path.join(
   os.tmpdir(),
   `ginkgo-smoke-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`
 );
-const TMP_HOME = path.join(TMP_ROOT, "home");
+
 const TMP_PROJECT = path.join(TMP_ROOT, "project");
 
 function getFreePort() {
@@ -51,14 +51,12 @@ async function sleep(ms) {
 }
 
 async function main() {
-  const testPort = await getFreePort();
   console.log(`🧪 [smoke-cli] 开始 @ginkgolab/cli 端到端冒烟测试（隔离安装）...`);
   console.log(`   临时工程: ${TMP_PROJECT}`);
-  console.log(`   测试端口: ${testPort}`);
 
   await fs.mkdir(TMP_PROJECT, { recursive: true });
 
-  // 1. 打真实 tarball
+  // 1. 打真实 tarball（两个场景共用）
   const packDir = path.join(TMP_ROOT, "pack");
   await fs.mkdir(packDir, { recursive: true });
   const { stdout: packOut } = await execFileAsync(
@@ -70,39 +68,62 @@ async function main() {
   const tgz = path.isAbsolute(tgzName) ? tgzName : path.join(packDir, tgzName);
   console.log(`   已打包: ${path.basename(tgz)}`);
 
-  // 2. 仓库外安装（隔离验证：optionalDependencies 会拉取本平台原生包）
+  // 2. 场景 A：默认安装（含本平台原生包）——功能完整
+  await runScenario(tgz, {
+    label: "默认安装（含本平台原生包）",
+    omitOptional: false,
+    requireDuckDB: true,
+  });
+
+  // 3. 场景 B：--omit=optional——原生二进制缺失时必须**降级**而非全站 500。
+  //    这是 0.1.2 的真实故障模式（duckdb 顶层 import 拖垮所有 /api），
+  //    改为懒加载后应只剩 duckdb 能力不可用，其余接口照常。
+  await runScenario(tgz, {
+    label: "--omit=optional（缺 native 应降级）",
+    omitOptional: true,
+    requireDuckDB: false,
+  });
+
+  console.log(`🎉 [smoke-cli] @ginkgolab/cli 冒烟测试全部通过！\n`);
+}
+
+/** 跑一次完整场景：隔离安装 → 启动 → 探测 → 优雅停机 */
+async function runScenario(tgz, { label, omitOptional, requireDuckDB }) {
+  const testPort = await getFreePort();
+  const projectDir = path.join(TMP_ROOT, omitOptional ? "project-no-optional" : "project-default");
+  const homeDir = path.join(TMP_ROOT, omitOptional ? "home-no-optional" : "home-default");
+
+  console.log(`\n--- 场景：${label}（端口 ${testPort}）---`);
+  await fs.mkdir(projectDir, { recursive: true });
+  await fs.mkdir(homeDir, { recursive: true });
   await fs.writeFile(
-    path.join(TMP_PROJECT, "package.json"),
+    path.join(projectDir, "package.json"),
     JSON.stringify({ name: "ginkgo-smoke-consumer", version: "0.0.0", private: true }, null, 2)
   );
-  console.log(`   正在隔离安装（含本平台原生包）...`);
+
   // 独立 npm cache：避免受开发机 ~/.npm 残留（root-owned 文件导致 EPERM）影响，
   // 也让 CI 与本机行为一致
   const npmCache = path.join(TMP_ROOT, "npm-cache");
   await fs.mkdir(npmCache, { recursive: true });
-  await execFileAsync("npm", ["install", tgz, "--no-audit", "--no-fund"], {
-    cwd: TMP_PROJECT,
+  const installArgs = ["install", tgz, "--no-audit", "--no-fund"];
+  if (omitOptional) installArgs.push("--omit=optional");
+  console.log(`   正在隔离安装${omitOptional ? "（--omit=optional）" : ""}...`);
+  await execFileAsync("npm", installArgs, {
+    cwd: projectDir,
     maxBuffer: 64 * 1024 * 1024,
     env: { ...process.env, npm_config_cache: npmCache },
   });
 
-  const cliBin = path.join(TMP_PROJECT, "node_modules", ".bin", "ginkgo");
+  const cliBin = path.join(projectDir, "node_modules", ".bin", "ginkgo");
   await fs.access(cliBin);
 
-  await fs.mkdir(TMP_HOME, { recursive: true });
-
-  // 3. 启动服务
-  const child = spawn(
-    cliBin,
-    ["start", "-p", String(testPort), "--no-open", "--home", TMP_HOME],
-    {
-      stdio: "pipe",
-      // detached: CLI 及其 fork 的 server 进程组独立，失败路径可整组击杀，
-      // 避免 SIGKILL 只杀 CLI 父进程、server 成孤儿继续占用端口与隔离目录
-      detached: process.platform !== "win32",
-      env: { ...process.env },
-    }
-  );
+  const child = spawn(cliBin, ["start", "-p", String(testPort), "--no-open", "--home", homeDir], {
+    stdio: "pipe",
+    // detached: CLI 及其 fork 的 server 进程组独立，失败路径可整组击杀，
+    // 避免 SIGKILL 只杀 CLI 父进程、server 成孤儿继续占用端口与隔离目录
+    detached: process.platform !== "win32",
+    env: { ...process.env },
+  });
 
   /** 击杀整个进程组（Windows 无负 pid 语义，退化为只杀 CLI 本体） */
   const killTree = (sig) => {
@@ -126,9 +147,9 @@ async function main() {
   });
 
   const url = `http://localhost:${testPort}`;
-  let ready = false;
   // CI 冷启动（无缓存依赖、低配 runner）可能显著慢于本地，允许用环境变量放宽
   const timeoutMs = Number(process.env.CLI_SMOKE_TIMEOUT_MS) || 25000;
+  let ready = false;
   const start = Date.now();
 
   console.log(`   正在等待服务启动...`);
@@ -138,7 +159,7 @@ async function main() {
       if (res.status === 200) {
         const data = await res.json();
         if (Array.isArray(data.apps) && data.apps.length > 0) {
-          console.log(`   ✅ 探测到 /api/apps 返回正常，应用数: ${data.apps.length}`);
+          console.log(`   ✅ /api/apps 正常，应用数: ${data.apps.length}`);
           ready = true;
           break;
         }
@@ -151,49 +172,52 @@ async function main() {
 
   if (!ready) {
     killTree("SIGKILL");
-    console.error(`\n❌ [smoke-cli] 服务在 ${timeoutMs}ms 内未就绪！`);
+    console.error(`\n❌ [smoke-cli] ${label}：服务在 ${timeoutMs}ms 内未就绪！`);
     console.error(`输出日志:\n${output}`);
-    await fs.rm(TMP_ROOT, { recursive: true, force: true }).catch(() => {});
-    process.exit(1);
+    throw new Error(`${label} 启动失败`);
   }
 
-  // 4. 首页 + 数据源（数据源会加载 duckdb 等外部原生包，是跨平台分发正确性的关键信号）
+  // 首页
   const pageRes = await fetch(url);
-  console.log(`   ✅ 探测到平台首页响应状态: HTTP ${pageRes.status}`);
+  if (pageRes.status !== 200) {
+    killTree("SIGKILL");
+    throw new Error(`${label}：首页返回 HTTP ${pageRes.status}`);
+  }
+  console.log(`   ✅ 首页 HTTP 200`);
 
+  // 数据源接口：默认场景应加载 duckdb 等原生包；--omit=optional 场景必须降级为 200
   const dsRes = await fetch(`${url}/api/datasources`);
   if (dsRes.status !== 200) {
     const body = (await dsRes.text()).slice(0, 800);
     killTree("SIGKILL");
-    console.error(`\n❌ [smoke-cli] /api/datasources 返回 HTTP ${dsRes.status}`);
+    console.error(`\n❌ [smoke-cli] ${label}：/api/datasources 返回 HTTP ${dsRes.status}`);
     console.error(`响应片段:\n${body}`);
     console.error(`输出日志:\n${output.slice(-3000)}`);
-    await fs.rm(TMP_ROOT, { recursive: true, force: true }).catch(() => {});
-    process.exit(1);
+    throw new Error(`${label}：/api/datasources 异常`);
   }
-  console.log(`   ✅ 探测到 /api/datasources HTTP 200（原生依赖加载正常）`);
+  const dsBody = await dsRes.text();
+  if (requireDuckDB && /DuckDB 原生模块不可用/.test(dsBody)) {
+    killTree("SIGKILL");
+    throw new Error(`${label}：默认安装下 DuckDB 应可用，但报告原生模块不可用`);
+  }
+  console.log(
+    `   ✅ /api/datasources HTTP 200${omitOptional ? "（缺 native 已降级，未拖垮接口）" : "（原生依赖加载正常）"}`
+  );
 
-  // 5. 优雅退出测试：SIGTERM 发给整组（CLI 会转发给 server）
+  // 优雅退出
   console.log(`   正在发送 SIGTERM 请求优雅停机...`);
   killTree("SIGTERM");
-
   await new Promise((resolve) => {
     const timer = setTimeout(() => {
       killTree("SIGKILL");
       resolve();
     }, 5000);
-
     child.on("exit", (code, signal) => {
       clearTimeout(timer);
       console.log(`   ✅ 子进程已退出 (code=${code}, signal=${signal})`);
       resolve();
     });
   });
-
-  // 6. 清理
-  await fs.rm(TMP_ROOT, { recursive: true, force: true }).catch(() => {});
-
-  console.log(`🎉 [smoke-cli] @ginkgolab/cli 冒烟测试全部通过！\n`);
 }
 
 main().catch(async (err) => {
