@@ -20,7 +20,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import type { DataSourceDescriptor } from "@ginkgolab/datasources";
+import type {
+  DataSourceDescriptor,
+  SupportedDbType,
+} from "@ginkgolab/datasources";
 import { authHeaders } from "@/lib/auth";
 import { toast } from "@/lib/toast";
 import { useDatasources } from "./useDatasources";
@@ -34,7 +37,7 @@ interface FormState {
   id: string;
   name: string;
   kind: SourceKind;
-  dbType: "postgres" | "mysql" | "sqlite" | "clickhouse";
+  dbType: SupportedDbType;
   connectionString: string;
   connPreview: string;
 }
@@ -47,6 +50,25 @@ const DB_CONNECTION_PLACEHOLDERS: Record<FormState["dbType"], string> = {
   sqlite: "/path/to/database.sqlite 或 ./data/app.db",
   clickhouse: "http://default:pass@host:8123/default",
 };
+
+/**
+ * 已知 dbType 的展示文案。选项列表从能力包的 `SUPPORTED_DB_TYPES` 派生：
+ * 能力包新增 dialect 时下拉自动出现（先用裸值兜底），架构守卫会催补正式 label，
+ * 不再双处维护。
+ */
+const DB_TYPE_LABELS: Record<SupportedDbType, string> = {
+  postgres: "PostgreSQL",
+  mysql: "MySQL",
+  sqlite: "SQLite（文件路径）",
+  clickhouse: "ClickHouse",
+};
+
+const DB_TYPE_OPTIONS = (Object.keys(DB_TYPE_LABELS) as SupportedDbType[]).map(
+  (value) => ({
+    value,
+    label: DB_TYPE_LABELS[value] ?? value,
+  })
+);
 
 function kindBadge(source: DataSourceDescriptor): string {
   if (source.kind === "file") return "文件";
@@ -66,7 +88,21 @@ function badgeClass(source: DataSourceDescriptor): string {
   return "bg-warning-soft-strong text-warning-fg-strong";
 }
 
-export function DatasourceSettings() {
+export interface DatasourceSettingsProps {
+  /**
+   * 当前应用是否声明了数据源能力（`requiresDataTools`）。
+   * 仅用于**展示作用域提示**，不影响此 Tab 的可用性——数据源是平台全局资产，
+   * 在任何应用下都可配置（配置结果对声明了能力的数据类应用生效）。
+   */
+  currentAppHasDataTools?: boolean;
+  /** 当前应用名，用于提示文案 */
+  currentAppName?: string;
+}
+
+export function DatasourceSettings({
+  currentAppHasDataTools,
+  currentAppName,
+}: DatasourceSettingsProps) {
   const { sources, health, loading, refreshing, createSource, updateSource, removeSource } =
     useDatasources();
   const [form, setForm] = useState<FormState | typeof CLOSED_FORM>(CLOSED_FORM);
@@ -238,6 +274,31 @@ export function DatasourceSettings() {
 
   return (
     <div className="space-y-4 text-xs">
+      {/* 作用域提示：数据源是平台全局资产；当前应用是否声明了消费能力由应用声明驱动 */}
+      <div
+        className={`flex items-start gap-2 p-2.5 rounded-lg border text-[11px] ${
+          currentAppHasDataTools
+            ? "bg-success-soft/40 border-success-border text-success-fg"
+            : "bg-info-soft/40 border-info-border text-info-fg"
+        }`}
+        data-testid="datasource-scope-hint"
+      >
+        <Database className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+        {currentAppHasDataTools ? (
+          <span>
+            <b>数据源是平台全局资产</b>
+            {currentAppName ? `，当前应用「${currentAppName}」已声明数据源能力` : "，当前应用已声明数据源能力"}
+            ——此处启用的源将装配进该应用的会话。
+          </span>
+        ) : (
+          <span>
+            <b>数据源是平台全局资产</b>
+            {currentAppName ? `；当前应用「${currentAppName}」未声明数据源能力` : "；当前应用未声明数据源能力"}
+            ，此处配置对声明了该能力的数据类应用（如数据分析）生效。
+          </span>
+        )}
+      </div>
+
       {/* 源列表 */}
       <div className="space-y-2">
         {loading && sources.length === 0 && (
@@ -443,10 +504,11 @@ export function DatasourceSettings() {
                       }
                       className="w-full p-2.5 rounded-lg border border-border bg-surface-sunken text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-border-strong cursor-pointer"
                     >
-                      <option value="postgres">PostgreSQL</option>
-                      <option value="mysql">MySQL</option>
-                      <option value="sqlite">SQLite（文件路径）</option>
-                      <option value="clickhouse">ClickHouse</option>
+                      {DB_TYPE_OPTIONS.map(({ value, label }) => (
+                        <option key={value} value={value}>
+                          {label}
+                        </option>
+                      ))}
                     </select>
                   </div>
                   <div>

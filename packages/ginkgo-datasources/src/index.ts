@@ -41,3 +41,14 @@ export * from "./gateway/queryGateway";
 export * from "./certified/types";
 export * from "./certified/certifiedStore";
 export * from "./certified/semanticRouter";
+
+/**
+ * 受支持的关系型 dbType 词汇表（由 `connectors/db/*Dialect.ts` 的事实存在派生）。
+ *
+ * 为什么在能力包导出：合法值由 dialect 实现定义，宿主设置 UI 直接消费本常量，
+ * 避免「能力包新增 dialect、宿主枚举忘了同步」的双处维护漂移。
+ * 文件类源（csv/excel → DuckDB）不属于 dbType，故不含 "duckdb"。
+ */
+export const SUPPORTED_DB_TYPES = ["postgres", "mysql", "sqlite", "clickhouse"] as const;
+
+export type SupportedDbType = (typeof SUPPORTED_DB_TYPES)[number];

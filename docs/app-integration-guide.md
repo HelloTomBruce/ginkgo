@@ -291,6 +291,28 @@ server: {
 
 > ⚠️ 不要改成"整包 bundle + 全局 `"use client"` banner"：实测会导致服务端组合根拿到的 `manifest` 变成 client reference（`app.manifest` 为 undefined，构建在 page data 收集阶段失败）；去掉 banner 则客户端 UI 依赖（recharts）进入 RSC 报 106 个错。发布形态见路线图「预打包发布」里程碑。
 
+### 4.12 数据源归属模型
+
+数据源是**平台全局资产**，不属于任何应用；消费链路分三层，宿主不硬编码任何绑定：
+
+```
+数据源清单（平台全局）    config/datasources.json，设置中心全局唯一一份
+   ↓ 应用声明消费        server.requiresDataTools: true → 宿主装配 SQL 工具
+   ↓ 会话选择范围        会话记录的 enabledSources（undefined = 跟随全局启用项）
+```
+
+| 关注点 | 归属 |
+| --- | --- |
+| 配置存储 | `@ginkgolab/datasources` 的 `createDatasourceManager`（宿主只传路径） |
+| 配置 UI | 宿主设置中心（平台级 Tab，对所有应用可见；表单 dbType 枚举消费能力包的 `SUPPORTED_DB_TYPES`） |
+| 工具装配 | 声明了 `requiresDataTools` 的应用（组合根注入 manager 实例） |
+| 会话粒度 | `enabledSources`（会话记录字段） |
+
+**未声明 `requiresDataTools` 的应用**：设置中心里配置数据源仍然可见可用（全局资产），
+但该应用不会装配任何 SQL 工具——设置中心有基于此声明的提示条，用户不会疑惑"配了能不能用"。
+需要更细的"按应用圈定源集合"时，使用 `permissions: ["datasources.read"]` +
+`toolPermissions` 门禁（控制"能否用数据源工具"，而非"能用哪些源"）。
+
 ## 5. 工作区与沙箱边界
 
 - 会话可绑定工作区（`data/workspaces/_workspaces.json`，`session.workspaceId` →

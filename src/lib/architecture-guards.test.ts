@@ -174,6 +174,37 @@ describe("架构守卫", () => {
     ).toEqual([]);
   });
 
+  it("宿主数据源表单必须覆盖能力包声明的全部 dbType（防止双处维护漂移）", async () => {
+    const dsSource = await fs.readFile(
+      path.join(REPO_ROOT, "packages/ginkgo-datasources/src/index.ts"),
+      "utf-8"
+    );
+    const uiSource = await fs.readFile(
+      path.join(REPO_ROOT, "src/components/chat/datasources/DatasourceSettings.tsx"),
+      "utf-8"
+    );
+
+    const declared = new Set(
+      [...dsSource.matchAll(/SUPPORTED_DB_TYPES = \[([\s\S]*?)\] as const/g)].flatMap((m) =>
+        [...m[1].matchAll(/"([a-z]+)"/g)].map((x) => x[1])
+      )
+    );
+    expect(declared.size).toBeGreaterThan(0);
+
+    // UI 的 DB_TYPE_LABELS 是 Record<SupportedDbType, string>：提取其键
+    const labelled = new Set(
+      [...uiSource.matchAll(/DB_TYPE_LABELS[^{]*\{([\s\S]*?)\};/g)].flatMap((m) =>
+        [...m[1].matchAll(/^ {2}([a-z]+):/gm)].map((x) => x[1])
+      )
+    );
+
+    const missing = [...declared].filter((v) => !labelled.has(v));
+    expect(
+      missing,
+      `能力包新增了 dbType 但宿主表单缺 label：${missing.join(", ")}——请在 DB_TYPE_LABELS 补充`
+    ).toEqual([]);
+  });
+
   it("安装接口的门禁开关必须存在（防止有人把高危能力改成默认开启）", async () => {
     const routePath = path.join(
       REPO_ROOT,

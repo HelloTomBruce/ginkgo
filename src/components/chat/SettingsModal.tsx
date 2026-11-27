@@ -113,6 +113,10 @@ export interface SettingsModalProps {
 
   /** 当前应用 ID（应用分区 Props 注入） */
   appId?: string;
+  /** 当前应用是否声明数据源能力（`requiresDataTools`，语义声明化：读应用数据，宿主不判断） */
+  currentAppHasDataTools?: boolean;
+  /** 当前应用名（用于数据源 Tab 的作用域提示） */
+  currentAppName?: string;
   /** 当前应用声明的设置分区（client.settingsSections）；空 = 仅平台 tab */
   appSections?: AppSettingsSectionSpec[];
 }
@@ -750,6 +754,8 @@ export function SettingsModal({
   onDeleteProvider,
   /** 当前应用 ID（应用分区 Props 注入） */
   appId,
+  currentAppHasDataTools,
+  currentAppName,
   /** 当前应用声明的设置分区（client.settingsSections）；空 = 仅平台 tab */
   appSections = [],
   onOpenAppStore,
@@ -1516,7 +1522,10 @@ export function SettingsModal({
             value="datasources"
             className="max-h-[60vh] overflow-y-auto pr-0.5 mt-0"
           >
-            <DatasourceSettings />
+            <DatasourceSettings
+              currentAppHasDataTools={currentAppHasDataTools}
+              currentAppName={currentAppName}
+            />
           </TabsContent>
 
           <TabsContent
