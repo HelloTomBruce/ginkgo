@@ -1,6 +1,6 @@
 {
   "name": "@ginkgolab/cli",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "CLI launcher and standalone distribution for Ginkgo Agent Platform",
   "license": "MIT",
   "type": "module",
