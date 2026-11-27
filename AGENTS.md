@@ -40,7 +40,7 @@
 - `pnpm lint` / `pnpm typecheck` / `pnpm test` / `pnpm build`：质量门禁
 - `pnpm verify`：四道门禁串联（lint → typecheck → test → build），提交前跑这一条即可
 - `pnpm storage:migrate`：把本地 `./data`/`./config` 复制到显式配置的 `GINKGO_HOME`（只复制、不删除）
-- `pnpm pkg:bump <patch|minor|major|X.Y.Z>`：10 个包统一升版本（断言一致 → 写入 → 回读校验）
+- `pnpm pkg:bump <patch|minor|major|X.Y.Z>`：11 个包统一升版本（断言一致 → 写入 → 回读校验）
 - `pnpm pkg:verify`：打包校验（private/license/engines/发布出口是否都指向真实产物）
 - `pnpm pkg:smoke`：用本地 tarball 在临时工程模拟真实消费者安装 + 导入
 - `pnpm cli:assemble`：把 `.next/standalone` 组装成 `@ginkgolab/cli` 的 runtime + seeds（需先 `pnpm build`；会白名单裁剪，禁止 `data/`/`designs/`/`config/` 混入）

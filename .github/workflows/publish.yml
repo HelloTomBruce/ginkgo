@@ -57,6 +57,9 @@ jobs:
       # 用真实启动链路冒烟 CLI（隔离 GINKGO_HOME + 动态端口 + 优雅停机）
       - name: Smoke test CLI launcher
         run: pnpm cli:smoke
+        env:
+          # CI 冷启动（无缓存、低配 runner）慢于本地，放宽启动等待上限
+          CLI_SMOKE_TIMEOUT_MS: 60000
 
       - name: Build publishable packages
         run: pnpm -r --filter "./packages/**" run build
