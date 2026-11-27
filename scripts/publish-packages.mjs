@@ -69,8 +69,25 @@ for (const [index, layer] of LAYERS.entries()) {
       console.log(`     ${tail}`);
       published.push(`${name}@${version}`);
     } catch (err) {
-      console.error(`  ❌ ${name}@${version} 发布失败：`);
-      console.error(String(err).slice(0, 2000));
+      const raw = String(err?.stack ?? err);
+      console.error(`  ❌ ${name}@${version} 发布失败`);
+
+      // 2FA 是 CI 发布最常见的失败原因，原始报错（ERR_PNPM_OTP_NON_INTERACTIVE）
+      // 对使用者没有指向性，这里直接给可执行方案。
+      if (/ERR_PNPM_OTP_NON_INTERACTIVE|EOTP|one-time password/i.test(raw)) {
+        console.error(`
+原因：npm 账号启用了「auth-and-writes」两步验证，发布必须输入一次性密码，
+      CI 环境无法交互（ERR_PNPM_OTP_NON_INTERACTIVE）。
+
+修复：把 CI 使用的 token 换成**带 Bypass 2FA 的 Granular Access Token**
+  1. npmjs.com → Access Tokens → Generate New Token → Granular Access Token
+  2. 勾选 "Read and write" + 允许 @ginkgolab scope
+  3. **勾选 "Bypass two-factor authentication"**（CI 专用，正式名 bypass_2fa）
+  4. 用它替换仓库 secret NPM_TOKEN，然后重跑本 workflow
+    （workflow_dispatch 即可，脚本会跳过已发布版本）`);
+      } else {
+        console.error(raw.slice(0, 2000));
+      }
       process.exit(1);
     }
   }

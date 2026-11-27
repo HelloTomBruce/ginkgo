@@ -146,3 +146,24 @@ pnpm --filter @ginkgolab/app-design    publish --access public --no-git-checks
 - 干净环境 `npm i @ginkgolab/app-analytics` 复跑 §3 的冒烟；
 - 版本不可回收：只能 `npm deprecate` 或 24h 内 unpublish，故 §3 不可跳；
 - 后续版本建议引入 changesets 做多包版本协同。
+
+## 8. 排障
+
+| 现象 | 原因 | 处理 |
+| --- | --- | --- |
+| `ERR_PNPM_OTP_NON_INTERACTIVE` / `EOTP` | 账号启用了 auth-and-writes 两步验证，CI 无法交互输入 OTP | 换成带 **Bypass 2FA** 的 Granular Access Token 作为 `NPM_TOKEN`（见下） |
+| `EOTP` 只在本地出现 | 同一次发布会话 OTP 超时 | 连续发布时可复用同一 OTP（约 30s 窗口）或改用 bypass token |
+| `EPUBLISHCONFLICT` / 版本已存在 | 重跑同一 tag | 脚本会跳过已存在版本，直接重跑即可 |
+| 发布后 `npm i` 报 `ETARGET`/`E404` | registry 传播延迟（秒级） | 等 1–2 分钟重试；流水线里的"发布后冒烟"会自动重装验证 |
+| `private: true` 拒绝发布 | 漏删 private 字段 | `pnpm pkg:verify` 会提前拦住 |
+
+### 2FA 与 CI 发布
+
+npm 账号开了 auth-and-writes 后，"人肉发布"没问题，但 **CI 无法输入 OTP**。两种正解：
+
+1. **Bypass 2FA 的 Granular Token**（推荐，改动最小）
+   npmjs.com → Access Tokens → Granular Access Token → Read and write + `@ginkgolab` scope
+   → **勾选 "Bypass two-factor authentication"** → 替换仓库 secret `NPM_TOKEN`。
+2. **Trusted Publishing（OIDC，免 token）**
+   在 npm 包设置里绑定 GitHub 仓库与 workflow，CI 用 `id-token: write` 直接发布，
+   无需任何 secret。需要较新 npm CLI，且要逐包（或逐组织）配置，适合包数量稳定后再迁移。
