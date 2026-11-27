@@ -3,7 +3,7 @@ import React, { useState } from "react";
 import { render, screen, cleanup, fireEvent, waitFor } from "@testing-library/react";
 import { SettingsModal, type SettingsModalProps } from "./SettingsModal";
 import type { ConfiguredProvider } from "@/lib/llmProviders";
-import type { AppSettingsSectionProps, AppSettingsSectionSpec } from "@ginkgo/app-sdk";
+import type { AppSettingsSectionProps, AppSettingsSectionSpec } from "@ginkgolab/app-sdk";
 
 // mock /api/datasources 与 /api/mcp
 const fetchMock = vi.fn().mockImplementation(async (url: string) => {

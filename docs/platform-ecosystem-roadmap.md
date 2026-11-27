@@ -9,9 +9,9 @@
 
 平台化收敛已完成（commit `61803cd`）：
 
-- 编排层 `@ginkgo/llm` 领域中立，四接缝（`resolveAppPrompt` /
+- 编排层 `@ginkgolab/llm` 领域中立，四接缝（`resolveAppPrompt` /
   `resolveAppTools` / `deliverable` / `onTaskFinish`）是应用领域逻辑的唯一注入口；
-- `@ginkgo/app-sdk` 承载插槽协议（manifest / 客户端插槽 / 服务端契约 /
+- `@ginkgolab/app-sdk` 承载插槽协议（manifest / 客户端插槽 / 服务端契约 /
   产物协议 / 交付物契约 / `defineApp`）；
 - 平台服务六件套：编排、数据语义（datasources）、渲染（components）、方法论、
   工作区沙箱、产物协议；
@@ -68,7 +68,7 @@ factory 级测试 + 接入规范增量章节。
 > **未落地**：`runtimeServers` 的工厂装配仍未配置驱动（当前为 appId 分支，属组合根既有形态）；
 > 待 devops 这类"纯配置接入"应用出现时再收敛。
 
-- `config/apps.json`：`{apps: [{package: "@ginkgo/app-devops", enabled: true, runtime?: {...}}]}`
+- `config/apps.json`：`{apps: [{package: "@ginkgolab/app-devops", enabled: true, runtime?: {...}}]}`
   ——符合仓库「配置零硬编码」原则；
 - `appRegistry` 启动时按配置 `await import(pkg)` 动态注册；`src/lib/apps/runtimeServers.ts`
   的工厂装配改为配置驱动（工厂包名 + 依赖映射进 config）；
@@ -98,7 +98,7 @@ factory 级测试 + 接入规范增量章节。
 
 **落地内容**：10 个包（8 平台包 + 2 应用包）已具备 publishConfig / tsup 构建 / engines /
 依赖分类，按 DAG 四层发布，并通过真实消费者冒烟（安装 tarball → 全链 import → 服务端入口
-可执行 → 根入口被封禁）。scope 统一为 `@ginkgo/*`（原 `@ginkgo-apps/*` → `@ginkgo/app-*`）。
+可执行 → 根入口被封禁）。scope 统一为 `@ginkgolab/*`（原 `@ginkgo-apps/*` → `@ginkgolab/app-*`；`@ginkgo` 的组织名已被占用，故用 `@ginkgolab`）。
 
 最初判断需要满足的三条，最终落地方式：
 
@@ -109,7 +109,7 @@ factory 级测试 + 接入规范增量章节。
 
 任何「整包 bundle + 全局 banner」方案都会破坏边界（实测：单包 bundle 时服务端 `manifest` 为 undefined；去掉 banner 则 recharts 进入 RSC 报 106 错）。
 
-**已决策**：`@ginkgo/datasources` 不再内联（`noExternal` 清空），包间走正常依赖 —— 应用包
+**已决策**：`@ginkgolab/datasources` 不再内联（`noExternal` 清空），包间走正常依赖 —— 应用包
 产物因此从 956K/1.1M 降到 140K/64K，也顺带消除了「内联 CJS 依赖导致 ESM 产物动态 require
 报错」的问题。`publishConfig` 覆盖语义已实测：**`pnpm pack` 生效、`npm pack` 不生效**。
 

@@ -1,4 +1,4 @@
-import type { AppManifest } from "@ginkgo/app-sdk";
+import type { AppManifest } from "@ginkgolab/app-sdk";
 
 /**
  * 应用的纯元数据（**服务端安全**）：只含可声明数据，不 import 任何客户端组件。

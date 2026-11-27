@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, cleanup, fireEvent } from "@testing-library/react";
 import { ChatSidebar } from "./ChatSidebar";
-import type { DashboardSummary } from "@ginkgo/app-analytics/server";
+import type { DashboardSummary } from "@ginkgolab/app-analytics/server";
 
 const baseProps = {
   sessions: [],

@@ -3,7 +3,7 @@ import {
   FILE_SOURCE_MAX_BYTES,
   isSupportedUpload,
   type FileSourceUpload,
-} from "@ginkgo/datasources";
+} from "@ginkgolab/datasources";
 
 /**
  * POST /api/datasources/:id/file — 文件源上传灌库（multipart/form-data）。

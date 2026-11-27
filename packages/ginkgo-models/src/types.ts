@@ -1,5 +1,5 @@
 /**
- * @ginkgo/models - 协议与核心类型契约
+ * @ginkgolab/models - 协议与核心类型契约
  * 平台级模型与 Provider 数据契约，零外部依赖，纯同构。
  */
 

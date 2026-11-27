@@ -14,7 +14,7 @@ import {
   type SessionContextStore,
 } from "../handler";
 import type { CoreTool } from "ai";
-import type { HarnessEvent, TelemetrySink } from "@ginkgo/harness-core";
+import type { HarnessEvent, TelemetrySink } from "@ginkgolab/harness-core";
 import { streamText, generateText } from "ai";
 
 vi.mock("@ai-sdk/openai", () => ({

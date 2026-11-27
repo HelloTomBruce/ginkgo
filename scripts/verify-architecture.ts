@@ -11,13 +11,13 @@ import {
   dryRunExplain,
   CertifiedQueryStore,
   matchCertifiedQueries,
-} from "@ginkgo/datasources";
+} from "@ginkgolab/datasources";
 import {
   parseDashboardSpec,
   applyJsonPatch,
   type DashboardSpec,
   type JsonPatchOperation,
-} from "@ginkgo/chart-spec";
+} from "@ginkgolab/chart-spec";
 import {
   certifiedQueriesSection,
 } from "../packages/apps/app-analytics/src/server/prompt";

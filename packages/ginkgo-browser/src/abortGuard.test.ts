@@ -3,7 +3,7 @@ import { describe, it, expect, vi } from "vitest";
 const { stubExecute } = vi.hoisted(() => ({ stubExecute: vi.fn() }));
 
 // 桩掉 dsh-browser 工具收集：注入可受控抛错的假工具定义，
-// 直接验证 @ginkgo/browser 执行包装层的异常收敛与取消透传策略
+// 直接验证 @ginkgolab/browser 执行包装层的异常收敛与取消透传策略
 vi.mock("dsh-browser-view/mcp", () => ({
   collectToolDefinitions: () =>
     new Map([
@@ -20,7 +20,7 @@ vi.mock("dsh-browser-view/mcp", () => ({
 
 import { createBrowserTools } from "./tools";
 
-describe("@ginkgo/browser 工具执行异常收敛与取消语义", () => {
+describe("@ginkgolab/browser 工具执行异常收敛与取消语义", () => {
   it("普通异常收敛为结构化失败结果，不向上抛出", async () => {
     stubExecute.mockRejectedValueOnce(new Error("boom"));
 

@@ -1,5 +1,5 @@
-import type { AppPermission } from "@ginkgo/app-sdk";
-import { filterToolsByPermission } from "@ginkgo/app-sdk";
+import type { AppPermission } from "@ginkgolab/app-sdk";
+import { filterToolsByPermission } from "@ginkgolab/app-sdk";
 import { appRegistry } from "./registry";
 
 /**

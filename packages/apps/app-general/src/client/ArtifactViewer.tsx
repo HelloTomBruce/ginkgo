@@ -25,9 +25,9 @@ import {
   RotateCcw,
   Globe,
 } from "lucide-react";
-import type { AppWorkspaceProps } from "@ginkgo/app-sdk";
-import { DiffViewer, TerminalViewer } from "@ginkgo/components";
-import { CopyButton } from "@ginkgo/components/ui/copy-button";
+import type { AppWorkspaceProps } from "@ginkgolab/app-sdk";
+import { DiffViewer, TerminalViewer } from "@ginkgolab/components";
+import { CopyButton } from "@ginkgolab/components/ui/copy-button";
 import { MarkdownPreview } from "./MarkdownPreview";
 import { BrowserView } from "./browser/BrowserView";
 import { buildFileTree, type FileTreeNode, type WorkspaceFileItem } from "./fileTree";

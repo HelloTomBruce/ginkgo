@@ -35,7 +35,7 @@ import {
   CHART_TYPES,
   type ChartType,
   type MeasureFormat,
-} from "@ginkgo/chart-spec";
+} from "@ginkgolab/chart-spec";
 import {
   CHART_COLORS,
   thresholdCellFill,

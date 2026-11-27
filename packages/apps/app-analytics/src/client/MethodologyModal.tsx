@@ -9,7 +9,7 @@ import {
   ListOrdered,
   PieChart,
 } from "lucide-react";
-import { Dialog, DialogContent, DialogTitle } from "@ginkgo/components/ui/dialog";
+import { Dialog, DialogContent, DialogTitle } from "@ginkgolab/components/ui/dialog";
 
 /** 查看契约：GET /api/methodology 的 cards 项（不含 executeGuidance——LLM prompt 内部件） */
 interface MethodCardView {

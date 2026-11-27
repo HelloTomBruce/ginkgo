@@ -18,7 +18,7 @@ import {
   ArrowRight,
   Sparkles,
 } from "lucide-react";
-import type { ModeEscalationPayload, ModeEscalationChangeItem } from "@ginkgo/app-sdk";
+import type { ModeEscalationPayload, ModeEscalationChangeItem } from "@ginkgolab/app-sdk";
 
 export interface ModeApprovalCardProps {
   payload: ModeEscalationPayload;

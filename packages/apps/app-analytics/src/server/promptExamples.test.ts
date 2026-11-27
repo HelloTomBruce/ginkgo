@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { createParser } from "@openuidev/lang-core";
-import { serverLibrary } from "@ginkgo/components/server";
+import { serverLibrary } from "@ginkgolab/components/server";
 import {
   promptExample,
   reportLayoutExample,

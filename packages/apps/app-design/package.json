@@ -1,5 +1,5 @@
 {
-  "name": "@ginkgo/app-design",
+  "name": "@ginkgolab/app-design",
   "version": "0.1.0",
   "description": "Experience Design Studio app for Ginkgo platform",
   "type": "module",
@@ -36,9 +36,9 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@ginkgo/app-sdk": "workspace:*",
-    "@ginkgo/harness-core": "workspace:*",
-    "@ginkgo/sandbox": "workspace:*",
+    "@ginkgolab/app-sdk": "workspace:*",
+    "@ginkgolab/harness-core": "workspace:*",
+    "@ginkgolab/sandbox": "workspace:*",
     "lucide-react": "^1.73.0",
     "zod": "4.6.7"
   },

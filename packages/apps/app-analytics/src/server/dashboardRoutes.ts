@@ -1,7 +1,7 @@
 import { materializeSpecRows, TABLE_RE } from "./specMaterialize";
 import { retargetTemplate } from "./templateRetarget";
-import { parseChartSpec } from "@ginkgo/chart-spec";
-import type { DatasourceManager } from "@ginkgo/datasources";
+import { parseChartSpec } from "@ginkgolab/chart-spec";
+import type { DatasourceManager } from "@ginkgolab/datasources";
 import { toSummary, type DashboardStore } from "./dashboardStore";
 
 /**

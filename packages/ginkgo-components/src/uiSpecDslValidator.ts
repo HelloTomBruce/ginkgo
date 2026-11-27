@@ -1,7 +1,7 @@
 import { createParser, type Library } from "@openuidev/lang-core";
 
 /**
- * 与 @ginkgo/harness-core 的 StructureValidator 契约结构兼容的本地声明
+ * 与 @ginkgolab/harness-core 的 StructureValidator 契约结构兼容的本地声明
  * （组件包不引入 harness-core 依赖；结构类型在赋值处自动兼容）。
  */
 export interface ValidationResult<T = unknown> {

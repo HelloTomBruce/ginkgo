@@ -3,7 +3,7 @@ import {
   certifiedQueriesSection,
   getUiSpecSystemPrompt,
 } from "./prompt";
-import type { CertifiedQueryMatch } from "@ginkgo/datasources";
+import type { CertifiedQueryMatch } from "@ginkgolab/datasources";
 
 describe("Certified Queries 提示词生成与注入", () => {
   const mockMatch: CertifiedQueryMatch = {

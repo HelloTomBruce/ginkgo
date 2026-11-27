@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import type { AppWorkspaceMessage } from "@ginkgo/app-sdk";
+import type { AppWorkspaceMessage } from "@ginkgolab/app-sdk";
 import {
   buildRawFileUrl,
   extractBrowserOperations,

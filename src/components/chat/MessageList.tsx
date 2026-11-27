@@ -7,7 +7,7 @@ import type {
   AppToolRendererSpec,
   AppToolApprovalRule,
   ModeEscalationPayload,
-} from "@ginkgo/app-sdk";
+} from "@ginkgolab/app-sdk";
 import { ToolInvocationCard } from "./ToolInvocationCard";
 import { ArrowDown, ArrowUp, Loader2, Sparkles, Printer, Star, GitFork, RotateCcw, Square, Play, Brain, ListOrdered, X, Pin, CheckCircle2, AlertTriangle } from "lucide-react";
 import { UiSpecRenderer } from "@/components/UiSpecRenderer";
@@ -23,7 +23,7 @@ import { Hint } from "@/components/ui/hint";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MarkdownContent } from "./MarkdownContent";
 import { extractUiSpec } from "@/lib/extractUiSpec";
-import { captureDashboardQueries } from "@ginkgo/app-analytics/isomorphic/dashboardCapture";
+import { captureDashboardQueries } from "@ginkgolab/app-analytics/isomorphic/dashboardCapture";
 import { toast } from "@/lib/toast";
 import type { FavoriteDashboardInput, FavoriteResult } from "@/hooks/useDashboards";
 

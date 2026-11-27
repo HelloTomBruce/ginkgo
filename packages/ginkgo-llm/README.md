@@ -1,18 +1,18 @@
-# @ginkgo/llm
+# @ginkgolab/llm
 
 领域中立的 LLM 编排装配层：面向 UiSpec 平台的多应用统一分析入口，负责
 streamText 生命周期、模型链韧性（WS-9）、流中继（StreamHub）、并发/配额/预算
 三维熔断、上下文投影治理与多应用接缝；底层执行、韧性、计量与状态图由通用底座
-`@ginkgo/harness-core` 驱动。**本包零应用领域语义**——任何应用的
+`@ginkgolab/harness-core` 驱动。**本包零应用领域语义**——任何应用的
 prompt、工具、交付物文案全部经四接缝由应用包注入
-（如 `@ginkgo/app-analytics`）。
+（如 `@ginkgolab/app-analytics`）。
 
 ## 包定位
 
 - **平台编排层**：位于宿主应用与通用 Harness 底座之间，只关心「如何安全地把一次
   多步生成跑完」，不关心「生成什么」。
 - **零基础设施重复建设**：上下文压缩、Token 计量、工具拦截、双重终态状态机、
-  流中继均由 `@ginkgo/harness-core` 提供，本包做装配与策略接线。
+  流中继均由 `@ginkgolab/harness-core` 提供，本包做装配与策略接线。
 - **依赖极简**：仅依赖 `harness-core`、`app-sdk`（协议类型）与 `ai`；不依赖
   datasources / methodology / components 等领域包。
 
@@ -73,7 +73,7 @@ enabledSources / activeSources（MCP 源摘要）/ sessions（会话上下文通
 - `src/evals/trajectories.test.ts`（Tier A，CI）：脚本化模型剧本全链路断言——
   事件序列、单步锚点、投影、不变量门。
 - 真实模型评测（Tier B）在应用包：`pnpm eval:tier-b`
-  （`@ginkgo/app-analytics/src/evals/`）。
+  （`@ginkgolab/app-analytics/src/evals/`）。
 
 ## 扩展指南
 

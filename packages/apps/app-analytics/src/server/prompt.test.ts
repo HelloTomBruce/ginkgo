@@ -9,7 +9,7 @@ import {
   getExecuteSystemPrompt,
 } from "./prompt";
 import { reloadCrossSourceMap } from "./crossSource";
-import type { ActiveSourceSummary } from "@ginkgo/datasources";
+import type { ActiveSourceSummary } from "@ginkgolab/datasources";
 
 const ACTIVE: ActiveSourceSummary[] = [
   {
@@ -195,7 +195,7 @@ describe("结构卡预算常量守护（防回归快照）", () => {
       CARD_RENDER_BUDGET_BYTES,
       CARD_STORE_MAX_BYTES,
       LOW_CARDINALITY_THRESHOLD,
-    } = await import("@ginkgo/datasources");
+    } = await import("@ginkgolab/datasources");
     const { SCHEMA_DIGEST_TOTAL_BUDGET_BYTES } = await import("./schemaDigest");
 
     // 契约快照：单卡渲染 ≤2KB；落盘 ≤64KB；总量 ≤8KB；低基数阈值 50

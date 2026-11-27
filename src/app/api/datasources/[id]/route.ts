@@ -2,7 +2,7 @@ import {
   describeDynamicSource,
   isDbType,
   type DynamicSourceConfig,
-} from "@ginkgo/datasources";
+} from "@ginkgolab/datasources";
 import { datasources } from "@/lib/datasources";
 
 /**

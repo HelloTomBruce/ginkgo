@@ -7,7 +7,7 @@ import { defineConfig } from "tsup";
 const external = [
     "@ai-sdk/anthropic",
     "@ai-sdk/openai",
-    "@ginkgo/models",
+    "@ginkgolab/models",
     "@modelcontextprotocol/sdk",
     "ai",
     "zod",

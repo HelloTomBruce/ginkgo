@@ -18,8 +18,8 @@ import {
   buildGenericSummaryPrompt,
   SUMMARY_MAX_TOKENS,
 } from "./context";
-import type { AppDeliverableContract } from "@ginkgo/app-sdk";
-import { toolFailure } from "@ginkgo/app-sdk";
+import type { AppDeliverableContract } from "@ginkgolab/app-sdk";
+import { toolFailure } from "@ginkgolab/app-sdk";
 import { withPlatformGuardrails, getPlatformBasePrompt } from "./platformPrompt";
 import {
   defaultModelCatalog,
@@ -55,7 +55,7 @@ import {
   type RunId,
   type MCPClientManager,
   type MCPServerConfig,
-} from "@ginkgo/harness-core";
+} from "@ginkgolab/harness-core";
 
 /**
  * env → TaskStore（显式注入 opts.taskStore 时本函数不被调用——注入优先于 env，
@@ -141,7 +141,7 @@ function instrumentTools(
 /**
  * WS-12 请求级 tokenizer 解析：注入优先；env LLM_TOKENIZER=tiktoken 时
  * 按 config/model-tokenizer.json 映射动态加载（每请求解析 encoding，
- * 实例在 @ginkgo/harness-core 内按 encoding 缓存）。未安装/未启用回退启发式。
+ * 实例在 @ginkgolab/harness-core 内按 encoding 缓存）。未安装/未启用回退启发式。
  */
 async function resolveRequestTokenizer(
   injected: { encode(text: string): number } | undefined,
@@ -151,7 +151,7 @@ async function resolveRequestTokenizer(
   if (injected) return injected;
   if (process.env.LLM_TOKENIZER !== "tiktoken") return undefined;
   const { createTiktokenEstimator, resolveEncodingForModel } = await import(
-    "@ginkgo/harness-core"
+    "@ginkgolab/harness-core"
   );
   const encoding = resolveEncodingForModel(model, configPath);
   return createTiktokenEstimator(encoding);
@@ -1231,7 +1231,7 @@ export function createAnalyzeHandler(
           }, 15000);
 
           try {
-          // 双重终态机制：显式终态工具 finish_task（基于 @ginkgo/harness-core 终态契约）
+          // 双重终态机制：显式终态工具 finish_task（基于 @ginkgolab/harness-core 终态契约）
           const finishTaskTool = createTerminationTool({
             toolName: "finish_task",
             description: finishToolDescription,

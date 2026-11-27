@@ -2,9 +2,9 @@
 import { describe, it, expect, vi } from "vitest";
 import { refreshDashboard, type RefreshGateway } from "./dashboardRefresh";
 import { createParser } from "@openuidev/react-lang";
-import { serverLibrary } from "@ginkgo/components/server";
+import { serverLibrary } from "@ginkgolab/components/server";
 import type { DashboardRecord } from "./dashboardStore";
-import type { DynamicSourceConfig, McpConnection } from "@ginkgo/datasources";
+import type { DynamicSourceConfig, McpConnection } from "@ginkgolab/datasources";
 
 /**
  * 活看板刷新引擎测试：SQL/工具重放、数据回填、降级语义（单查询 stale /

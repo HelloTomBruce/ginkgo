@@ -1,7 +1,7 @@
 /**
- * @ginkgo/datasources 统一入口。
+ * @ginkgolab/datasources 统一入口。
  * 主入口 client-safe（前端仅 import type）；ai 适配器走子路径
- * `@ginkgo/datasources/adapters/ai`（optional peerDependency）。
+ * `@ginkgolab/datasources/adapters/ai`（optional peerDependency）。
  */
 export * from "./config";
 export * from "./manager";
@@ -15,7 +15,7 @@ export {
   type FileSourceUpload,
 } from "./connectors/file/fileStore";
 // Schema Card：类型与渲染为 client-safe（含 node:fs 的 store 不走主入口，
-// 服务端经子路径 @ginkgo/datasources/schema/store 引入）
+// 服务端经子路径 @ginkgolab/datasources/schema/store 引入）
 export {
   type SchemaCard,
   type SchemaCardTable,

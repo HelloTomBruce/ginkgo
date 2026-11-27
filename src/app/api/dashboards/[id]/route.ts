@@ -1,4 +1,4 @@
-import { dashboardStore, toSummary } from "@ginkgo/app-analytics/server";
+import { dashboardStore, toSummary } from "@ginkgolab/app-analytics/server";
 
 /**
  * GET /api/dashboards/:id — 详情（含 dsl，预览用）；不存在 404。

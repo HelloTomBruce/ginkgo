@@ -1,8 +1,8 @@
 import path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import type { AppPermission, AppPackageDefinition } from "@ginkgo/app-sdk";
-import { diffUnacknowledgedPermissions } from "@ginkgo/app-sdk";
+import type { AppPermission, AppPackageDefinition } from "@ginkgolab/app-sdk";
+import { diffUnacknowledgedPermissions } from "@ginkgolab/app-sdk";
 import { getPluginsDir, getConfigDir, getStoragePath } from "@/lib/storagePaths";
 import { appRegistry, BUILTIN_APP_PACKAGES } from "./registry";
 import type { AppConfigFile } from "./registry";

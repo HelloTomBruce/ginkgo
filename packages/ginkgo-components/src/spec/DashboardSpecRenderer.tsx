@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useMemo } from "react";
-import type { DashboardSpec, WidgetSpec } from "@ginkgo/chart-spec";
+import type { DashboardSpec, WidgetSpec } from "@ginkgolab/chart-spec";
 import { MetricCard } from "../metrics/MetricCard";
 import { GaugeProgress } from "../metrics/GaugeProgress";
 import { AnalyticsChart } from "../charts/AnalyticsChart";

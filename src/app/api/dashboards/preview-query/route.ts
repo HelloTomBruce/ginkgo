@@ -1,4 +1,4 @@
-import { handlePreviewQuery } from "@ginkgo/app-analytics/server";
+import { handlePreviewQuery } from "@ginkgolab/app-analytics/server";
 import { datasources } from "@/lib/datasources";
 
 /**

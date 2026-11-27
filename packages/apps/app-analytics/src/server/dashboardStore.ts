@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { resolveAnalyticsStorageDirs } from "./storage";
-import { isValidTransformSpec, type TransformSpec } from "@ginkgo/app-analytics/isomorphic";
+import { isValidTransformSpec, type TransformSpec } from "@ginkgolab/app-analytics/isomorphic";
 // 内部实现引用同一形状来源（re-export 仅供既有消费方稳定入口）
 import type {
   DashboardOrigin,
@@ -12,7 +12,7 @@ import type {
   TemplateMeta,
   DashboardRecord,
   DashboardSummary,
-} from "@ginkgo/app-analytics/isomorphic";
+} from "@ginkgolab/app-analytics/isomorphic";
 
 /**
  * 看板收藏存储层（server-only：依赖 node:fs，禁止在客户端组件引入）。
@@ -60,7 +60,7 @@ export type {
   TemplateMeta,
   DashboardRecord,
   DashboardSummary,
-} from "@ginkgo/app-analytics/isomorphic";
+} from "@ginkgolab/app-analytics/isomorphic";
 
 export function toSummary(record: DashboardRecord): DashboardSummary {
   return {

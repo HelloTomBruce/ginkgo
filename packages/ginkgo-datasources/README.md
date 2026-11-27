@@ -1,11 +1,11 @@
-# @ginkgo/datasources
+# @ginkgolab/datasources
 
 Ginkgo 结构化数据源连接、工具装配、安全查询网关与语义层底座：原生直连标准关系型数据库与本地分析文件（DuckDB），并在执行路径上深度集成词法与方言双重只读守卫、LRU 结果集缓存、EXPLAIN 成本熔断、Schema Card 结构探查及 Certified Queries 业务语义层。
 
 > [!NOTE]
 > **关于 MCP 职责边界划分**：
-> 外部第三方远程服务（如 Figma, GitHub, Notion 等 Stdio / SSE / HTTP MCP Server）的连接池与工具转换全量由底层框架 `@ginkgo/harness-core` 的 `MCPClientManager` 承接；
-> 本包（`@ginkgo/datasources`）**完全去 MCP 化**，不依赖 `@modelcontextprotocol/sdk`，专注于高可靠、高安全的**结构化数据源连接与查询治理（RDBMS & Local Analytics Files）**。
+> 外部第三方远程服务（如 Figma, GitHub, Notion 等 Stdio / SSE / HTTP MCP Server）的连接池与工具转换全量由底层框架 `@ginkgolab/harness-core` 的 `MCPClientManager` 承接；
+> 本包（`@ginkgolab/datasources`）**完全去 MCP 化**，不依赖 `@modelcontextprotocol/sdk`，专注于高可靠、高安全的**结构化数据源连接与查询治理（RDBMS & Local Analytics Files）**。
 
 ## 包定位
 
@@ -13,7 +13,7 @@ Ginkgo 结构化数据源连接、工具装配、安全查询网关与语义层�
 - **查询安全网关与成本防线（QueryGateway）**：承担所有数据查询的安全防护职责，杜绝任何非授权数据修改、高危 DDL、多语句注入或超大查询引发的计算资源耗尽。
 - **与兄弟包的依赖关系**：
   - 作为独立底层数据包，不依赖其他 workspace 包；
-  - 为 `@ginkgo/llm` 提供数据源管理能力、可用工具绑定及上下文所需的 Schema Card 和认证口径；
+  - 为 `@ginkgolab/llm` 提供数据源管理能力、可用工具绑定及上下文所需的 Schema Card 和认证口径；
   - 核心只读校验逻辑与工具结果解析纯函数被应用服务端逻辑广泛复用。
 
 ---

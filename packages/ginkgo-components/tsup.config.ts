@@ -5,7 +5,7 @@ import { defineConfig } from "tsup";
  * 仅编译本包源码。开发期仍由消费方直接吃 `src`（见 package.json exports）。
  */
 const external = [
-    "@ginkgo/chart-spec",
+    "@ginkgolab/chart-spec",
     "@openuidev/lang-core",
     "@openuidev/react-lang",
     "class-variance-authority",

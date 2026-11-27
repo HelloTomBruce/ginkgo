@@ -14,7 +14,7 @@
 │ ChatDashboard · AppSwitcher · ChatSidebar · MessageList ·        │
 │ /api/analyze（统一入口）· middleware · sessionStore/dashboardStore │
 ├─────────────────────────────────────────────────────────────────┤
-│ 应用插件层 packages/apps/*（协议：@ginkgo/app-sdk）       │
+│ 应用插件层 packages/apps/*（协议：@ginkgolab/app-sdk）       │
 │   app-analytics：数据智能（深度应用，工厂装配）                      │
 │   app-general：通用助理（轻应用，静态包即全量）                      │
 ├─────────────────────────────────────────────────────────────────┤
@@ -32,7 +32,7 @@
 ```
 
 **关键不变量**：
-- `@ginkgo/llm` 零应用领域语义（无内置业务 prompt、无数据源装配、无交付物文案）；
+- `@ginkgolab/llm` 零应用领域语义（无内置业务 prompt、无数据源装配、无交付物文案）；
   一切领域逻辑经四接缝注入。
 - 依赖方向单向：`apps → app-sdk + 平台服务包`；app 包**禁止**穿透宿主 `src/`（tsconfig
   不得配置 `@/*` 指向宿主；需要的共享 UI 原语在应用包内自持或由 components 包提供）。
@@ -90,7 +90,7 @@ pattern），禁止在宿主组件里写 appId 比较、话术正则或硬编码
 
 插槽组件 Props 契约见 `AppWorkspaceProps` / `AppInputAccessoryProps` / `AppSidebarTabProps`；
 画布钉选载荷类型为协议层 `AppCanvasData`。渲染基建（`UiSpecRenderer`、
-`DashboardScopeProvider`、`filterBus`、组件 Def）统一从 `@ginkgo/components`
+`DashboardScopeProvider`、`filterBus`、组件 Def）统一从 `@ginkgolab/components`
 取——客户端本地工具经宿主挂载的 `<UiSpecToolProvider>` 自动生效，无需逐层透传。
 
 ## 4. 服务端契约（AppServerContract）
@@ -113,17 +113,17 @@ interface AppServerContract {
 }
 ```
 
-沙箱文件/shell 工具不要自研：消费 `@ginkgo/sandbox` 能力包的
+沙箱文件/shell 工具不要自研：消费 `@ginkgolab/sandbox` 能力包的
 `createSandboxTools({ sandboxDir, preset: "atomic" | "explorer", permission: "full" | "readonly" })`
 ——preset 是丰富度维度（atomic = read/edit/write/bash 四原子工具；explorer 追加
 list_dir），permission 是权限维度（readonly 只装配只读工具）；工具说明 prompt 片段
 用 `sandboxToolsPromptSection(preset, permission)` 与装配同源拼接。
 
-浏览器自动化工具同理消费 `@ginkgo/browser` 能力包（基于 dsh-browser-view 的
+浏览器自动化工具同理消费 `@ginkgolab/browser` 能力包（基于 dsh-browser-view 的
 Playwright 驱动 + 意图语义定位）：
 
 ```ts
-import { createBrowserTools } from "@ginkgo/browser";
+import { createBrowserTools } from "@ginkgolab/browser";
 
 const browserPkg = createBrowserTools({
   sessionId: ctx.sessionId,          // 会话命名空间（dsh session scope 隔离多会话实例）

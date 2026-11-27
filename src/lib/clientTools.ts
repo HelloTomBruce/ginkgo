@@ -1,6 +1,6 @@
 "use client";
 
-import { toCsvContent, downloadCsv } from "@ginkgo/components";
+import { toCsvContent, downloadCsv } from "@ginkgolab/components";
 import { toast } from "@/lib/toast";
 
 /**

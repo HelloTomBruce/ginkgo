@@ -1,4 +1,4 @@
-import type { AppClientContract } from "@ginkgo/app-sdk";
+import type { AppClientContract } from "@ginkgolab/app-sdk";
 import { designManifest } from "./manifestMeta";
 import { DesignStudioViewer } from "./client/DesignStudioViewer";
 

@@ -1,4 +1,4 @@
-import type { AppArtifactItem } from "@ginkgo/app-sdk";
+import type { AppArtifactItem } from "@ginkgolab/app-sdk";
 import { CliBridge, type BoardDetail, type DashboardArtifact } from "./cliBridge";
 
 export interface DesignStatusResponse {

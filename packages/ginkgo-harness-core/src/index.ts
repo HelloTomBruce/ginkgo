@@ -1,5 +1,5 @@
 /**
- * @ginkgo/harness-core
+ * @ginkgolab/harness-core
  * 企业级通用 LLM Harness 执行与治理底座。
  * 领域无关、零业务硬编码、中间件驱动、具备自愈与状态图编排能力。
  */

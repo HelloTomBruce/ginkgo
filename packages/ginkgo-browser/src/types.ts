@@ -1,5 +1,5 @@
 /**
- * @ginkgo/browser - 核心类型定义与配置契约
+ * @ginkgolab/browser - 核心类型定义与配置契约
  */
 
 import type { Tool } from "ai";

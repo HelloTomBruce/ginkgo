@@ -1,6 +1,6 @@
 import { defineComponent, createLibrary } from "@openuidev/lang-core";
 import { z } from "zod";
-import { ChartSpecSchema } from "@ginkgo/chart-spec";
+import { ChartSpecSchema } from "@ginkgolab/chart-spec";
 
 export const serverRoot = defineComponent({
   name: "Root",

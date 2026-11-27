@@ -5,8 +5,8 @@ import {
   mergeToolSets,
   type ActiveSourceSummary,
   type DatasourceManager,
-} from "@ginkgo/datasources";
-import { toAiTools } from "@ginkgo/datasources/adapters/ai";
+} from "@ginkgolab/datasources";
+import { toAiTools } from "@ginkgolab/datasources/adapters/ai";
 import {
   builtinMethodCards,
   createMethodLibrary,
@@ -17,7 +17,7 @@ import type { CoreMessage } from "ai";
 import type {
   AppDeliverableContract,
   AppServerContext,
-} from "@ginkgo/app-sdk";
+} from "@ginkgolab/app-sdk";
 import {
   getUiSpecPlanPrompt,
   getUiSpecSystemPrompt,
@@ -159,7 +159,7 @@ export interface AnalyticsServerDeps {
 /**
  * analytics 应用服务端工厂：宿主组合根（api 路由）注入运行时依赖装配。
  * prompt 三模式分发 / 数据源工具与跨源工具装配 / plan→execute 方法卡交接
- * 全部在应用包内自治完成，编排层（@ginkgo/llm）零 analytics 感知。
+ * 全部在应用包内自治完成，编排层（@ginkgolab/llm）零 analytics 感知。
  */
 export function createAnalyticsServer(deps: AnalyticsServerDeps) {
   const { datasources } = deps;

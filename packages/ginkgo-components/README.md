@@ -1,4 +1,4 @@
-# @ginkgo/components
+# @ginkgolab/components
 
 UiSpec 规范展示组件库：聚合展示组件、分析布局模板、图表注册表、筛选联动总线与容错基础设施，经 `createLibrary` 导出为 `analyticsLibrary`，供应用端及大模型流式渲染器消费。
 
@@ -7,8 +7,8 @@ UiSpec 规范展示组件库：聚合展示组件、分析布局模板、图表�
 - **纯展示与渲染层**：本包是「看板长什么样」的唯一渲染实现，涵盖展示组件、布局模板与容错兜底；不承担数据源取数与 SQL 执行职责（由数据层及服务端物化链路完成）。
 - **解耦设计**：组件不直接依赖应用层全局状态（如 Toast、路由、鉴权 Session 等）。当需要触发应用层行为时，统一通过 action 流（如 `@openuidev/react-lang` 的 `useTriggerAction`）向上派发，保持高内聚与可测试性。
 - **与兄弟包的依赖关系**：
-  - 依赖 `@ginkgo/chart-spec`：引用 `ChartSpec`（维度/指标/图表类型）与 `DashboardSpec` 2.0 状态树规范；
-  - 支撑 `@ginkgo/llm`：本包组件规范与布局能力对应 LLM 侧的组件定义（`serverLibrary`）与 Prompt 知识库；
+  - 依赖 `@ginkgolab/chart-spec`：引用 `ChartSpec`（维度/指标/图表类型）与 `DashboardSpec` 2.0 状态树规范；
+  - 支撑 `@ginkgolab/llm`：本包组件规范与布局能力对应 LLM 侧的组件定义（`serverLibrary`）与 Prompt 知识库；
   - 依赖 `@openuidev/react-lang`：提供 `defineComponent`、`createLibrary`、`Renderer` 等解析与渲染底座。
 
 ---
@@ -60,7 +60,7 @@ UiSpec 规范展示组件库：聚合展示组件、分析布局模板、图表�
 
 ## 共享 UI 原语（ui/）
 
-`src/ui/button.tsx`、`src/ui/dialog.tsx`（经包导出 `@ginkgo/components/ui/button`、`/ui/dialog`）：
+`src/ui/button.tsx`、`src/ui/dialog.tsx`（经包导出 `@ginkgolab/components/ui/button`、`/ui/dialog`）：
 平台级 shadcn 风格基础原语（原宿主 `src/components/ui/*` 下沉至此），宿主与应用包
 统一从此消费——应用包禁止 import 宿主 `@/components/ui/*`。
 
@@ -94,7 +94,7 @@ UiSpec 规范展示组件库：聚合展示组件、分析布局模板、图表�
 
 ### 1. 宽进严出的双层校验策略
 - **流式半成品容错**：在组件库侧，由于 LLM 采用逐 Token 流式输出，中间态常伴随截断的 JSON、非标准数组或非强类型数据。因此渲染侧采用宽松 Schema 接收，并在组件内部使用收敛函数统一清洗（如安全解析字符串化数组、枚举白名单校验、数值兜底）。
-- **服务端强 Schema 约束**：真正的强类型约束部署在 `@ginkgo/llm` 端，用于指导大模型生成标准结构。此策略既保障了模型推理规范，又避免了流式渲染在接收过程中高频抛错。
+- **服务端强 Schema 约束**：真正的强类型约束部署在 `@ginkgolab/llm` 端，用于指导大模型生成标准结构。此策略既保障了模型推理规范，又避免了流式渲染在接收过程中高频抛错。
 
 ### 2. 筛选联动总线（FilterBus）
 - **发布-订阅模型**：通过全局或作用域总线解耦筛选栏与展示图表。`AnalyticsFilterBar` 产生交互时广播筛选变更事件；`SpecChart`、`AnalyticsChart` 及 `DataTable` 订阅该事件并在内部对当前数据进行动态过滤切片，或触发重物化流程。
@@ -116,9 +116,9 @@ UiSpec 规范展示组件库：聚合展示组件、分析布局模板、图表�
   1. 编写独立纯 React 组件与对应的 `defineComponent` 包装；
   2. 使用安全外层包裹以确保故障隔离，Props Schema 保持容错收敛风格；
   3. 在包入口的分类注册表中登记，组件库清单与实况预览目录将自动同步；
-  4. 同步更新 `@ginkgo/llm` 服务端组件定义与 Few-Shot 示例。
+  4. 同步更新 `@ginkgolab/llm` 服务端组件定义与 Few-Shot 示例。
 - **新增图表渲染器**：
-  在图表注册表中按图表类型枚举增加分支并对接组件，确保与 `@ginkgo/chart-spec` 的图表词汇表完全闭合。
+  在图表注册表中按图表类型枚举增加分支并对接组件，确保与 `@ginkgolab/chart-spec` 的图表词汇表完全闭合。
 
 
 ## License

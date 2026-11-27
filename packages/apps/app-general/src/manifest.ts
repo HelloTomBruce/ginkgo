@@ -1,4 +1,4 @@
-import type { AppManifest, AppClientContract } from "@ginkgo/app-sdk";
+import type { AppManifest, AppClientContract } from "@ginkgolab/app-sdk";
 import { ArtifactViewer } from "./client/ArtifactViewer";
 
 export const generalManifest: AppManifest = {
@@ -39,7 +39,7 @@ export const generalClient: AppClientContract = {
       description: "常用指令与探索场景",
     },
   ],
-  // 声明工具的高级通用展示渲染器（L2 @ginkgo/components 驱动）
+  // 声明工具的高级通用展示渲染器（L2 @ginkgolab/components 驱动）
   toolRenderers: [
     {
       toolName: "edit_file",

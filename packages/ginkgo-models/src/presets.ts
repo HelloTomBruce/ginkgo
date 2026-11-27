@@ -1,5 +1,5 @@
 /**
- * @ginkgo/models - Provider 预设与初始配置
+ * @ginkgolab/models - Provider 预设与初始配置
  */
 
 import type { ConfiguredProvider, LlmProviderPreset } from "./types";

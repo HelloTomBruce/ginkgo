@@ -3,7 +3,7 @@ import path from "node:path";
 
 /**
  * 数据源配置模型：专注于结构化数据（数据库连接与分析文件）
- * 彻底纯化，网络/外设 MCP 协议统一由 @ginkgo/harness-core 承接。
+ * 彻底纯化，网络/外设 MCP 协议统一由 @ginkgolab/harness-core 承接。
  */
 
 export interface DbSourceConfig {

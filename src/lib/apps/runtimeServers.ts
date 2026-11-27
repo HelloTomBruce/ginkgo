@@ -3,15 +3,15 @@ import {
   getGeneralTools as generalGetTools,
   dispatchGeneralAction,
   onSessionEnd as generalOnSessionEnd,
-} from "@ginkgo/app-general/server";
+} from "@ginkgolab/app-general/server";
 import {
   getDesignTools as designGetTools,
   dispatchDesignAction,
   DesignService,
   checkDesignHealth,
-} from "@ginkgo/app-design/server";
+} from "@ginkgolab/app-design/server";
 import { appRegistry } from "./registry";
-import type { AppServerContract } from "@ginkgo/app-sdk";
+import type { AppServerContract } from "@ginkgolab/app-sdk";
 
 /**
  * 运行时服务端解析（宿主组合根统一出口）：

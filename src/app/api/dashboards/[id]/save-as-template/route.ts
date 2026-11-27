@@ -1,4 +1,4 @@
-import { dashboardStore, toSummary } from "@ginkgo/app-analytics/server";
+import { dashboardStore, toSummary } from "@ginkgolab/app-analytics/server";
 
 /**
  * POST /api/dashboards/:id/save-as-template — 收藏看板转模板（M3-4）。

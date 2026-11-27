@@ -1,9 +1,9 @@
 import path from "node:path";
 import fs from "node:fs/promises";
 import { z } from "zod";
-import { zodTool } from "@ginkgo/harness-core";
-import { createSandboxTools } from "@ginkgo/sandbox";
-import type { AppServerContext } from "@ginkgo/app-sdk";
+import { zodTool } from "@ginkgolab/harness-core";
+import { createSandboxTools } from "@ginkgolab/sandbox";
+import type { AppServerContext } from "@ginkgolab/app-sdk";
 import { CliBridge } from "./cliBridge";
 
 /**

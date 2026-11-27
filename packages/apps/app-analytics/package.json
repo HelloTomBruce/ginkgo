@@ -1,5 +1,5 @@
 {
-  "name": "@ginkgo/app-analytics",
+  "name": "@ginkgolab/app-analytics",
   "version": "0.1.0",
   "description": "Intelligent Data Analytics app for Ginkgo platform",
   "type": "module",
@@ -49,10 +49,10 @@
   "dependencies": {
     "@clickhouse/client": "^1.12.1",
     "@duckdb/node-api": "2.0.0-r.1",
-    "@ginkgo/app-sdk": "workspace:*",
-    "@ginkgo/chart-spec": "workspace:*",
-    "@ginkgo/components": "workspace:*",
-    "@ginkgo/datasources": "workspace:*",
+    "@ginkgolab/app-sdk": "workspace:*",
+    "@ginkgolab/chart-spec": "workspace:*",
+    "@ginkgolab/components": "workspace:*",
+    "@ginkgolab/datasources": "workspace:*",
     "@openuidev/lang-core": "^0.3.1",
     "@openuidev/react-lang": "^0.3.1",
     "ai": "4.3.19",
@@ -68,7 +68,7 @@
     "react-dom": ">=18"
   },
   "devDependencies": {
-    "@ginkgo/llm": "workspace:*",
+    "@ginkgolab/llm": "workspace:*",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
     "@types/react": "^19",

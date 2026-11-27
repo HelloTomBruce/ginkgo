@@ -15,7 +15,7 @@ import {
   DEFAULT_SUMMARY_MAX_TOKENS,
   type ContextBudget,
   type ProjectionResult,
-} from "@ginkgo/harness-core/context";
+} from "@ginkgolab/harness-core/context";
 
 export {
   CONTEXT_WINDOW_MIN,
@@ -51,7 +51,7 @@ export const PRUNED_PLACEHOLDER = DEFAULT_PRUNED_PLACEHOLDER;
 
 /**
  * 构造发往模型的投影。
- * 委托 @ginkgo/harness-core 的通用 projectMessagesWithPruning 引擎。
+ * 委托 @ginkgolab/harness-core 的通用 projectMessagesWithPruning 引擎。
  */
 export function projectMessages(opts: {
   messages: CoreMessage[];
@@ -68,7 +68,7 @@ export function projectMessages(opts: {
 
 /**
  * 摘要裁剪后的边界清理：
- * 委托 @ginkgo/harness-core 的 trimOrphanToolMessages
+ * 委托 @ginkgolab/harness-core 的 trimOrphanToolMessages
  */
 export function trimAfterSummaryCut(messages: CoreMessage[]): CoreMessage[] {
   return trimOrphanToolMessages(messages);

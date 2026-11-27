@@ -80,7 +80,7 @@
 
 **服务端接缝**（`AppServerContract`）：`buildSystemPrompt` / `getTools` / `needsWorkspace`（会话沙箱注入）/ `requiresDataTools` / `listArtifacts` / `refreshArtifact` / `dispatchAction`（应用自治动作网关）/ `onSessionEnd`（会话终止钩子）；`requiredCapabilities` 按 `KNOWN_APP_CAPABILITIES` 词汇表在组合根校验（未知告警不拦截）；`ctx.mode`（direct/plan/execute）贯穿 prompt 与工具装配——如 plan 模式沙箱与浏览器自动收敛为只读档。
 
-**能力消费**：沙箱工具（`@ginkgo/sandbox`）、浏览器自动化（`@ginkgo/browser`）、数据源网关（datasources）、看板渲染（components + chart-spec）、方法卡（methodology）、`zodTool` 等底座设施（harness-core）。能力包不 import 应用与宿主，经协议层类型解耦。
+**能力消费**：沙箱工具（`@ginkgolab/sandbox`）、浏览器自动化（`@ginkgolab/browser`）、数据源网关（datasources）、看板渲染（components + chart-spec）、方法卡（methodology）、`zodTool` 等底座设施（harness-core）。能力包不 import 应用与宿主，经协议层类型解耦。
 
 ## 新应用接入质量准入清单（Checklist）
 
@@ -137,7 +137,7 @@ pnpm dev        # http://localhost:3006
 - **动态时间宏**：滚动宏（如 `TODAY - 30d`）使周期性看板随时间自动前滑，避免日期死编码
 - **可刷新率约束**：prompt 强制聚合下推 SQL、组件行原样复用查询结果——大多数看板直接命中直取绑定
 - **安全边界**：`kind:"tool"` 查询经**只读白名单**复核后才重放，写语义工具一律拒绝；单查询失败该组件保留旧数据并标「数据过期」，全部失败则整体不落盘
-- **实现**：`@ginkgo/app-analytics/server`（`refreshDashboard` + 物化/重放引擎）+ 宿主薄壳 `POST /api/dashboards/[id]/refresh`
+- **实现**：`@ginkgolab/app-analytics/server`（`refreshDashboard` + 物化/重放引擎）+ 宿主薄壳 `POST /api/dashboards/[id]/refresh`
 
 ## 筛选联动与事件总线（FilterBus）
 
@@ -198,7 +198,7 @@ pnpm dev        # http://localhost:3006
 
 ## 多 Provider 与模型治理体系
 
-底座模型接入已实现同构拆包与极致交互打磨（由 `@ginkgo/models` 全局单一真值驱动）：
+底座模型接入已实现同构拆包与极致交互打磨（由 `@ginkgolab/models` 全局单一真值驱动）：
 
 - **快捷模型切换器（ModelSwitcher）**：输入框左侧支持即打即搜过滤、置顶「最近使用 (Recent Models)」、自动识别思考/推理模型徽标（⚡）、展示模型上下文容量规格，并支持单模型快捷启停过滤。
 - **配置中心与连通性探针（SettingsModal）**：

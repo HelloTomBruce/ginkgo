@@ -1,11 +1,11 @@
-# @ginkgo/sandbox
+# @ginkgolab/sandbox
 
 沙箱工作区能力包：为应用提供会话沙箱内的原子文件/shell 工具集。参照现代编码代理的内核哲学——**模型在后训练阶段已深刻理解编码代理角色，内核只保留最稳定的原语**，文件检索、Git、测试、日志全靠 bash 组合 Unix CLI 完成，不为每类操作造专用工具。
 
 ## 快速使用
 
 ```ts
-import { createSandboxTools, sandboxToolsPromptSection } from "@ginkgo/sandbox";
+import { createSandboxTools, sandboxToolsPromptSection } from "@ginkgolab/sandbox";
 
 // 应用在自己的 getTools 接缝内实例化（sandboxDir 由宿主经 ctx.workspace 注入）
 const tools = createSandboxTools({
@@ -37,7 +37,7 @@ const tools = createSandboxTools({
 ## 工具说明 prompt 片段
 
 ```ts
-import { sandboxToolsPromptSection } from "@ginkgo/sandbox";
+import { sandboxToolsPromptSection } from "@ginkgolab/sandbox";
 
 // 与 createSandboxTools 的 preset/permission 同源拼接进应用 system prompt
 const section = sandboxToolsPromptSection("atomic", "readonly");

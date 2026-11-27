@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import type { DataSourceDescriptor, HealthResult } from "@ginkgo/datasources";
+import type { DataSourceDescriptor, HealthResult } from "@ginkgolab/datasources";
 import { authHeaders } from "@/lib/auth";
 
 /**

@@ -2,8 +2,8 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useChat } from "@ai-sdk/react";
 import { TrendingUp, Bot, Settings, PanelLeft, PanelLeftOpen } from "lucide-react";
-import { resolveContextWindow, estimateMessagesTokens } from "@ginkgo/llm/context";
-import type { AppPresetQuery } from "@ginkgo/app-sdk";
+import { resolveContextWindow, estimateMessagesTokens } from "@ginkgolab/llm/context";
+import type { AppPresetQuery } from "@ginkgolab/app-sdk";
 import { DEFAULT_WELCOME_MESSAGE } from "@/lib/sessionStorage";
 import { upsertMessage } from "@/lib/messages";
 import { useLlmSettings } from "@/hooks/useLlmSettings";
@@ -12,11 +12,11 @@ import { useDashboards, type FavoriteDashboardInput } from "@/hooks/useDashboard
 import { DashboardPreviewModal } from "@/components/chat/DashboardPreviewModal";
 import { WorkspaceErrorBoundary } from "@/components/chat/WorkspaceErrorBoundary";
 // 仅取类型（编译期擦除）
-import type { DashboardRecord } from "@ginkgo/app-analytics/server";
+import type { DashboardRecord } from "@ginkgolab/app-analytics/server";
 import {
   downloadDashboardSnapshot,
   parseDashboardSnapshot,
-} from "@ginkgo/app-analytics/isomorphic";
+} from "@ginkgolab/app-analytics/isomorphic";
 import { ChatSidebar } from "@/components/chat/ChatSidebar";
 import { MessageList } from "@/components/chat/MessageList";
 import { ChatInput } from "@/components/chat/ChatInput";
@@ -26,7 +26,7 @@ import { AppStoreModal } from "@/components/chat/AppStoreModal";
 import { ModelSwitcher } from "@/components/chat/ModelSwitcher";
 import { ReasoningEffortSwitcher } from "@/components/chat/ReasoningEffortSwitcher";
 import { ContextUsageIndicator } from "@/components/chat/ContextUsageIndicator";
-import type { AppCanvasData, ModeEscalationPayload } from "@ginkgo/app-sdk";
+import type { AppCanvasData, ModeEscalationPayload } from "@ginkgolab/app-sdk";
 import { extractUiSpec } from "@/lib/extractUiSpec";
 import { appRegistry, DEFAULT_APP_ID } from "@/lib/apps/registry";
 import { getInitialAppId, saveActiveAppId } from "@/lib/activeAppStorage";
@@ -39,7 +39,7 @@ import {
   isAbortError,
   resolveStreamMeta,
 } from "@/lib/chatStreamDiagnostics";
-import { UiSpecToolProvider } from "@ginkgo/components";
+import { UiSpecToolProvider } from "@ginkgolab/components";
 import { clientTools } from "@/lib/clientTools";
 import { Toaster } from "@/components/Toaster";
 import { toast } from "@/lib/toast";

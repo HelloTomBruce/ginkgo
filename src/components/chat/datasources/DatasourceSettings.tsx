@@ -20,7 +20,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import type { DataSourceDescriptor } from "@ginkgo/datasources";
+import type { DataSourceDescriptor } from "@ginkgolab/datasources";
 import { authHeaders } from "@/lib/auth";
 import { toast } from "@/lib/toast";
 import { useDatasources } from "./useDatasources";

@@ -1,5 +1,5 @@
 /**
- * @ginkgo/models - 模型目录、上下文计算与动态加载
+ * @ginkgolab/models - 模型目录、上下文计算与动态加载
  */
 
 import { LLM_PROVIDER_PRESETS } from "./presets";

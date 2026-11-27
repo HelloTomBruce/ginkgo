@@ -233,7 +233,7 @@ completed 状态从提示词承诺升级为服务端可校验的不变量。
 
 ### 设计
 
-**① 工具输出信封化(改动点在 `@ginkgo/datasources/adapters/ai.ts`,经既有子路径导出):**
+**① 工具输出信封化(改动点在 `@ginkgolab/datasources/adapters/ai.ts`,经既有子路径导出):**
 
 ```ts
 // toAiTools 的 execute 包装:结果文本统一包裹

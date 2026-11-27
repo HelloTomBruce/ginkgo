@@ -1,10 +1,10 @@
-# @ginkgo/chart-spec
+# @ginkgolab/chart-spec
 
 DashboardSpec 2.0 声明式状态树 + ChartSpec 图表语义契约 + RFC 6902 JSON Patch 增量编辑引擎——monorepo 底层的纯 Schema 契约包。
 
 ## 包定位
 
-- **Monorepo 基础契约层**：只定义「看板长什么样、数据怎么取」的封闭词汇表与结构规范，不包含渲染与取数实现。作为纯契约被 `@ginkgo/components`（展示渲染）与 `@ginkgo/llm`（模型生成与提示词约束）直接依赖；自身不依赖任何其他 workspace 包。
+- **Monorepo 基础契约层**：只定义「看板长什么样、数据怎么取」的封闭词汇表与结构规范，不包含渲染与取数实现。作为纯契约被 `@ginkgolab/components`（展示渲染）与 `@ginkgolab/llm`（模型生成与提示词约束）直接依赖；自身不依赖任何其他 workspace 包。
 - **Zod 封闭词汇表驱动**：面向 LLM 输出不可信的场景，所有 Spec 必须经 Zod 封闭词汇表与字段上限约束严格校验后方可进入下游物化与渲染，避免任意表达式注入与不可预期的结构变形。
 - **零膨胀原则**：仅保留 Zod 为唯一运行时依赖，保证类型安全与轻量化。
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { builtinMethodCards } from "../methodology";
-import type { AppPresetQuery } from "@ginkgo/app-sdk";
+import type { AppPresetQuery } from "@ginkgolab/app-sdk";
 
 /**
  * 推荐列表 resolver（AppClientContract.resolvePresetQueries 插槽实现）：

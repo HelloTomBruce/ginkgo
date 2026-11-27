@@ -1,4 +1,4 @@
-import type { AppPackageDefinition } from "@ginkgo/app-sdk";
+import type { AppPackageDefinition } from "@ginkgolab/app-sdk";
 import { analyticsManifest, analyticsClient } from "./manifest";
 
 /**

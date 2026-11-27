@@ -3,12 +3,12 @@ import { defineConfig } from "tsup";
 /**
  * 外部依赖（保持为裸 import，由消费方安装）。
  *
- * 路线 B：`@ginkgo/*` 依赖链已发布，统一 external，不再内联。
+ * 路线 B：`@ginkgolab/*` 依赖链已发布，统一 external，不再内联。
  * 内联的问题：CJS 依赖折进 ESM 产物后会运行时报
  * `Dynamic require of "child_process" is not supported`，且体积翻倍。
  *
  * 数据库/文件驱动（pg、mysql2、@duckdb/node-api、exceljs、@clickhouse/client）
- * 由 `@ginkgo/datasources` 声明；本包只在实际 import 时声明（见 package.json）。
+ * 由 `@ginkgolab/datasources` 声明；本包只在实际 import 时声明（见 package.json）。
  */
 const commonExternal = [
   /^@ginkgo\//,
@@ -20,7 +20,7 @@ const commonExternal = [
   "ai",
   "@openuidev/lang-core",
   "@openuidev/react-lang",
-  "@ginkgo/app-sdk",
+  "@ginkgolab/app-sdk",
   /^use-sync-external-store(\/.*)?$/,
   /^recharts(\/.*)?$/,
   /^@duckdb\/.*/,

@@ -1,4 +1,4 @@
-import type { AppPackageDefinition } from "@ginkgo/app-sdk";
+import type { AppPackageDefinition } from "@ginkgolab/app-sdk";
 import { generalManifest, generalClient } from "./manifest";
 import { buildGeneralSystemPrompt } from "./prompt";
 

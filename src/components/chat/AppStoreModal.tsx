@@ -25,7 +25,7 @@ import {
 import {
   describeAppPermission,
   type AppHealthCheckResult,
-} from "@ginkgo/app-sdk";
+} from "@ginkgolab/app-sdk";
 import { toast } from "@/lib/toast";
 
 export interface AppStoreItem {
@@ -403,7 +403,7 @@ export function AppStoreModal({
               type="text"
               value={installPackageInput}
               onChange={(e) => setInstallPackageInput(e.target.value)}
-              placeholder="输入 npm 包名或本地路径，如 @ginkgo/app-design..."
+              placeholder="输入 npm 包名或本地路径，如 @ginkgolab/app-design..."
               className="flex-1 px-2.5 py-1 rounded-md border border-border bg-card text-foreground placeholder:text-foreground-faint text-xs focus:outline-hidden"
             />
           </div>

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
-import type { AppServerContext } from "@ginkgo/app-sdk";
+import type { AppServerContext } from "@ginkgolab/app-sdk";
 import { createDesignTools, getDesignTools } from "./tools";
 
 describe("createDesignTools", () => {

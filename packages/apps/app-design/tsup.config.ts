@@ -1,7 +1,7 @@
 import { defineConfig } from "tsup";
 
 /**
- * 发布构建（路线 B）：`@ginkgo/*` 依赖链已发布，统一 external——不再内联。
+ * 发布构建（路线 B）：`@ginkgolab/*` 依赖链已发布，统一 external——不再内联。
  *
  * 内联会把 CJS 依赖（harness-core 及其三方包）折进 ESM 产物，运行时报
  * `Dynamic require of "child_process" is not supported`；且体积翻倍。

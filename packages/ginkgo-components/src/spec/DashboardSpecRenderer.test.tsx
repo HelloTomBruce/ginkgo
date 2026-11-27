@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import React from "react";
 import { render, screen, cleanup } from "@testing-library/react";
 import { DashboardSpecRenderer } from "./DashboardSpecRenderer";
-import { applyJsonPatch, type DashboardSpec } from "@ginkgo/chart-spec";
+import { applyJsonPatch, type DashboardSpec } from "@ginkgolab/chart-spec";
 
 afterEach(() => {
   cleanup();

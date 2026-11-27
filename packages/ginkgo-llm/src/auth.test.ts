@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createAnalyzeHandler } from "./handler";
-import { SessionStreamHub, type HarnessEvent } from "@ginkgo/harness-core";
+import { SessionStreamHub, type HarnessEvent } from "@ginkgolab/harness-core";
 import type { AuthContext } from "./handler";
 import { streamText } from "ai";
 

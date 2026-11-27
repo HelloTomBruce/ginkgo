@@ -9,7 +9,7 @@ import {
   DASHBOARD_DSL_MAX,
   type DashboardRecord,
 } from "./dashboardStore";
-import { captureDashboardQueries } from "@ginkgo/app-analytics/isomorphic/dashboardCapture";
+import { captureDashboardQueries } from "@ginkgolab/app-analytics/isomorphic/dashboardCapture";
 
 let dir: string;
 let store: ReturnType<typeof createDashboardStore>;

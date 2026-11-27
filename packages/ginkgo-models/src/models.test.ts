@@ -17,7 +17,7 @@ import {
   createDefaultConfiguredProviders,
 } from "./index";
 
-describe("@ginkgo/models", () => {
+describe("@ginkgolab/models", () => {
   describe("模型标识与归一化", () => {
     it("normalizeModel 支持字符串与配置对象", () => {
       expect(normalizeModel("gpt-4o")).toEqual({ id: "gpt-4o" });

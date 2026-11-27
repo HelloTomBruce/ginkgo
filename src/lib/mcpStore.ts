@@ -3,7 +3,7 @@ import fsSync from "node:fs";
 import {
   MCPClientManager,
   type MCPServerConfig,
-} from "@ginkgo/harness-core/mcp";
+} from "@ginkgolab/harness-core/mcp";
 import { getMcpServersFile, writeJsonAtomic } from "@/lib/storagePaths";
 
 export interface StoredMcpServer extends MCPServerConfig {

@@ -1,7 +1,7 @@
 import { sessionStore, toSummary } from "@/lib/sessionStore";
 import { appRegistry } from "@/lib/apps/registry";
 import { resolveRuntimeServer } from "@/lib/apps/runtimeServers";
-import type { AppSessionDetailProjection } from "@ginkgo/app-sdk";
+import type { AppSessionDetailProjection } from "@ginkgolab/app-sdk";
 
 /**
  * GET /api/sessions/:id — 详情（含 messages 全文，会话切换/恢复用）；不存在 404。

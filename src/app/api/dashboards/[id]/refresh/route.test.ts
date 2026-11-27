@@ -3,13 +3,13 @@
 // Node 22 的 builtinModules 未列 sqlite，jsdom（vite client 环境）无法外置会打包失败
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { POST } from "./route";
-import { dashboardStore, refreshDashboard } from "@ginkgo/app-analytics/server";
-import type { DashboardRecord } from "@ginkgo/app-analytics/server";
+import { dashboardStore, refreshDashboard } from "@ginkgolab/app-analytics/server";
+import type { DashboardRecord } from "@ginkgolab/app-analytics/server";
 
 /** 接缝 mock：路由层只验证协议/状态码/降级映射；重放与落盘由引擎/存储层单测覆盖。
     同一模块说明符只允许一个 vi.mock 块（后者整体覆盖前者），store 与 refresh 合并声明 */
-vi.mock("@ginkgo/app-analytics/server", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@ginkgo/app-analytics/server")>();
+vi.mock("@ginkgolab/app-analytics/server", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@ginkgolab/app-analytics/server")>();
   return {
     ...actual,
     dashboardStore: {

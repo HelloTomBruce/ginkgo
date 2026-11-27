@@ -1,4 +1,4 @@
-import type { AppServerContext } from "@ginkgo/app-sdk";
+import type { AppServerContext } from "@ginkgolab/app-sdk";
 
 export function buildDesignPrompt(ctx: AppServerContext): string {
   const isPlanMode = ctx.mode === "plan";

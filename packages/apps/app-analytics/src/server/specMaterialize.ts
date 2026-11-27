@@ -19,17 +19,17 @@ import {
   type ChartSpec,
   FIELD_RE,
   SOURCE_ID_RE,
-} from "@ginkgo/chart-spec";
+} from "@ginkgolab/chart-spec";
 import {
   type McpConnection,
-} from "@ginkgo/datasources";
-import { parseMcpToolResult } from "@ginkgo/datasources/parseToolResult";
-import { extractQueryRows } from "@ginkgo/app-analytics/isomorphic";
+} from "@ginkgolab/datasources";
+import { parseMcpToolResult } from "@ginkgolab/datasources/parseToolResult";
+import { extractQueryRows } from "@ginkgolab/app-analytics/isomorphic";
 import {
   applyTransform,
   isValidTransformSpec,
   type TransformSpec,
-} from "@ginkgo/app-analytics/isomorphic";
+} from "@ginkgolab/app-analytics/isomorphic";
 
 // ===== 常量与标识符规则 =====
 

@@ -1,4 +1,4 @@
-import { dashboardStore, toSummary, DEFAULT_DASHBOARD_APP_ID } from "@ginkgo/app-analytics/server";
+import { dashboardStore, toSummary, DEFAULT_DASHBOARD_APP_ID } from "@ginkgolab/app-analytics/server";
 import { resolveRuntimeServer } from "@/lib/apps/runtimeServers";
 
 /**

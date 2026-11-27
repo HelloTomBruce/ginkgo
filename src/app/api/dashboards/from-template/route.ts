@@ -1,4 +1,4 @@
-import { handleCreateFromTemplate, dashboardStore } from "@ginkgo/app-analytics/server";
+import { handleCreateFromTemplate, dashboardStore } from "@ginkgolab/app-analytics/server";
 import { datasources } from "@/lib/datasources";
 
 /**

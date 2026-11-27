@@ -1,5 +1,5 @@
 /**
- * @ginkgo/browser - 浏览器能力系统提示词指南
+ * @ginkgolab/browser - 浏览器能力系统提示词指南
  */
 
 import type { BrowserPermissionLevel } from "./types";

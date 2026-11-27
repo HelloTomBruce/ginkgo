@@ -1,12 +1,12 @@
 /**
- * @ginkgo/browser - 核心工具适配与装配层
+ * @ginkgolab/browser - 核心工具适配与装配层
  * 将 dsh-browser-view 的工业级能力无缝转化为 Vercel AI SDK 标准 Tool 集合。
  */
 
 import path from "node:path";
 import { tool, jsonSchema, type Tool } from "ai";
 import { collectToolDefinitions } from "dsh-browser-view/mcp";
-import { toolFailure } from "@ginkgo/app-sdk";
+import { toolFailure } from "@ginkgolab/app-sdk";
 import { buildBrowserPromptSection } from "./prompts";
 import type { BrowserToolsPackage, CreateBrowserToolsOptions } from "./types";
 

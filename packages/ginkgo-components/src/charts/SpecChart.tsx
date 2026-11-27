@@ -4,7 +4,7 @@ import React from "react";
 import { BarChart3 } from "lucide-react";
 import { defineComponent } from "@openuidev/react-lang";
 import { z } from "zod";
-import { parseChartSpec, type ChartSpec } from "@ginkgo/chart-spec";
+import { parseChartSpec, type ChartSpec } from "@ginkgolab/chart-spec";
 import { parseArrayProp } from "../internal/parseProp";
 import { ComponentSafeWrapper } from "../internal/ComponentSafeWrapper";
 import { onFilterChange, useDashboardScope } from "./filterBus";

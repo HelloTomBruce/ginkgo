@@ -11,23 +11,23 @@
 import type {
   DynamicSourceConfig,
   McpConnection,
-} from "@ginkgo/datasources";
-import { assertReadOnlySql } from "@ginkgo/datasources/sqlGuard";
-import { parseMcpToolResult } from "@ginkgo/datasources/parseToolResult";
+} from "@ginkgolab/datasources";
+import { assertReadOnlySql } from "@ginkgolab/datasources/sqlGuard";
+import { parseMcpToolResult } from "@ginkgolab/datasources/parseToolResult";
 import {
   createParser,
   jsonToUiSpec,
   serverLibrary,
-} from "@ginkgo/components/server";
-import { extractQueryRows, rowPropFor } from "@ginkgo/app-analytics/isomorphic";
+} from "@ginkgolab/components/server";
+import { extractQueryRows, rowPropFor } from "@ginkgolab/app-analytics/isomorphic";
 import { materializeSpecRows } from "./specMaterialize";
-import { parseChartSpec, type ChartSpec } from "@ginkgo/chart-spec";
+import { parseChartSpec, type ChartSpec } from "@ginkgolab/chart-spec";
 import {
   applyTransform,
   isValidTransformSpec,
   type TransformSpec,
-} from "@ginkgo/app-analytics/isomorphic";
-import { evaluateTimeMacros } from "@ginkgo/app-analytics/isomorphic";
+} from "@ginkgolab/app-analytics/isomorphic";
+import { evaluateTimeMacros } from "@ginkgolab/app-analytics/isomorphic";
 import type { DashboardRecord, DashboardQuery } from "./dashboardStore";
 
 /** 数据源网关（datasource manager 的结构子集，便于测试注入） */

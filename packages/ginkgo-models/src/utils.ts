@@ -1,5 +1,5 @@
 /**
- * @ginkgo/models - 纯工具函数
+ * @ginkgolab/models - 纯工具函数
  */
 
 import {

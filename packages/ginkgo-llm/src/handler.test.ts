@@ -6,7 +6,7 @@ import {
   InMemoryCostLedger,
   type ModelPricingTable,
   type MCPClientManager,
-} from "@ginkgo/harness-core";
+} from "@ginkgolab/harness-core";
 import { streamText, generateText, InvalidToolArgumentsError, NoSuchToolError } from "ai";
 import fs from "node:fs";
 import os from "node:os";

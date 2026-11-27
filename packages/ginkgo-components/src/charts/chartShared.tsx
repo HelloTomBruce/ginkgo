@@ -7,7 +7,7 @@
  * - resolveSeries：系列解析 + 数值字段自动提取（原 AnalyticsChart 内联逻辑抽出）
  */
 import { parseArrayProp } from "../internal/parseProp";
-import type { ChartSpec, MeasureFormat } from "@ginkgo/chart-spec";
+import type { ChartSpec, MeasureFormat } from "@ginkgolab/chart-spec";
 
 /** 条件样式/辅助线的语义色类型（与 chart-spec 契约同源） */
 export type SemanticColorName = NonNullable<

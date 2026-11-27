@@ -1,2 +1,2 @@
-export * from "@ginkgo/app-sdk";
-export type { AppPackageDefinition as AppDefinition } from "@ginkgo/app-sdk";
+export * from "@ginkgolab/app-sdk";
+export type { AppPackageDefinition as AppDefinition } from "@ginkgolab/app-sdk";

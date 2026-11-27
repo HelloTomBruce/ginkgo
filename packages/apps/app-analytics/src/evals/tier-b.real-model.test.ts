@@ -3,7 +3,7 @@
  * WS-6 Tier B:真实模型行为评估(手动/夜间,需要真实 API Key)。
  *
  * 运行方式:在环境变量提供 OPENAI_API_KEY(/ LLM_API_KEY)后执行
- *   pnpm --filter @ginkgo/app-analytics exec vitest run src/evals/tier-b.real-model.test.ts
+ *   pnpm --filter @ginkgolab/app-analytics exec vitest run src/evals/tier-b.real-model.test.ts
  * 无 Key 时整组自动跳过(CI 默认不跑)。
  *
  * 固定夹具:文件数据源(CSV→DuckDB)加载确定性渠道营销数据,问题集固定,
@@ -17,16 +17,16 @@ import { describe, it, expect } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { createAnalyzeHandler } from "@ginkgo/llm";
-import { serverLibrary, createParser } from "@ginkgo/components/server";
+import { createAnalyzeHandler } from "@ginkgolab/llm";
+import { serverLibrary, createParser } from "@ginkgolab/components/server";
 import {
   createAnalyticsServer,
   analyticsDeliverable,
   analyticsNoApiKeyMessage,
   buildAnalyticsSummaryPrompt,
 } from "../server";
-import { createDatasourceManager, type DatasourceManager } from "@ginkgo/datasources";
-import type { HarnessEvent, TelemetrySink } from "@ginkgo/harness-core";
+import { createDatasourceManager, type DatasourceManager } from "@ginkgolab/datasources";
+import type { HarnessEvent, TelemetrySink } from "@ginkgolab/harness-core";
 
 const hasApiKey = Boolean(process.env.OPENAI_API_KEY || process.env.LLM_API_KEY);
 

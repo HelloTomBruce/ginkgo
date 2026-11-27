@@ -55,7 +55,7 @@
 | R5 | `AppPermission` 死契约 | 按路线图 P1 落地 default-deny 工具门禁 + 安装时权限确认 | 4 |
 | R6 | 配置写入非原子 + 解析失败静默回落 | `writeJsonAtomic` + 损坏备份 + 抛错（读降级/写拒绝）+ 互斥锁 | 3（已完成） |
 | R7 | 卸载没有卸载 | 补 `unregister` + `npm uninstall` + 客户端错误提示 | 4 |
-| R8 | ~~依赖归属错位~~ → **打包耦合（初版判断有误，已纠正）** | 保留 5 个驱动声明并在 `tsup.config.ts` 固化原因注释；真正收敛需停止内联 `@ginkgo/datasources`，归入发布里程碑 | 1（已完成） |
+| R8 | ~~依赖归属错位~~ → **打包耦合（初版判断有误，已纠正）** | 保留 5 个驱动声明并在 `tsup.config.ts` 固化原因注释；真正收敛需停止内联 `@ginkgolab/datasources`，归入发布里程碑 | 1（已完成） |
 | R9 | 三包发包形态不一致 | 随 C1 一并回退，`app-general` 保持唯一形态 | 1 |
 | R10 | `dist/` 被 ignore 但无构建前置 | 随 C1 消除依赖；同时补 `pnpm verify` 聚合门禁 | 1 |
 
@@ -83,7 +83,7 @@
 
 ### D1 · 撤回预打包，恢复源码出口
 
-**决策**：三个包（app-analytics / app-design / ginkgo-app-sdk）恢复 `exports → ./src/*.ts`、`private: true`，删除 `main`/`types`/`files`/`publishConfig`/`build`/`prepublishOnly`、两个 `tsup.config.ts` 与 `tsup` devDependency。**仅保留**有价值且与打包无关的依赖修正（`@ginkgo/llm` → devDependencies；移除 R8 的 5 个重复依赖）。
+**决策**：三个包（app-analytics / app-design / ginkgo-app-sdk）恢复 `exports → ./src/*.ts`、`private: true`，删除 `main`/`types`/`files`/`publishConfig`/`build`/`prepublishOnly`、两个 `tsup.config.ts` 与 `tsup` devDependency。**仅保留**有价值且与打包无关的依赖修正（`@ginkgolab/llm` → devDependencies；移除 R8 的 5 个重复依赖）。
 
 **实测证据**（本次评审已跑）：
 
@@ -92,7 +92,7 @@
 | 现状（`dist` + `"use client"` banner） | ❌ `Failed to collect configuration for /api/apps/install` → `registry.ts:79 TypeError: Cannot read properties of undefined (reading 'id')` |
 | 去掉 banner 重建 | ❌ 106 个 `PureComponent into a React Server Component`（bundle 内 recharts） |
 | 恢复源码出口 | ✅ `✓ Compiled successfully` + `✓ Generating static pages (23/23)` |
-| 隐藏 `dist` 后 `pnpm typecheck` | ❌ 20+ 处 `TS2307: Cannot find module '@ginkgo/app-sdk'` |
+| 隐藏 `dist` 后 `pnpm typecheck` | ❌ 20+ 处 `TS2307: Cannot find module '@ginkgolab/app-sdk'` |
 
 **根因**：`src/client/**` 的每个组件文件自己带 `"use client"`（15 处），Next 按**文件级**划定边界，`manifest.ts` / `index.ts` 保持服务端可用。tsup 把所有模块拍平成一个文件并把 banner 提到文件头，边界粒度丢失——要么整包变客户端（服务端拿不到 manifest），要么整包变服务端（recharts 进 RSC 报错）。两者都不可行。
 
@@ -114,7 +114,7 @@
 
 该形态同时满足两点：仓库内构建不依赖 `dist`（全新克隆可 verify），发布意图不被删除。**遗留待验证项**：`publishConfig` 对 `main`/`exports` 的覆盖语义需在发布里程碑用 `npm pack --dry-run` 实测确认（`publishConfig` 官方保证覆盖的字段有限，社区有将其用于 `main`/`exports` 的先例，但未经本仓库验证）。若实测不成立，届时切换为 `prepublishOnly` 脚本改写 `package.json` 的方案。
 
-三包（app-analytics / app-design / ginkgo-app-sdk）统一为该形态；`@ginkgo/app-general` 保持 `private: true` + 源码出口（未纳入发布范围）。
+三包（app-analytics / app-design / ginkgo-app-sdk）统一为该形态；`@ginkgolab/app-general` 保持 `private: true` + 源码出口（未纳入发布范围）。
 
 ### D2 · 存储根：默认零变更，显式配置才搬家
 
@@ -205,7 +205,7 @@ loadAppsConfig()              // 磁盘为唯一事实来源
 
 | 文件 | 动作 |
 |---|---|
-| `packages/apps/app-analytics/package.json` | 恢复 `exports → ./src/*.ts`；删 `main`/`types`/`files`/`publishConfig`/`scripts.build`/`prepublishOnly`；`private: true`；**移除** `pg`/`mysql2`/`exceljs`/`@duckdb/node-api`/`@clickhouse/client`（R8）；`@ginkgo/llm` 保持 devDependencies；删 `react`/`react-dom` peer + `peerDependenciesMeta`；删 `tsup` devDep |
+| `packages/apps/app-analytics/package.json` | 恢复 `exports → ./src/*.ts`；删 `main`/`types`/`files`/`publishConfig`/`scripts.build`/`prepublishOnly`；`private: true`；**移除** `pg`/`mysql2`/`exceljs`/`@duckdb/node-api`/`@clickhouse/client`（R8）；`@ginkgolab/llm` 保持 devDependencies；删 `react`/`react-dom` peer + `peerDependenciesMeta`；删 `tsup` devDep |
 | `packages/apps/app-design/package.json` | 同上（恢复三出口、删 build/publish/peer/tsup） |
 | `packages/ginkgo-app-sdk/package.json` | 恢复 `exports → ./src/index.ts`、`private: true`、删 build/publish/peer/tsup |
 | `packages/apps/app-analytics/tsup.config.ts` | 删除（O7 随之消失） |
@@ -216,7 +216,7 @@ loadAppsConfig()              // 磁盘为唯一事实来源
 
 **要点**
 
-- R8 的关键判断：这 5 个驱动**只被** `packages/ginkgo-datasources/src/connectors/**` import（已 grep 确认），app-analytics 通过 `workspace:*` 传递依赖即可。未来若发布 app-analytics，正确表达是 `@ginkgo/datasources` 用 `peerDependenciesMeta.optional`，而非在应用包重复声明。
+- R8 的关键判断：这 5 个驱动**只被** `packages/ginkgo-datasources/src/connectors/**` import（已 grep 确认），app-analytics 通过 `workspace:*` 传递依赖即可。未来若发布 app-analytics，正确表达是 `@ginkgolab/datasources` 用 `peerDependenciesMeta.optional`，而非在应用包重复声明。
 - R9 由本 Phase 自然消除：三包全部回归源码出口，与 `app-general` 形态一致。
 - R10 由本 Phase 自然消除：不再依赖 `dist`，全新克隆无需预构建。
 
@@ -463,7 +463,7 @@ pnpm verify    # lint && typecheck && test && build —— 四门禁全绿
 ```
 1. 全新克隆 → pnpm install → pnpm verify            ✅ 无预构建需求
 2. pnpm dev → 打开应用中心 → 停用 design             ✅ 侧栏消失、无法调用其动作
-3. 开启 GINKGO_ALLOW_APP_INSTALL=1 装 @ginkgo/app-analytics（本地 tarball）
+3. 开启 GINKGO_ALLOW_APP_INSTALL=1 装 @ginkgolab/app-analytics（本地 tarball）
 4. 重启 dev server                                  ✅ 应用仍在、状态保持
 5. 卸载                                             ✅ 目录/配置/注册表三处清空
 6. 关闭开关后 curl install                           ✅ 403
@@ -545,7 +545,7 @@ Phase 0 (0.5h) ─→ Phase 1 (2h) ─→ Phase 2 (4h) ─→ Phase 3 (6h)
 
 | 原则 | 本方案如何满足 |
 |---|---|
-| 契约先行 | `AppPermission` 映射、`lifecycle` 四钩子、`manifest.package` 全部落在 `@ginkgo/app-sdk`；宿主不新增应用领域分支 |
+| 契约先行 | `AppPermission` 映射、`lifecycle` 四钩子、`manifest.package` 全部落在 `@ginkgolab/app-sdk`；宿主不新增应用领域分支 |
 | 组合根唯一 | 路径注入、健康探测、权限门禁的装配点集中在 `runtimeServers.ts` / `analyze/route.ts` / 新增 `bootstrap.ts`；`src/lib/apps/**` 不出现 `claude-*`、`zentao` 等字样 |
 | 语义声明化 | 能力探测由应用 `onHealthCheck` 声明；权限由 manifest 数据声明，宿主只查表 |
 | API 薄壳化 | install/toggle/delete 路由保持「拆包 → 委托 → 状态码映射」；校验逻辑下沉 `appSpec.ts` / `packageManager.ts` |
@@ -561,7 +561,7 @@ Phase 0 (0.5h) ─→ Phase 1 (2h) ─→ Phase 2 (4h) ─→ Phase 3 (6h)
 
 > **预打包发布（独立里程碑）**：当前仓库形态下应用包以源码 `.ts` 出口被 Next 直接编译，靠**文件级** `"use client"` 维持 RSC 边界。要对外发布 npm 包，必须满足三条：①构建为**不打包**的 ESM（保留每文件指令）；②消费方配置 `transpilePackages`；③CI 增加 `next build` 冒烟。任何"整包 bundle + 全局 banner"的方案都会破坏边界（评审已实测：单包 bundle 时服务端 `manifest` 为 undefined，去掉 banner 则 recharts 进入 RSC 报 106 错）。
 >
-> 同里程碑需一并决策：**`@ginkgo/datasources` 是否继续内联进 `dist/server.js`**。当前内联（`noExternal`）迫使 app-analytics 显式声明 5 个数据库/文件驱动；改为正常 npm 依赖可消除该耦合。另需用 `npm pack --dry-run` 验证 `publishConfig` 对 `main`/`exports` 的覆盖是否生效。
+> 同里程碑需一并决策：**`@ginkgolab/datasources` 是否继续内联进 `dist/server.js`**。当前内联（`noExternal`）迫使 app-analytics 显式声明 5 个数据库/文件驱动；改为正常 npm 依赖可消除该耦合。另需用 `npm pack --dry-run` 验证 `publishConfig` 对 `main`/`exports` 的覆盖是否生效。
 
 ### 8.2 AGENTS.md 增补建议
 
@@ -584,7 +584,7 @@ Phase 0 (0.5h) ─→ Phase 1 (2h) ─→ Phase 2 (4h) ─→ Phase 3 (6h)
 
 ### 9.1 Phase 1 偏差记录
 
-1. **R8 判断纠正**：初版评审称 5 个数据库驱动是"依赖归属错位、应删除"。实测 `dist/server.js` 确认 `@ginkgo/datasources` 被 `noExternal` 内联，而 `pg`/`mysql2`/`@duckdb/node-api`/`exceljs`/`@clickhouse/client` 被外部化为裸 import——因此发布产物运行时**确实需要**这些依赖，本包声明它们是正确的。已改为在 `packages/apps/app-analytics/tsup.config.ts` 顶部写入原因注释，防止后人"顺手清理"引入发布期故障。真正的收敛方式是停止内联 `datasources`，属于发布里程碑决策。
+1. **R8 判断纠正**：初版评审称 5 个数据库驱动是"依赖归属错位、应删除"。实测 `dist/server.js` 确认 `@ginkgolab/datasources` 被 `noExternal` 内联，而 `pg`/`mysql2`/`@duckdb/node-api`/`exceljs`/`@clickhouse/client` 被外部化为裸 import——因此发布产物运行时**确实需要**这些依赖，本包声明它们是正确的。已改为在 `packages/apps/app-analytics/tsup.config.ts` 顶部写入原因注释，防止后人"顺手清理"引入发布期故障。真正的收敛方式是停止内联 `datasources`，属于发布里程碑决策。
 2. **D1 实施形态调整**：未完全删除 `tsup`/`publishConfig`，改为源码出口 + 发布期覆盖（见 §2 D1「实际实施形态」）。原因是工作树已由他人做出该方向的部分修复且验证可用，承接比推翻更省风险。
 3. **O7 处理方式变更**：因 `tsup` 保留，`fixNodeSqliteImport` 未被删除，而是消除静默失败（读失败/写失败分别 `console.warn`，并补注释说明这是打包器兜底补丁、打包器修正后应删除）。
 
@@ -594,7 +594,7 @@ Phase 0 (0.5h) ─→ Phase 1 (2h) ─→ Phase 2 (4h) ─→ Phase 3 (6h)
 |---|---|---|
 | **宿主（3 处）** | `mcpStore.ts`、`datasources.ts`、`workspaceResolver.ts` | 直接改用 `storagePaths` 命名访问器；`mcpStore`/`workspaceStore` 的写路径同时切到 `writeJsonAtomic` |
 | **应用包（5 处）** | app-analytics：`dashboardStore`、`methodologyLoader`、`crossSource`、`server/index`（certified queries）；app-general / app-design 的 workspace 兜底 | analytics 新增 `src/server/storage.ts`（读 `GINKGO_HOME`/`GINKGO_RESOLVED_HOME`，惰性求值），4 处全部改为惰性解析；general/design 各加 `resolveWorkspaceRoot()` 兜底对齐（`ctx.workspace` 仍是首选） |
-| **能力包（2 处）** | `@ginkgo/llm` tokenizer 映射；`@ginkgo/harness-core` 的 `ModelPricingTable` / `NdjsonCostLedger` 默认值 | llm 新增 `tokenizerConfigPath` 选项，宿主注入；pricing 由宿主注入 `new ModelPricingTable(真实路径)`。harness-core 的两处默认值**保留 cwd**——它们是「库默认、调用方须显式传路径」的语义，且宿主从不构造 `HarnessCore`，不构成分裂存储 |
+| **能力包（2 处）** | `@ginkgolab/llm` tokenizer 映射；`@ginkgolab/harness-core` 的 `ModelPricingTable` / `NdjsonCostLedger` 默认值 | llm 新增 `tokenizerConfigPath` 选项，宿主注入；pricing 由宿主注入 `new ModelPricingTable(真实路径)`。harness-core 的两处默认值**保留 cwd**——它们是「库默认、调用方须显式传路径」的语义，且宿主从不构造 `HarnessCore`，不构成分裂存储 |
 | **非存储（2 处）** | app-design `cliBridge` 的 `node_modules/.bin` 寻址 | 不是存储路径，保留（跨平台问题另见 Phase 5 O4） |
 
 **关键实现细节**：`getGinkgoHomeDir()` 解析后把结果写入 `GINKGO_RESOLVED_HOME`。能力包/应用包禁止 import 宿主模块，统一经该环境变量读取同一存储根；`src/instrumentation.ts` 在服务端启动期最先触发解析，保证包内模块级单例不会先回退到 cwd。
@@ -677,7 +677,7 @@ Phase 0 (0.5h) ─→ Phase 1 (2h) ─→ Phase 2 (4h) ─→ Phase 3 (6h)
 
 **改法**（契约先行，而非搬家）：
 
-1. `@ginkgo/app-sdk` 新增 `PLATFORM_PROVIDED_CAPABILITIES`（平台自身提供的能力清单）与 `AppServerContract.healthCheck`；
+1. `@ginkgolab/app-sdk` 新增 `PLATFORM_PROVIDED_CAPABILITIES`（平台自身提供的能力清单）与 `AppServerContract.healthCheck`；
 2. 宿主 `checkAppHealth` 只剩两条规则：平台能力 → 就绪；非平台能力 → **只认应用声明的 `healthCheck`**，缺失时给出的是「请在应用侧实现健康检查」，而不是宿主编造的安装命令；
 3. design 应用新增 `src/server/health.ts`（`checkDesignHealth`），缺失项与修复指引由应用给出，经组合根 `runtimeServers` 注入；
 4. 第三方应用若在 `manifest.lifecycle.onHealthCheck` 实现，注册时适配到 `server.healthCheck`——运行时只有一条调用路径（避免两套机制并存）；
@@ -852,7 +852,7 @@ Phase 3/4 的 e2e 覆盖）。**教训与上一节同源**：本地运行环境�
 |---|---|---|---|
 | 1 | TypeScript Check | `import "../../../config/apps.json"`（gitignore 的运行期目录） | 种子移进代码 `defaultAppsConfig.ts` + 新增守卫 |
 | 2 | Unit Tests | 测试夹具用 ESM，`createRequire` 在 vitest vm 里对 `.mjs` 按 CJS 解析 | 夹具改 CJS；ESM 通道用运行时探测后跳过 |
-| 3 | Unit Tests | 两个服务端用例默认跑在 jsdom，间接引入 `@ginkgo/datasources` → Vite 8 拒绝打包 `node:sqlite` | 加 `// @vitest-environment node`（它们本就是服务端测试） |
+| 3 | Unit Tests | 两个服务端用例默认跑在 jsdom，间接引入 `@ginkgolab/datasources` → Vite 8 拒绝打包 `node:sqlite` | 加 `// @vitest-environment node`（它们本就是服务端测试） |
 | 4 | Unit Tests | 两个真实浏览器动作用例 5s 默认超时（本地 1.6s / CI 更慢） | 用例超时放宽到 20s + 底层连接超时收窄到 3s |
 
 **共同教训**：本地环境的"额外能力"会系统性地掩盖可移植性问题——本地有 `config/`、

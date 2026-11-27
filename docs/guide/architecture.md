@@ -63,7 +63,7 @@ Ginkgo 是**智能体应用平台**（不是单一定制产品）。分层与依
 
 **服务端接缝**（`AppServerContract`）：`buildSystemPrompt` / `getTools` / `needsWorkspace` / `requiresDataTools` / `listArtifacts` / `refreshArtifact`；`ctx.mode`（direct/plan/execute）贯穿 prompt 与工具装配——plan 模式沙箱自动收敛为只读档。
 
-**能力消费**：沙箱工具（`@ginkgo/sandbox`）、浏览器自动化（`@ginkgo/browser`）、数据源网关（datasources）、看板渲染（components + chart-spec）、方法卡（methodology）、`zodTool` 等底座设施（harness-core）。能力包不 import 应用与宿主，经协议层类型解耦。
+**能力消费**：沙箱工具（`@ginkgolab/sandbox`）、浏览器自动化（`@ginkgolab/browser`）、数据源网关（datasources）、看板渲染（components + chart-spec）、方法卡（methodology）、`zodTool` 等底座设施（harness-core）。能力包不 import 应用与宿主，经协议层类型解耦。
 
 ## 渲染管线
 

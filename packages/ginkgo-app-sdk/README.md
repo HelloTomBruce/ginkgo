@@ -1,11 +1,11 @@
-# @ginkgo/app-sdk
+# @ginkgolab/app-sdk
 
 **L0 协议层**：Ginkgo 平台的应用契约唯一事实来源。定义应用包的完整形态（manifest、客户端插槽、服务端接缝、产物协议、消息区扩展），宿主与应用双向只依赖本包类型，互不感知。
 
 ## 快速使用
 
 ```ts
-import { defineApp } from "@ginkgo/app-sdk";
+import { defineApp } from "@ginkgolab/app-sdk";
 
 export const myAppPackage = defineApp({
   manifest: {
@@ -68,7 +68,7 @@ export const myAppPackage = defineApp({
 | 字段 | 说明 |
 | --- | --- |
 | `buildSystemPrompt(ctx)` | 应用自治 system prompt（ctx.mode 三模式分发） |
-| `getTools(ctx)` | 应用自治工具装配（建议消费 `@ginkgo/sandbox` 等能力包） |
+| `getTools(ctx)` | 应用自治工具装配（建议消费 `@ginkgolab/sandbox` 等能力包） |
 | `needsWorkspace` | 声明需要会话沙箱 → 宿主解析并注入 `ctx.workspace` |
 | `requiresDataTools` / `requiredCapabilities` | 数据工具挂载 / 平台能力依赖声明 |
 | `listArtifacts` / `refreshArtifact` | 产物协议（平台产物面板与零 LLM 刷新） |

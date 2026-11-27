@@ -1,14 +1,14 @@
-# @ginkgo/models
+# @ginkgolab/models
 
 Ginkgo 智能体应用平台**统一模型与 Provider 规范契约、预设与同构元数据层**。
 
 ## 设计定位
 
 在 LLM 应用中，模型配置与 Provider 字典往往容易在前端客户端（设置中心、输入框切换器）和服务端调度层（Harness 编排、探针校验、上下文预算）之间产生重复定义与依赖倒置：
-- 若将模型契约放入 `@ginkgo/llm`，会导致前端引入 Node.js/Redis/Agent 编排等重依赖，破坏前后端隔离；
+- 若将模型契约放入 `@ginkgolab/llm`，会导致前端引入 Node.js/Redis/Agent 编排等重依赖，破坏前后端隔离；
 - 若散落在宿主前端代码中，服务端与 Harness 底座又无法共享真值，造成模型上下文计算、推理模型嗅探等逻辑割裂。
 
-`@ginkgo/models` 作为独立的 **L2 纯同构核心包**，严格遵循：
+`@ginkgolab/models` 作为独立的 **L2 纯同构核心包**，严格遵循：
 - **零外部第三方依赖（Zero-Dependency）**：仅采用纯 TypeScript 实现，无任何 runtime 依赖；
 - **全同构支持**：兼顾 Node.js、Edge 与现代浏览器环境，安全访问 `localStorage` 与 `globalThis`；
 - **单一事实来源（Single Source of Truth）**：全平台唯一的 Provider 预设目录、模型归一化、思考/推理判定与上下文容量规范。
@@ -47,7 +47,7 @@ Ginkgo 智能体应用平台**统一模型与 Provider 规范契约、预设与�
 ## 安装与使用
 
 ```bash
-pnpm add @ginkgo/models
+pnpm add @ginkgolab/models
 ```
 
 ### 示例代码
@@ -58,7 +58,7 @@ import {
   resolveContextWindow,
   findPreset,
   dedupeModels,
-} from "@ginkgo/models";
+} from "@ginkgolab/models";
 
 // 1. 判断是否为思考/推理模型
 isReasoningModel("deepseek-reasoner"); // true
@@ -85,7 +85,7 @@ const merged = dedupeModels([
 ## 测试与质量
 
 ```bash
-pnpm --filter @ginkgo/models test
+pnpm --filter @ginkgolab/models test
 ```
 全量单测覆盖类型归一化、推理判断、上下文窗口计算、去重合并与动态目录拉取转换。
 

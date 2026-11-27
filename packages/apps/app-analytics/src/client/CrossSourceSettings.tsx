@@ -11,7 +11,7 @@ import {
   RefreshCw,
   Trash2,
 } from "lucide-react";
-import type { AppSettingsSectionProps } from "@ginkgo/app-sdk";
+import type { AppSettingsSectionProps } from "@ginkgolab/app-sdk";
 import { Hint } from "./ui/hint";
 
 /** 查看契约：GET /api/cross-source 的 mappings 项（见 server/crossSourceRoutes） */

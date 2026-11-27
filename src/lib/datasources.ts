@@ -1,7 +1,7 @@
 import {
   createDatasourceManager,
   type DatasourceManager,
-} from "@ginkgo/datasources";
+} from "@ginkgolab/datasources";
 import {
   getDatasourcesConfigFile,
   getFileStorageDir,

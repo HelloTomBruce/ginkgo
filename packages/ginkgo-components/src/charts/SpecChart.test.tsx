@@ -3,7 +3,7 @@ import { describe, it, expect, afterEach, vi } from "vitest";
 import { render, screen, cleanup, fireEvent, waitFor } from "@testing-library/react";
 import { SpecChart } from "./SpecChart";
 import { emitFilterChange } from "./filterBus";
-import type { ChartSpec } from "@ginkgo/chart-spec";
+import type { ChartSpec } from "@ginkgolab/chart-spec";
 
 // jsdom 下 recharts 需要显式尺寸才会渲染表面与图例（与 registry.test 同法）
 vi.mock("recharts", async (importOriginal) => {

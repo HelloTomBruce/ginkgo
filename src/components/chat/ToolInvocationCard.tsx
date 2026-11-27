@@ -8,10 +8,10 @@ import type {
   AppToolApprovalRule,
   ModeEscalationChangeItem,
   ModeEscalationPayload,
-} from "@ginkgo/app-sdk";
-import { isToolFailureLike } from "@ginkgo/app-sdk";
-import { CopyButton } from "@ginkgo/components/ui/copy-button";
-import { DiffViewer, ApprovalCard, ModeApprovalCard, TerminalViewer } from "@ginkgo/components";
+} from "@ginkgolab/app-sdk";
+import { isToolFailureLike } from "@ginkgolab/app-sdk";
+import { CopyButton } from "@ginkgolab/components/ui/copy-button";
+import { DiffViewer, ApprovalCard, ModeApprovalCard, TerminalViewer } from "@ginkgolab/components";
 
 export interface ToolInvocationCardProps {
   tool: ToolInvocationState;

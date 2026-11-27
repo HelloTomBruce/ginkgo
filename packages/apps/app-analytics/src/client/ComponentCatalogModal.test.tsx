@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, cleanup, fireEvent } from "@testing-library/react";
 import { ComponentCatalogModal } from "./ComponentCatalogModal";
-import { componentCatalog, componentDemos } from "@ginkgo/components";
+import { componentCatalog, componentDemos } from "@ginkgolab/components";
 
 const FLAT_NAMES = componentCatalog.flatMap((g) => g.components.map((c) => c.name));
 

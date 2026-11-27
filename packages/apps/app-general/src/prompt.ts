@@ -1,7 +1,7 @@
-import type { AppServerContext } from "@ginkgo/app-sdk";
+import type { AppServerContext } from "@ginkgolab/app-sdk";
 // 子入口 import：主入口 re-export 了含 Node 内置模块的 tools，会污染客户端 bundle
-import { sandboxToolsPromptSection } from "@ginkgo/sandbox/prompt";
-import { buildBrowserPromptSection } from "@ginkgo/browser/prompts";
+import { sandboxToolsPromptSection } from "@ginkgolab/sandbox/prompt";
+import { buildBrowserPromptSection } from "@ginkgolab/browser/prompts";
 
 /**
  * 通用智能助手自治的系统提示词

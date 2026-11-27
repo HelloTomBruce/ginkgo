@@ -1,8 +1,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { AppWorkspaceContext } from "@ginkgo/app-sdk";
+import type { AppWorkspaceContext } from "@ginkgolab/app-sdk";
 // 路径守卫唯一实现在 ginkgo-sandbox 能力包（沙箱语义的所有者），宿主 re-export
-import { assertSafePath } from "@ginkgo/sandbox";
+import { assertSafePath } from "@ginkgolab/sandbox";
 import { sessionStore } from "@/lib/sessionStore";
 import { workspaceStore } from "@/lib/workspaceStore";
 import { getWorkspacesRootDir } from "@/lib/storagePaths";

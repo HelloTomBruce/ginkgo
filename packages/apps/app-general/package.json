@@ -1,5 +1,5 @@
 {
-  "name": "@ginkgo/app-general",
+  "name": "@ginkgolab/app-general",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -12,10 +12,10 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@ginkgo/app-sdk": "workspace:*",
-    "@ginkgo/browser": "workspace:*",
-    "@ginkgo/components": "workspace:*",
-    "@ginkgo/sandbox": "workspace:*",
+    "@ginkgolab/app-sdk": "workspace:*",
+    "@ginkgolab/browser": "workspace:*",
+    "@ginkgolab/components": "workspace:*",
+    "@ginkgolab/sandbox": "workspace:*",
     "lucide-react": "^1.73.0"
   },
   "devDependencies": {

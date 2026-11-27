@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { AppPackageManager } from "@/lib/apps/packageManager";
 import { validatePackageSpec } from "@/lib/apps/appSpec";
-import type { AppPermission } from "@ginkgo/app-sdk";
+import type { AppPermission } from "@ginkgolab/app-sdk";
 
 /**
  * 动态安装应用包（高危：`npm install` + 模块求值 = 任意代码执行）。

@@ -16,7 +16,7 @@ import {
   RotateCcw,
   X,
 } from "lucide-react";
-import type { AppSessionDetailProjection, AppWorkspaceMessage } from "@ginkgo/app-sdk";
+import type { AppSessionDetailProjection, AppWorkspaceMessage } from "@ginkgolab/app-sdk";
 import {
   buildRawFileUrl,
   extractBrowserOperations,

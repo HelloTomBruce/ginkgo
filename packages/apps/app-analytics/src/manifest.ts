@@ -1,6 +1,6 @@
-import type { AppClientContract } from "@ginkgo/app-sdk";
+import type { AppClientContract } from "@ginkgolab/app-sdk";
 import { analyticsManifest } from "./manifestMeta";
-import { analyticsLibrary } from "@ginkgo/components";
+import { analyticsLibrary } from "@ginkgolab/components";
 import { AnalysisCanvas } from "./client/AnalysisCanvas";
 import { SourcePicker } from "./client/SourcePicker";
 import { resolveMethodologyPresets } from "./client/methodologyPresets";

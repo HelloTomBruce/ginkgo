@@ -23,7 +23,7 @@ import {
   Boxes,
   ExternalLink,
 } from "lucide-react";
-import type { AppSettingsSectionSpec } from "@ginkgo/app-sdk";
+import type { AppSettingsSectionSpec } from "@ginkgolab/app-sdk";
 import {
   Select,
   SelectContent,

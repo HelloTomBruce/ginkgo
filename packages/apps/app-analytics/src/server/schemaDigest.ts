@@ -2,7 +2,7 @@ import {
   renderCardForPrompt,
   type ActiveSourceSummary,
   type DatasourceManager,
-} from "@ginkgo/datasources";
+} from "@ginkgolab/datasources";
 
 /** 全部启用源结构卡注入 prompt 的总量预算（与单卡 2KB 预算配套，快照测试守护） */
 export const SCHEMA_DIGEST_TOTAL_BUDGET_BYTES = 8 * 1024;

@@ -1,4 +1,4 @@
-# @ginkgo/app-design
+# @ginkgolab/app-design
 
 **体验设计工坊（Ginkgo Design Studio）**：基于 `claude-design`、`claude-design-system` 与 `claude-data` CLI 打造的专业 UI/UX 体验设计、响应式多画板视觉原型、Design Tokens 规范管理与代码合规审计应用。
 

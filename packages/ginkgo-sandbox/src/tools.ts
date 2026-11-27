@@ -4,7 +4,7 @@ import { exec } from "node:child_process";
 import { promisify } from "node:util";
 import { z } from "zod";
 import type { CoreTool } from "ai";
-import { zodTool } from "@ginkgo/harness-core";
+import { zodTool } from "@ginkgolab/harness-core";
 
 const execAsync = promisify(exec);
 

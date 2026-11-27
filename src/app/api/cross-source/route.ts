@@ -2,7 +2,7 @@ import { io } from "next/cache";
 import {
   handleListCrossSource,
   handleReplaceCrossSource,
-} from "@ginkgo/app-analytics/server";
+} from "@ginkgolab/app-analytics/server";
 import { datasources } from "@/lib/datasources";
 
 /**

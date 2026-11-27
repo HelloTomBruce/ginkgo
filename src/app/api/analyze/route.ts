@@ -1,10 +1,10 @@
-import { createAnalyzeHandler } from "@ginkgo/llm";
+import { createAnalyzeHandler } from "@ginkgolab/llm";
 import {
   compositeSink,
   createConsoleSink,
   createMetricsSink,
   ModelPricingTable,
-} from "@ginkgo/harness-core";
+} from "@ginkgolab/harness-core";
 import { getMcpManager, loadMcpServers } from "@/lib/mcpStore";
 import { sessionStore } from "@/lib/sessionStore";
 import { appRegistry, DEFAULT_APP_ID } from "@/lib/apps/registry";
@@ -13,7 +13,7 @@ import {
   analyticsDeliverable,
   analyticsNoApiKeyMessage,
   buildAnalyticsSummaryPrompt,
-} from "@ginkgo/app-analytics/server";
+} from "@ginkgolab/app-analytics/server";
 import { resolveRuntimeServer } from "@/lib/apps/runtimeServers";
 import { analyticsServer } from "@/lib/analyticsRuntime";
 import { resolveWorkspaceForSession } from "@/lib/workspaceResolver";
@@ -38,11 +38,11 @@ const devModeAuthenticate = async () => ({ principal: "anon" });
 export const metrics = createMetricsSink();
 
 /**
- * 薄壳：LLM 编排在 @ginkgo/llm（领域中立），应用 prompt/工具全部经
+ * 薄壳：LLM 编排在 @ginkgolab/llm（领域中立），应用 prompt/工具全部经
  * resolveAppPrompt / resolveAppTools 接缝注入（无 appId 特判：general 的沙箱
  * 工具在应用包内消费 ginkgo-sandbox 能力包装配，宿主只按 needsWorkspace 声明
  * 注入会话沙箱）；analytics 的深度编排（schema 摘要、方法卡、认证口径、跨源
- * 工具）在 @ginkgo/app-analytics 服务端自治。
+ * 工具）在 @ginkgolab/app-analytics 服务端自治。
  * telemetry：NDJSON console（可 grep）+ 进程内指标聚合双写；接 OTel 时换
  * compositeSink(console, otelSink, metrics.sink)。
  */

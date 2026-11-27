@@ -1,5 +1,5 @@
 {
-  "name": "@ginkgo/app-sdk",
+  "name": "@ginkgolab/app-sdk",
   "version": "0.1.0",
   "description": "SDK and lifecycle contracts for Ginkgo agent application ecosystem",
   "type": "module",

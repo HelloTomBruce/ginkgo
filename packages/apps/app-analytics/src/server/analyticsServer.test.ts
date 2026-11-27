@@ -1,6 +1,6 @@
 // @vitest-environment node
 /**
- * analytics 服务端工厂回归：从编排层（@ginkgo/llm）下沉到应用包的
+ * analytics 服务端工厂回归：从编排层（@ginkgolab/llm）下沉到应用包的
  * 领域行为——数据源工具装配与降级、跨源工具注册、三模式 prompt 分派、
  * schema 卡注入、认证口径注入、plan→execute 方法卡交接（pendingPlan）。
  */
@@ -11,9 +11,9 @@ import path from "node:path";
 import { createAnalyticsServer } from "./index";
 import { reloadCrossSourceMap } from "./crossSource";
 import { extractPlanMethods } from "./planExtractor";
-import { createDatasourceManager, type DatasourceManager } from "@ginkgo/datasources";
+import { createDatasourceManager, type DatasourceManager } from "@ginkgolab/datasources";
 import { createMethodLibrary, builtinMethodCards } from "../methodology";
-import type { AppServerContext } from "@ginkgo/app-sdk";
+import type { AppServerContext } from "@ginkgolab/app-sdk";
 
 /** 真 manager 读临时配置文件；tools(IO) 覆写为 mock——等价迁移前 handler.test 的 fixture 语义 */
 async function makeFakeManager(
@@ -283,7 +283,7 @@ describe("createAnalyticsServer.buildSystemPrompt", () => {
         },
       ])
     );
-    const { CertifiedQueryStore } = await import("@ginkgo/datasources");
+    const { CertifiedQueryStore } = await import("@ginkgolab/datasources");
     const certifiedStore = new CertifiedQueryStore({ configPath: certifiedFile });
     const server = createAnalyticsServer({ datasources: manager, certifiedStore });
 

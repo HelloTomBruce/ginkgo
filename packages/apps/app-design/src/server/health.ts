@@ -1,4 +1,4 @@
-import type { AppHealthCheckResult } from "@ginkgo/app-sdk";
+import type { AppHealthCheckResult } from "@ginkgolab/app-sdk";
 import { probeCliAvailable } from "./cliBridge";
 
 /**

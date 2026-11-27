@@ -169,37 +169,37 @@ importers:
       '@ai-sdk/react':
         specifier: 1.1.20
         version: 1.1.20(react@19.3.1)(zod@4.6.7)
-      '@ginkgo/app-analytics':
+      '@ginkgolab/app-analytics':
         specifier: workspace:*
         version: link:packages/apps/app-analytics
-      '@ginkgo/app-design':
+      '@ginkgolab/app-design':
         specifier: workspace:*
         version: link:packages/apps/app-design
-      '@ginkgo/app-general':
+      '@ginkgolab/app-general':
         specifier: workspace:*
         version: link:packages/apps/app-general
-      '@ginkgo/app-sdk':
+      '@ginkgolab/app-sdk':
         specifier: workspace:*
         version: link:packages/ginkgo-app-sdk
-      '@ginkgo/chart-spec':
+      '@ginkgolab/chart-spec':
         specifier: workspace:*
         version: link:packages/ginkgo-chart-spec
-      '@ginkgo/components':
+      '@ginkgolab/components':
         specifier: workspace:*
         version: link:packages/ginkgo-components
-      '@ginkgo/datasources':
+      '@ginkgolab/datasources':
         specifier: workspace:*
         version: link:packages/ginkgo-datasources
-      '@ginkgo/harness-core':
+      '@ginkgolab/harness-core':
         specifier: workspace:*
         version: link:packages/ginkgo-harness-core
-      '@ginkgo/llm':
+      '@ginkgolab/llm':
         specifier: workspace:*
         version: link:packages/ginkgo-llm
-      '@ginkgo/models':
+      '@ginkgolab/models':
         specifier: workspace:*
         version: link:packages/ginkgo-models
-      '@ginkgo/sandbox':
+      '@ginkgolab/sandbox':
         specifier: workspace:*
         version: link:packages/ginkgo-sandbox
       '@openuidev/react-lang':
@@ -293,16 +293,16 @@ importers:
       '@duckdb/node-api':
         specifier: 2.0.0-r.1
         version: 2.0.0-r.1
-      '@ginkgo/app-sdk':
+      '@ginkgolab/app-sdk':
         specifier: workspace:*
         version: link:../../ginkgo-app-sdk
-      '@ginkgo/chart-spec':
+      '@ginkgolab/chart-spec':
         specifier: workspace:*
         version: link:../../ginkgo-chart-spec
-      '@ginkgo/components':
+      '@ginkgolab/components':
         specifier: workspace:*
         version: link:../../ginkgo-components
-      '@ginkgo/datasources':
+      '@ginkgolab/datasources':
         specifier: workspace:*
         version: link:../../ginkgo-datasources
       '@openuidev/lang-core':
@@ -339,7 +339,7 @@ importers:
         specifier: ^3.10.1
         version: 3.10.1(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react-is@17.0.2)(react@19.3.1)(redux@5.0.1)
     devDependencies:
-      '@ginkgo/llm':
+      '@ginkgolab/llm':
         specifier: workspace:*
         version: link:../../ginkgo-llm
       '@testing-library/jest-dom':
@@ -375,13 +375,13 @@ importers:
 
   packages/apps/app-design:
     dependencies:
-      '@ginkgo/app-sdk':
+      '@ginkgolab/app-sdk':
         specifier: workspace:*
         version: link:../../ginkgo-app-sdk
-      '@ginkgo/harness-core':
+      '@ginkgolab/harness-core':
         specifier: workspace:*
         version: link:../../ginkgo-harness-core
-      '@ginkgo/sandbox':
+      '@ginkgolab/sandbox':
         specifier: workspace:*
         version: link:../../ginkgo-sandbox
       lucide-react:
@@ -418,16 +418,16 @@ importers:
 
   packages/apps/app-general:
     dependencies:
-      '@ginkgo/app-sdk':
+      '@ginkgolab/app-sdk':
         specifier: workspace:*
         version: link:../../ginkgo-app-sdk
-      '@ginkgo/browser':
+      '@ginkgolab/browser':
         specifier: workspace:*
         version: link:../../ginkgo-browser
-      '@ginkgo/components':
+      '@ginkgolab/components':
         specifier: workspace:*
         version: link:../../ginkgo-components
-      '@ginkgo/sandbox':
+      '@ginkgolab/sandbox':
         specifier: workspace:*
         version: link:../../ginkgo-sandbox
       lucide-react:
@@ -468,7 +468,7 @@ importers:
 
   packages/ginkgo-browser:
     dependencies:
-      '@ginkgo/app-sdk':
+      '@ginkgolab/app-sdk':
         specifier: workspace:*
         version: link:../ginkgo-app-sdk
       ai:
@@ -509,7 +509,7 @@ importers:
 
   packages/ginkgo-components:
     dependencies:
-      '@ginkgo/chart-spec':
+      '@ginkgolab/chart-spec':
         specifier: workspace:*
         version: link:../ginkgo-chart-spec
       '@openuidev/lang-core':
@@ -607,7 +607,7 @@ importers:
       '@ai-sdk/openai':
         specifier: 1.3.24
         version: 1.3.24(zod@4.6.7)
-      '@ginkgo/models':
+      '@ginkgolab/models':
         specifier: workspace:*
         version: link:../ginkgo-models
       '@modelcontextprotocol/sdk':
@@ -647,10 +647,10 @@ importers:
 
   packages/ginkgo-llm:
     dependencies:
-      '@ginkgo/app-sdk':
+      '@ginkgolab/app-sdk':
         specifier: workspace:*
         version: link:../ginkgo-app-sdk
-      '@ginkgo/harness-core':
+      '@ginkgolab/harness-core':
         specifier: workspace:*
         version: link:../ginkgo-harness-core
       ai:
@@ -702,7 +702,7 @@ importers:
 
   packages/ginkgo-sandbox:
     dependencies:
-      '@ginkgo/harness-core':
+      '@ginkgolab/harness-core':
         specifier: workspace:*
         version: link:../ginkgo-harness-core
       ai:

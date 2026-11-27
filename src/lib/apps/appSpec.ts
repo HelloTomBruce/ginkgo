@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
-import type { AppPackageDefinition } from "@ginkgo/app-sdk";
+import type { AppPackageDefinition } from "@ginkgolab/app-sdk";
 import { getPluginsDir } from "@/lib/storagePaths";
 
 /**

@@ -7,7 +7,7 @@ import {
   CHART_COLORS,
   thresholdCellFill,
 } from "./chartShared";
-import { CHART_TYPES, type ChartType } from "@ginkgo/chart-spec";
+import { CHART_TYPES, type ChartType } from "@ginkgolab/chart-spec";
 
 // jsdom 下 ResponsiveContainer 尺寸为 0，recharts 不渲染图例/系列文本：
 // 测试环境将其替换为固定尺寸直通容器（仅影响本文件，生产代码不变）

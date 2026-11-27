@@ -57,7 +57,7 @@ export interface SessionContextMeta {
   summaryUptoMessageId?: string;
   /**
    * 应用编排待执行状态（应用经 sessions 通道读写，如分析方法卡 id 列表；
-   * 与 @ginkgo/llm 的 SessionContextMeta 同构）
+   * 与 @ginkgolab/llm 的 SessionContextMeta 同构）
    */
   pendingPlan?: { methodIds: string[] } & Record<string, unknown>;
   [key: string]: unknown;

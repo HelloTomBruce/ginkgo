@@ -1,5 +1,5 @@
 {
-  "name": "@ginkgo/sandbox",
+  "name": "@ginkgolab/sandbox",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -14,7 +14,7 @@
     "prepublishOnly": "pnpm build"
   },
   "dependencies": {
-    "@ginkgo/harness-core": "workspace:*",
+    "@ginkgolab/harness-core": "workspace:*",
     "ai": "4.3.19",
     "zod": "4.6.7"
   },

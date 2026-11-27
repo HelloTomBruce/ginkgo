@@ -18,8 +18,8 @@ import {
   createParser,
   jsonToUiSpec,
   serverLibrary,
-} from "@ginkgo/components/server";
-import { SOURCE_ID_RE } from "@ginkgo/chart-spec";
+} from "@ginkgolab/components/server";
+import { SOURCE_ID_RE } from "@ginkgolab/chart-spec";
 import type { DashboardRecord, DashboardQuery } from "./dashboardStore";
 
 /** 目标源信息（DynamicSourceConfig 的结构子集，便于测试注入） */

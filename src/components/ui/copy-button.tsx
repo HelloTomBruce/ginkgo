@@ -1,1 +1,1 @@
-export * from "@ginkgo/components/ui/copy-button";
+export * from "@ginkgolab/components/ui/copy-button";

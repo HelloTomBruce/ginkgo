@@ -1,4 +1,4 @@
-# @ginkgo/app-analytics · 智能数据分析师
+# @ginkgolab/app-analytics · 智能数据分析师
 
 Ginkgo 平台的**深度应用**范例：多源数据探查、指标计算、深度归因与敏捷可视化大屏。
 完整接入规范见 [docs/app-integration-guide.md](../../../docs/app-integration-guide.md)。

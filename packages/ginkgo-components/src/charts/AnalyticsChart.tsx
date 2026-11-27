@@ -25,7 +25,7 @@ import { z } from "zod";
 import { ComponentSafeWrapper } from "../internal/ComponentSafeWrapper";
 import { onFilterChange, useDashboardScope } from "./filterBus";
 import { SpecChart } from "./SpecChart";
-import type { ChartSpec } from "@ginkgo/chart-spec";
+import type { ChartSpec } from "@ginkgolab/chart-spec";
 
 // SeriesConfig 类型由 chartShared 统一导出（保持既有 import 路径兼容）
 export type { SeriesConfig };

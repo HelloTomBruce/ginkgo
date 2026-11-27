@@ -5,8 +5,8 @@ import { defineConfig } from "tsup";
  * 仅编译本包源码。开发期仍由消费方直接吃 `src`（见 package.json exports）。
  */
 const external = [
-    "@ginkgo/app-sdk",
-    "@ginkgo/harness-core",
+    "@ginkgolab/app-sdk",
+    "@ginkgolab/harness-core",
     "ai",
     "zod",
     /^@ginkgo\//,

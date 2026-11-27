@@ -1,7 +1,7 @@
 import type { ComponentType } from "react";
 
 /**
- * @ginkgo/app-sdk
+ * @ginkgolab/app-sdk
  *
  * UiSpec 平台应用规范协议底座。
  * 遵循「外层暴露插槽 (Slots)，应用声明扩展点；能力归属于应用」的设计哲学。
@@ -55,7 +55,7 @@ export interface AppManifest {
   icon: string;
   /** 版本号 */
   version?: string;
-  /** 关联 npm 包名称，如 "@ginkgo/app-design" */
+  /** 关联 npm 包名称，如 "@ginkgolab/app-design" */
   package?: string;
   /** 业务分类，如 "数据智能", "通用助理", "研发效能" */
   category?: string;

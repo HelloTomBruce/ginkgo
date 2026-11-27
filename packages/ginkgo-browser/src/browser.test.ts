@@ -5,7 +5,7 @@ import {
   buildBrowserPromptSection,
 } from "./index";
 
-describe("@ginkgo/browser 浏览器能力包", () => {
+describe("@ginkgolab/browser 浏览器能力包", () => {
   const defaultOptions = {
     sessionId: "test-session-123",
     workspaceDir: "/tmp/ginkgo-test-workspace",

@@ -33,7 +33,7 @@ import type { AppDefinition } from "@/types/app";
 import type { WorkspaceRecord } from "@/lib/workspaceStore";
 import { toast } from "@/lib/toast";
 // 仅取类型（编译期擦除）
-import type { DashboardSummary } from "@ginkgo/app-analytics/server";
+import type { DashboardSummary } from "@ginkgolab/app-analytics/server";
 import { SessionListItem, formatSessionTime } from "./SessionListItem";
 import { AppSwitcher } from "./AppSwitcher";
 import { GinkgoLogo } from "@/components/GinkgoLogo";

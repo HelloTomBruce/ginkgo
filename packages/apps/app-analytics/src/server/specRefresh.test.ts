@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, it, expect } from "vitest";
 import { refreshDashboard, type RefreshGateway } from "./dashboardRefresh";
-import type { DynamicSourceConfig, McpConnection } from "@ginkgo/datasources";
+import type { DynamicSourceConfig, McpConnection } from "@ginkgolab/datasources";
 import type { DashboardRecord } from "./dashboardStore";
 
 /**

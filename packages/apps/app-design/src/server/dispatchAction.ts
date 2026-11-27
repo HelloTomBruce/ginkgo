@@ -1,4 +1,4 @@
-import type { AppActionContext } from "@ginkgo/app-sdk";
+import type { AppActionContext } from "@ginkgolab/app-sdk";
 import { DesignService } from "./designService";
 
 /**

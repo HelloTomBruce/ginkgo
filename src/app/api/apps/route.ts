@@ -7,7 +7,7 @@ import {
   getAppsBootstrapReport,
 } from "@/lib/apps/bootstrap";
 import { checkAppHealth } from "@/lib/apps/capabilityNegotiator";
-import type { AppHealthCheckResult } from "@ginkgo/app-sdk";
+import type { AppHealthCheckResult } from "@ginkgolab/app-sdk";
 
 /** 应用未注册且无明确失败原因时的兜底说明 */
 const NOT_REGISTERED_HINT =

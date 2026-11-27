@@ -1,13 +1,13 @@
 import { describe, it, expect, vi } from "vitest";
 import { AppRegistry, appRegistry, DEFAULT_APP_ID } from "./registry";
-import type { AppPackageDefinition } from "@ginkgo/app-sdk";
+import type { AppPackageDefinition } from "@ginkgolab/app-sdk";
 
 describe("AppRegistry 配置驱动注册表", () => {
   it("初始化时按传入的配置正确加载应用与排序", () => {
     const registry = new AppRegistry({
       apps: [
-        { id: "design", package: "@ginkgo/app-design", enabled: true },
-        { id: "analytics", package: "@ginkgo/app-analytics", enabled: true },
+        { id: "design", package: "@ginkgolab/app-design", enabled: true },
+        { id: "analytics", package: "@ginkgolab/app-analytics", enabled: true },
       ],
     });
 

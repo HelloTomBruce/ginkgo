@@ -1,5 +1,5 @@
 {
-  "name": "@ginkgo/browser",
+  "name": "@ginkgolab/browser",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -13,7 +13,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@ginkgo/app-sdk": "workspace:*",
+    "@ginkgolab/app-sdk": "workspace:*",
     "ai": "4.3.19",
     "dsh-browser-view": "^0.13.0",
     "zod": "4.6.7"

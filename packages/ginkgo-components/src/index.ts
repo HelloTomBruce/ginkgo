@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * @ginkgo/components —— UiSpec 规范展示组件库
+ * @ginkgolab/components —— UiSpec 规范展示组件库
  *
  * 分类目录（新增组件时按职能放入对应目录，文件内同时持有
  * React 组件与其 defineComponent 定义，最后在下方 CATALOG_GROUPS
@@ -21,7 +21,7 @@
  */
 
 import { createLibrary } from "@openuidev/react-lang";
-import { CHART_TYPES } from "@ginkgo/chart-spec";
+import { CHART_TYPES } from "@ginkgolab/chart-spec";
 
 // layout
 import { RootComponent } from "./layout/Root";

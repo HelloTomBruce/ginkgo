@@ -3,7 +3,7 @@ import {
   type AppHealthCheckContext,
   type AppHealthCheckResult,
   type AppPackageDefinition,
-} from "@ginkgo/app-sdk";
+} from "@ginkgolab/app-sdk";
 import { getConfigDir } from "@/lib/storagePaths";
 import { resolveRuntimeServer } from "./runtimeServers";
 

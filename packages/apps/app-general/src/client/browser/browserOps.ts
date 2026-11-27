@@ -13,7 +13,7 @@ import {
   Layers,
   AlertCircle,
 } from "lucide-react";
-import type { AppWorkspaceMessage, AppWorkspaceToolInvocation } from "@ginkgo/app-sdk";
+import type { AppWorkspaceMessage, AppWorkspaceToolInvocation } from "@ginkgolab/app-sdk";
 
 export interface BrowserOperationItem {
   id: string;

@@ -9,8 +9,8 @@ import {
   Printer,
   Layers,
 } from "lucide-react";
-import { UiSpecRenderer, DashboardScopeProvider } from "@ginkgo/components";
-import type { AppWorkspaceProps } from "@ginkgo/app-sdk";
+import { UiSpecRenderer, DashboardScopeProvider } from "@ginkgolab/components";
+import type { AppWorkspaceProps } from "@ginkgolab/app-sdk";
 import { Hint } from "./ui/hint";
 
 export interface CanvasDashboardData {

@@ -1,6 +1,6 @@
 /**
- * @ginkgo/harness-core - providers/registry
- * 统一委托并 re-export 来自 `@ginkgo/models` 的真值元数据与方法。
+ * @ginkgolab/harness-core - providers/registry
+ * 统一委托并 re-export 来自 `@ginkgolab/models` 的真值元数据与方法。
  */
 
 export {
@@ -14,4 +14,4 @@ export {
   ModelCatalogRegistry,
   defaultModelCatalog,
   resolveContextWindow,
-} from "@ginkgo/models";
+} from "@ginkgolab/models";

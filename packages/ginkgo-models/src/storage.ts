@@ -1,5 +1,5 @@
 /**
- * @ginkgo/models - 内部共享：localStorage 安全访问
+ * @ginkgolab/models - 内部共享：localStorage 安全访问
  * SSR / Node 环境返回 null（调用方自行降级）。仅供包内模块复用，不对外导出。
  */
 

@@ -7,7 +7,7 @@ import { appRegistry } from "./registry";
 import { loadAppsConfig } from "./appConfigServer";
 import { resetStorageRootCacheForTesting } from "@/lib/storagePaths";
 import { resetAppsBootstrapForTesting } from "./bootstrap";
-import type { AppPackageDefinition } from "@ginkgo/app-sdk";
+import type { AppPackageDefinition } from "@ginkgolab/app-sdk";
 
 /**
  * npm 调用全部拦在进程外：测试不得真的跑 npm（慢且会污染本机缓存）。

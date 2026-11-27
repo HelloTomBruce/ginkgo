@@ -10,7 +10,7 @@ import {
 import { appRegistry } from "./registry";
 import { resetStorageRootCacheForTesting } from "@/lib/storagePaths";
 import { resetAppsBootstrapForTesting } from "./bootstrap";
-import type { AppPackageDefinition } from "@ginkgo/app-sdk";
+import type { AppPackageDefinition } from "@ginkgolab/app-sdk";
 
 /**
  * 宿主零领域语义的硬约束：

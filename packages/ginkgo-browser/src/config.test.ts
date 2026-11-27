@@ -25,7 +25,7 @@ vi.mock("dsh-browser-view/mcp", () => ({
 
 import { createBrowserTools } from "./tools";
 
-describe("@ginkgo/browser 装配配置派生", () => {
+describe("@ginkgolab/browser 装配配置派生", () => {
   it("产物目录基于 workspaceDir 以平台路径分隔符派生，并绑定会话作用域", () => {
     const workspaceDir = path.join(path.sep, "tmp", "gb-cfg");
     createBrowserTools({ sessionId: "s_cfg", workspaceDir });

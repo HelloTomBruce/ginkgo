@@ -16,7 +16,7 @@ import {
   SessionStreamHub,
   RedisTaskStore,
   InMemoryTaskStore,
-} from "@ginkgo/harness-core";
+} from "@ginkgolab/harness-core";
 import { createAnalyzeHandler } from "./handler";
 
 const encoder = new TextEncoder();
