@@ -21,6 +21,10 @@ export function getModelId(m: ModelDefinition): string {
 /**
  * 判断指定模型是否为深度思考 / 推理模型（如 o1, o3-mini, deepseek-reasoner, QwQ 等）
  * 支持通过 ModelConfig.supportsReasoning 显式指定，未显式指定时按模型 ID 规则智能推断
+ *
+ * Claude 3.7+ / 4 系（sonnet-4、opus-4、haiku-4、claude-3-7）支持 Extended Thinking 混合推理，
+ * 视为推理模型（anthropic 协议下映射 thinking budget；温度锁定为 thinking 模式的协议要求）。
+ * 3.5 及更早的 claude 不支持 extended thinking，不在此列。
  */
 export function isReasoningModel(
   model: string | ModelConfig | null | undefined,
@@ -43,7 +47,13 @@ export function isReasoningModel(
     lower.includes("-r1") ||
     lower.endsWith("/r1") ||
     lower.includes("qwq") ||
-    lower.includes("thinking")
+    lower.includes("thinking") ||
+    lower.includes("claude-3-7") ||
+    lower.includes("claude-3.7") ||
+    lower.includes("claude-sonnet-4") ||
+    lower.includes("claude-opus-4") ||
+    lower.includes("claude-haiku-4") ||
+    lower.includes("claude-4")
   );
 }
 

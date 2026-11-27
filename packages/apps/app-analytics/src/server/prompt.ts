@@ -97,7 +97,9 @@ function dataAccessSection(activeSources: ActiveSourceSummary[]): string {
     const tools =
       src.tools.length > 0 ? src.tools.join(", ") : "tools discovered dynamically";
     const readOnlyNote =
-      src.kind === "db" ? " Database sources are strictly read-only." : "";
+      src.kind === "db"
+        ? " Database sources are strictly read-only. If the user asks to write or modify data, state this read-only scope and offer what you CAN do instead (deeper analysis, export-ready SQL, dashboard visualization)."
+        : "";
     lines.push(
       `${n++}. **${src.name}** (${kindLabel}):\n   - ${tools}.${readOnlyNote}`
     );
@@ -254,11 +256,46 @@ ${methodDetails}
 The user confirmed a plan referencing the method(s) above — follow their detailed guidance strictly when executing.`;
 }
 
+/**
+ * 正反对比范例段（Contrastive Few-Shot）：直指两类高频错误的 bad/good 对照——
+ * 匿名内联组件导致看板不可刷新、手改/舍入查询行破坏数据口径。
+ * 反例 DSL 刻意含错误写法，因此放在 preamble 内嵌代码块而非 examples 数组
+ * （后者受 promptExamples.test.ts 全量解析校验，必须是合法 DSL）。
+ */
+export function contrastiveExamplesSection(): string {
+  return `
+
+## Contrastive Examples (learn from these common mistakes):
+<contrastive_case id="1" topic="Refreshable data binding">
+INCORRECT — components inlined anonymously into layout zones (dashboard can never be refreshed later, since server-side refresh re-runs named variables only):
+\`\`\`ginkgo
+report = ReportLayout("CAC 复盘", "2026 Q3", [MetricCard("CAC", "$19.9", "+4.8%", "up", "")], [AnalyticsChart("bar", "渠道成交", "", "channel", [{"channel":"TikTok","deals":186},{"channel":"Google","deals":152}])], [], [])
+\`\`\`
+Why wrong: (a) anonymous inline components cannot be re-bound on refresh; (b) "$19.9" was rounded by hand instead of copying the query result verbatim.
+CORRECT — every data component assigned to a named variable, rows copied from the SQL result unchanged:
+\`\`\`ginkgo
+cac_card = MetricCard("平均 CAC", "$19.87", "+4.8%", "up", "环比 Q2")
+channel_chart = AnalyticsChart("bar", "各渠道成交", "Q3 逐月", "month", [{"month":"7月","deals":48},{"month":"8月","deals":61}])
+report = ReportLayout("CAC 复盘", "2026 Q3", [cac_card], [channel_chart], [], [])
+\`\`\`
+</contrastive_case>
+<contrastive_case id="2" topic="Data fidelity">
+INCORRECT — rounding values, appending unit suffixes to numbers, or inventing/plausible-looking rows the query never returned:
+\`\`\`ginkgo
+t = DataTable("渠道明细", cols, [{"channel":"TikTok","cac":16.2},{"channel":"Google","cac":19.5},{"channel":"Bing","cac":21.0}])
+\`\`\`
+Why wrong: "Bing" row was fabricated (not in the tool result) and numeric cells were edited — this silently corrupts certified metrics.
+CORRECT — reuse the tool result rows verbatim (same column keys, same values, no extra computed columns); say so explicitly when truncating to a subset.
+</contrastive_case>`;
+}
+
 export function getUiSpecSystemPrompt(
   activeSources: ActiveSourceSummary[],
   schemaDigest?: string,
   methodIndex?: string,
-  certifiedMatches?: CertifiedQueryMatch[]
+  certifiedMatches?: CertifiedQueryMatch[],
+  /** 布局范例（动态少样本）：按问法经 selectLayoutExamples 选择；缺省全量注入（向后兼容） */
+  layoutExamples?: string[]
 ): string {
   const preamble = `You are an expert Data Analyst & Engineering BI Assistant powered by Generative UI and MCP (Model Context Protocol).
 
@@ -303,14 +340,15 @@ Dashboards whose components bind directly to query results can be refreshed late
    - For A/B tests or comparing two entities (channels/repos/members/versions) side by side -> **ComparisonLayout** (labeled left/right panels + verdict)
    - For system health / stability inspections / alert triage -> **MonitoringLayout**
    - For user lifecycle retention / cohort decay -> **CohortRetentionLayout**
-   - For simple single-topic answers -> place components directly under Root`;
+   - For simple single-topic answers -> place components directly under Root
+${contrastiveExamplesSection()}`;
 
   const promptOptions = {
     preamble,
     additionalRules: [
       "Substantive Delivery: After executing MCP tools, provide a complete and informative answer. Generate a full ```ginkgo ... ``` dashboard for analytical/dashboard requests; for factual queries or tool lookups, a clear markdown response (with optional compact visual) is appropriate. Do NOT finish early with just punctuation or empty text.",
       "Single Output Enforcement (单一交付物原则): In any response turn, produce EXACTLY ONE Markdown analytical report and EXACTLY ONE ```ginkgo ... ``` code block. NEVER duplicate, copy-paste, or repeat the report or code block in the same turn. If you call `finish_task` after already writing the report and dashboard, your post-finish response must be a brief 1-sentence sign-off, NOT a repetition of the report.",
-      "Dual-Termination Contract (双重终态): Once data is retrieved and the full markdown analysis + ```ginkgo ... ``` code block is output, you may conclude naturally (finishReason=stop), OR call `finish_task` to explicitly mark task closure. Calling `finish_task` does NOT replace the final analysis if not yet output; but if you have ALREADY output the report and dashboard, do NOT re-generate or duplicate them after calling finish_task. Never stop inside a thinking block or with empty content.",
+      "Dual-Termination Contract (双重终态): Once data is retrieved and the full markdown analysis + ```ginkgo ... ``` code block is output, you may conclude naturally (finishReason=stop), OR call `finish_task` to explicitly mark task closure. Calling `finish_task` does NOT replace the final analysis if not yet output; but if you have ALREADY output the report and dashboard, do NOT re-generate or duplicate them after calling finish_task. Never stop inside a thinking block or with empty content — always close with a complete substantive answer (or a brief 1-sentence sign-off after finish_task).",
       "Reasoning Token Budget: In thinking models (e.g. GLM, DeepSeek), keep <think> reasoning concise and focused on tool call strategy and logical checks. Do NOT write full analysis reports or draft extensive markdown inside <think> — reserve the vast majority of the output token budget for the final markdown report and ```ginkgo code block.",
       "Compact Dashboard Code: Keep the dashboard visual structure clean and focused (typically 1-2 core charts, key metrics, and actionable insights). Avoid overly bloated datasets or sprawling multi-level layouts in the DSL to guarantee the output completes and closes within the token budget.",
       "Valid dashboard DSL: When visual components or dashboards are produced, they MUST contain valid ginkgo-lang code inside ```ginkgo and ``` code fence.",
@@ -323,7 +361,8 @@ Dashboards whose components bind directly to query results can be refreshed late
       "Include ReactiveSimulator when the user is asking about budget simulation, CAC projections, or ROI forecasts.",
       "Include ActionPlanCard whenever providing optimization suggestions so users can take concrete next steps.",
     ],
-    examples: [promptExample, reportLayoutExample, focusLayoutExample, comparisonLayoutExample],
+    examples:
+      layoutExamples ?? [promptExample, reportLayoutExample, focusLayoutExample, comparisonLayoutExample],
   };
 
   return serverLibrary.prompt(promptOptions);
@@ -398,7 +437,7 @@ The user just sent a message while Plan Mode is active. First perform INTENT SCR
       "CRITICAL: When a concrete analytical goal is confirmed, you MUST end your response with exactly one ```ginkgo code block whose Root child is a single PlanReviewCard summarizing the plan. Do NOT stop after markdown text.",
       "Dual-Termination: You may conclude naturally after generating the PlanReviewCard (or after the text guidance in ambiguous cases), or call `finish_task` to explicitly mark planning completion.",
       "必须输出确认卡：在明确分析目标的第四部分「澄清点说明」之后，必须紧随 ```ginkgo 代码块输出 PlanReviewCard。绝对不可遗漏代码块。",
-      "Do NOT generate MetricCard/AnalyticsChart/FunnelChart with real aggregated data in this round — those belong to the execution round after user confirmation.",
+      "Do NOT generate MetricCard/AnalyticsChart/FunnelChart with real aggregated data in this round — those belong to the execution round after user confirmation. Instead, describe the intended visuals in the PlanReviewCard's per-step `chart` field so the execution round knows what to build.",
       "Every clarification question must carry options or a default assumption; unanswered questions will be resolved with the default.",
       "Populate sources/steps with facts you verified via schema discovery or sampling, never invented names.",
       "Exact Column References: In discovery sampling queries, always quote column names verbatim in double quotes when they contain spaces, parentheses, or brackets (e.g. \"场景 （对应五大场景，可对应多个）\"). Never truncate column headers, and do not use '\\n' for multiline Excel headers (normalized to single spaces).",
@@ -417,9 +456,17 @@ export function getExecuteSystemPrompt(
   activeSources: ActiveSourceSummary[],
   schemaDigest?: string,
   methodDetails?: string,
-  certifiedMatches?: CertifiedQueryMatch[]
+  certifiedMatches?: CertifiedQueryMatch[],
+  /** 布局范例（动态少样本）：透传给 base 提示词；缺省全量注入（向后兼容） */
+  layoutExamples?: string[]
 ): string {
-  const base = getUiSpecSystemPrompt(activeSources, schemaDigest, undefined, certifiedMatches);
+  const base = getUiSpecSystemPrompt(
+    activeSources,
+    schemaDigest,
+    undefined,
+    certifiedMatches,
+    layoutExamples
+  );
   return `${base}
 ${methodDetailsSection(methodDetails)}
 
@@ -433,7 +480,7 @@ The conversation history contains an analysis plan (PlanReviewCard) the user has
 - **Full Dashboard & Report Mode (完整看板与报告型)**: When the user requests a full review/report or has not restricted the deliverable:
   * Produce the structured analytical markdown report plus the full \`\`\`ginkgo dashboard following the confirmed steps and chosen visuals.
 
-- Execute the confirmed plan now: skip re-planning, do not ask further questions. Fetch the real data and deliver according to the deliverable adaptation specification above.
+- Execute the confirmed plan now: skip re-planning, do not ask further questions. Fetch the real data and deliver according to the deliverable adaptation specification above. If a critical ambiguity blocks execution, proceed with the plan's clarification defaults (or the most conservative reasonable interpretation) and explicitly note the assumed assumption in the final report.
 - Exact Column References: Always reference exact column names in SQL, wrapping any column containing spaces, parentheses, or brackets in double quotes (e.g. \"场景 （对应五大场景，可对应多个）\"). Never truncate or fabricate column headers, and do not use '\\n' for multiline Excel headers (normalized to single spaces).
 - Compact Dashboard Code: Keep the dashboard visual structure clean and focused (typically 1-2 core charts, key metrics, and actionable insights). Avoid overly bloated datasets or sprawling multi-level layouts in the DSL to guarantee the output completes and closes within the token budget.
 - Reasoning Token Budget: In thinking models (e.g. GLM, DeepSeek), keep <think> reasoning concise and lightweight (focus on tool coordination and logic verification). Do NOT draft the full analytical report or verbose markdown inside <think> tags — reserve the output token budget for the final report and the \`\`\`ginkgo dashboard.

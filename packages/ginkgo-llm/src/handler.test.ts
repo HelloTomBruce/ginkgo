@@ -210,6 +210,161 @@ describe("createAnalyzeHandler 全动态装配", () => {
   });
 });
 
+describe("createAnalyzeHandler Anthropic Extended Thinking 透传", () => {
+  beforeEach(() => {
+    mockStreamOk();
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("anthropic 协议 + 推理模型：effort 三档映射 thinking.budgetTokens（low/medium/high）", async () => {
+    const POST = createAnalyzeHandler({ resolveAppTools: async () => ({}) });
+
+    await POST(
+      makeRequest({
+        messages: [],
+        apiKey: "k",
+        baseURL: "https://api.anthropic.com/v1",
+        protocol: "anthropic",
+        model: "claude-sonnet-4-5",
+        reasoningEffort: "low",
+        supportsReasoning: true,
+      })
+    );
+    await POST(
+      makeRequest({
+        messages: [],
+        apiKey: "k",
+        baseURL: "https://api.anthropic.com/v1",
+        protocol: "anthropic",
+        model: "claude-sonnet-4-5",
+        reasoningEffort: "medium",
+        supportsReasoning: true,
+      })
+    );
+    await POST(
+      makeRequest({
+        messages: [],
+        apiKey: "k",
+        baseURL: "https://api.anthropic.com/v1",
+        protocol: "anthropic",
+        model: "claude-sonnet-4-5",
+        reasoningEffort: "high",
+        supportsReasoning: true,
+      })
+    );
+
+    const calls = vi.mocked(streamText).mock.calls;
+    expect(calls[0][0].providerOptions).toEqual({
+      anthropic: { thinking: { type: "enabled", budgetTokens: 1024 } },
+    });
+    expect(calls[1][0].providerOptions).toEqual({
+      anthropic: { thinking: { type: "enabled", budgetTokens: 4096 } },
+    });
+    expect(calls[2][0].providerOptions).toEqual({
+      anthropic: { thinking: { type: "enabled", budgetTokens: 16384 } },
+    });
+  });
+
+  it("anthropic thinking 时 maxTokens 抬升保证 > budgetTokens（缺省 16384 + high 16384 → 18432）", async () => {
+    const POST = createAnalyzeHandler({ resolveAppTools: async () => ({}) });
+
+    // high 档 budget=16384，缺省 maxTokens=16384 不满足 max > budget，抬至 18432
+    await POST(
+      makeRequest({
+        messages: [],
+        apiKey: "k",
+        protocol: "anthropic",
+        model: "claude-sonnet-4-5",
+        reasoningEffort: "high",
+        supportsReasoning: true,
+      })
+    );
+    expect(vi.mocked(streamText).mock.calls[0][0].maxTokens).toBe(18432);
+
+    // low 档 budget=1024 < 缺省 16384，不抬升
+    await POST(
+      makeRequest({
+        messages: [],
+        apiKey: "k",
+        protocol: "anthropic",
+        model: "claude-sonnet-4-5",
+        reasoningEffort: "low",
+        supportsReasoning: true,
+      })
+    );
+    expect(vi.mocked(streamText).mock.calls[1][0].maxTokens).toBe(16384);
+  });
+
+  it("openai 协议回归保护：仍走 providerOptions.openai.reasoningEffort，无 anthropic 分支", async () => {
+    const POST = createAnalyzeHandler({ resolveAppTools: async () => ({}) });
+
+    await POST(
+      makeRequest({
+        messages: [],
+        apiKey: "k",
+        model: "o3-mini",
+        reasoningEffort: "high",
+      })
+    );
+
+    expect(vi.mocked(streamText).mock.calls[0][0].providerOptions).toEqual({
+      openai: { reasoningEffort: "high" },
+    });
+    // openai 分支不抬升 maxTokens（抬升仅 anthropic thinking 消费）
+    expect(vi.mocked(streamText).mock.calls[0][0].maxTokens).toBe(16384);
+  });
+
+  it("非推理模型不产生任何 providerOptions", async () => {
+    const POST = createAnalyzeHandler({ resolveAppTools: async () => ({}) });
+
+    await POST(makeRequest({ messages: [], apiKey: "k", model: "gpt-4o" }));
+
+    expect(vi.mocked(streamText).mock.calls[0][0].providerOptions).toBeUndefined();
+  });
+
+  it("fallback 切换协议时 providerOptions 随 spec.protocol 重构（openai 主 → anthropic fallback）", async () => {
+    const POST = createAnalyzeHandler({ resolveAppTools: async () => ({}) });
+
+    // 503 服务端错误（未产出任何分块）才允许切换 fallback 链
+    const serverErr = Object.assign(new Error("503 Service Unavailable"), {
+      statusCode: 503,
+    });
+    vi.mocked(streamText)
+      .mockImplementationOnce(() => streamResult({ error: serverErr }) as never)
+      .mockImplementationOnce(
+        () => streamResult({ chunks: ['0:"ok"\n'] }) as never
+      );
+
+    // 注意：POST 返回时 fallback 泵仍在后台运行，必须排干响应流才能断言第二次 streamText
+    const res = await POST(
+      makeRequest({
+        messages: [],
+        apiKey: "k",
+        model: "o3-mini",
+        reasoningEffort: "medium",
+        resilience: {
+          fallbacks: [{ model: "claude-sonnet-4-5", protocol: "anthropic" }],
+        },
+      })
+    );
+    const text = await res.text();
+    expect(text).toContain('"type":"model_fallback"');
+    expect(text).toContain('0:"ok"');
+
+    const calls = vi.mocked(streamText).mock.calls;
+    expect(calls.length).toBe(2);
+    expect(calls[0][0].providerOptions).toEqual({ openai: { reasoningEffort: "medium" } });
+    expect(calls[1][0].providerOptions).toEqual({
+      anthropic: { thinking: { type: "enabled", budgetTokens: 4096 } },
+    });
+    // fallback anthropic 分支的 maxTokens 同样抬升（medium budget 4096 + 2048 = 6144 < 缺省 16384，不抬升）
+    expect(calls[1][0].maxTokens).toBe(16384);
+  });
+});
+
 describe("createAnalyzeHandler 上下文治理", () => {
   const savedEnv: Record<string, string | undefined> = {};
   let POST: (req: Request) => Promise<Response>;

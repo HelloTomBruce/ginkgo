@@ -23,6 +23,7 @@ import {
   getUiSpecSystemPrompt,
   getExecuteSystemPrompt,
 } from "./prompt";
+import { selectLayoutExamples } from "./layoutRouter";
 import { buildMethodDetailsFromMessages, renderMethodDetailsByIds } from "./methodSelector";
 import { resolveAnalyticsStorageDirs } from "./storage";
 import { extractPlanMethods } from "./planExtractor";
@@ -36,6 +37,7 @@ import {
 } from "./crossSource";
 
 export * from "./prompt";
+export * from "./layoutRouter";
 export * from "./methodSelector";
 export * from "./planExtractor";
 export * from "./schemaDigest";
@@ -303,13 +305,28 @@ export function createAnalyticsServer(deps: AnalyticsServerDeps) {
         }
       }
 
+      // 布局范例动态选择（Dynamic Few-Shot）：按问法挑 1 组最相关布局，替代全量注入
+      const layoutExamples = selectLayoutExamples(userQueryHint);
+
       if (mode === "plan") {
         return getUiSpecPlanPrompt(summaries, schemaDigest.text, methodIndexText, certifiedMatches);
       }
       if (mode === "execute") {
-        return getExecuteSystemPrompt(summaries, schemaDigest.text, methodDetails, certifiedMatches);
+        return getExecuteSystemPrompt(
+          summaries,
+          schemaDigest.text,
+          methodDetails,
+          certifiedMatches,
+          layoutExamples
+        );
       }
-      return getUiSpecSystemPrompt(summaries, schemaDigest.text, methodIndexText, certifiedMatches);
+      return getUiSpecSystemPrompt(
+        summaries,
+        schemaDigest.text,
+        methodIndexText,
+        certifiedMatches,
+        layoutExamples
+      );
     },
 
     /** 任务收尾钩子：plan 阶段从最终文本提取结构化 methods，登记为 pendingPlan */

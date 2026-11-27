@@ -44,9 +44,20 @@ describe("@ginkgolab/models", () => {
       expect(isReasoningModel("kimi-thinking-preview")).toBe(true);
     });
 
+    it("Claude 3.7+ / 4 系支持 Extended Thinking，视为推理模型", () => {
+      expect(isReasoningModel("claude-3-7-sonnet")).toBe(true);
+      expect(isReasoningModel("claude-3.7-sonnet")).toBe(true);
+      expect(isReasoningModel("claude-sonnet-4-5")).toBe(true);
+      expect(isReasoningModel("claude-opus-4")).toBe(true);
+      expect(isReasoningModel("claude-haiku-4-5")).toBe(true);
+      expect(isReasoningModel("claude-4-sonnet")).toBe(true);
+      expect(isReasoningModel("anthropic/claude-sonnet-4")).toBe(true);
+    });
+
     it("非推理模型返回 false", () => {
       expect(isReasoningModel("gpt-4o")).toBe(false);
-      expect(isReasoningModel("claude-sonnet-4-5")).toBe(false);
+      expect(isReasoningModel("claude-3-5-sonnet")).toBe(false);
+      expect(isReasoningModel("claude-3-haiku")).toBe(false);
       expect(isReasoningModel("deepseek-chat")).toBe(false);
       expect(isReasoningModel(null)).toBe(false);
       expect(isReasoningModel("")).toBe(false);

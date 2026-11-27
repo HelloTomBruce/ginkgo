@@ -836,6 +836,31 @@ export function createAnalyzeHandler(
           : "medium"
         : undefined;
 
+      // Anthropic Extended Thinking 思考预算：effort 三档 → budget_tokens 映射
+      // （low=1024 / medium=4096 / high=16384，对齐 Anthropic 混合推理分档）。
+      // 仅在模型链的 anthropic 协议分支经 providerOptions.anthropic.thinking 下发；
+      // openai 协议仍走 reasoningEffort，语义不变。
+      const ANTHROPIC_THINKING_BUDGET: Record<"low" | "medium" | "high", number> = {
+        low: 1024,
+        medium: 4096,
+        high: 16384,
+      };
+      // 循环外按协议预构造推理参数（模型链循环内按当前 spec.protocol 选用，
+      // fallback 跨协议切换时不丢参数）；reasoningEffort 收窄保证 budget 恒为 number
+      const openaiProviderOptions = reasoningEffort
+        ? { openai: { reasoningEffort } }
+        : undefined;
+      const anthropicProviderOptions = reasoningEffort
+        ? {
+            anthropic: {
+              thinking: {
+                type: "enabled" as const,
+                budgetTokens: ANTHROPIC_THINKING_BUDGET[reasoningEffort],
+              },
+            },
+          }
+        : undefined;
+
       // 输出 token 上限：请求体 maxTokens 优先，其次 LLM_MAX_OUTPUT_TOKENS，缺省 16384；钳制 1024–65536
       const envMaxTokens = Number(process.env.LLM_MAX_OUTPUT_TOKENS);
       const parsedMaxTokens = Number(clientMaxTokens);
@@ -846,6 +871,15 @@ export function createAnalyzeHandler(
             ? envMaxTokens
             : 16384;
       const maxOutputTokens = Math.min(Math.max(Math.round(maxOutputTokensBase), 1024), 65536);
+      // Anthropic 协议要求 max_tokens 严格大于 thinking.budget_tokens，否则 400；
+      // 需要时抬升输出上限（+2048 余量容纳思考后的正文），仍钳制在 65536 内。
+      // 仅 anthropic 分支消费抬升值——openai 端点保持原 maxTokens 语义不变。
+      const anthropicMaxTokens = reasoningEffort
+        ? Math.min(
+            Math.max(maxOutputTokens, ANTHROPIC_THINKING_BUDGET[reasoningEffort] + 2048),
+            65536
+          )
+        : maxOutputTokens;
 
       // 交互阶段归一化：非法值回落 direct，保持向后兼容
       const mode =
@@ -1379,9 +1413,16 @@ export function createAnalyzeHandler(
                 // 投影后的消息（存储层历史不动；无治理需求时与入参一致）
                 messages: attemptMessages,
                 ...(temperature !== undefined ? { temperature } : {}),
-                ...(reasoningEffort ? { providerOptions: { openai: { reasoningEffort } } } : {}),
-                // AI SDK v1 参数名为 maxTokens（透传 max_tokens；Anthropic 端点必填）
-                maxTokens: maxOutputTokens,
+                // 推理参数按当前链路协议选用（fallback 可能切换协议，须随 spec 走）：
+                // - openai 兼容端点：reasoningEffort（o1/o3/R1 等的思考力度）
+                // - anthropic 端点：Extended Thinking 物理级思考预算（budget_tokens）
+                providerOptions:
+                  spec.protocol === "anthropic"
+                    ? anthropicProviderOptions
+                    : openaiProviderOptions,
+                // AI SDK v1 参数名为 maxTokens（透传 max_tokens；Anthropic 端点必填，
+                // 且开启 thinking 时必须严格大于 budget_tokens，anthropic 分支已按需抬升）
+                maxTokens: spec.protocol === "anthropic" ? anthropicMaxTokens : maxOutputTokens,
                 // 任务中止信号:任一来源(硬停止/预算熔断)取消 provider 生成
                 abortSignal: anySignal([
                   taskAbortController.signal,
