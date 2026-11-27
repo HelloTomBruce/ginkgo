@@ -22,6 +22,13 @@ const PACKAGES_DIR = path.join(REPO_ROOT, "packages");
 
 describe("打包/分发守卫", () => {
   it("ginkgo-cli seeds 与 config/*.json 逐字节一致（改 config 后须重跑 pnpm cli:assemble）", async () => {
+    // config/ 是 gitignore 的本机数据：CI 干净 checkout 上不存在，此时已提交的
+    // seeds 就是发布事实来源；漂移检查只在拥有 config 的开发机上生效。
+    if (!fsSync.existsSync(CONFIG_DIR)) {
+      console.warn("[packaging-guards] config/ 不存在（CI checkout？），跳过 seeds 漂移检查");
+      return;
+    }
+
     const configFiles = (await fs.readdir(CONFIG_DIR)).filter((f) => f.endsWith(".json"));
     expect(configFiles.length, "config 目录应存在种子配置").toBeGreaterThan(0);
 

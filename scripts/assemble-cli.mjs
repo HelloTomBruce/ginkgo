@@ -70,11 +70,16 @@ async function main() {
     throw new Error(`未找到 .next/static 静态资源目录。`);
   }
 
-  // 2. 清理旧产物
+  // 2. 清理旧产物。
+  // seeds 特殊：config/ 是 gitignore 的本机数据，CI 干净 checkout 上不存在——
+  // 那时已提交的 seeds 就是发布事实来源，绝不能清掉后又无法再生。
   await fs.rm(CLI_RUNTIME_DIR, { recursive: true, force: true });
-  await fs.rm(CLI_SEEDS_DIR, { recursive: true, force: true });
   await fs.mkdir(CLI_RUNTIME_DIR, { recursive: true });
-  await fs.mkdir(CLI_SEEDS_DIR, { recursive: true });
+  const hasConfig = fssync.existsSync(CONFIG_DIR);
+  if (hasConfig) {
+    await fs.rm(CLI_SEEDS_DIR, { recursive: true, force: true });
+    await fs.mkdir(CLI_SEEDS_DIR, { recursive: true });
+  }
 
   // 3. 拷贝 standalone 整体结构
   console.log(`   - 拷贝 standalone 运行时...`);
