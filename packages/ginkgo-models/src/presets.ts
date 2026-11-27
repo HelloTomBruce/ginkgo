@@ -326,6 +326,19 @@ export const LLM_PROVIDER_PRESETS: LlmProviderPreset[] = [
     keyHint: "cloud.siliconflow.cn 获取 sk-...",
   },
   {
+    id: "opencode",
+    name: "OpenCode Go（编码模型）",
+    group: "聚合平台与网关",
+    protocol: "openai",
+    baseURL: "https://opencode.ai/inference/go/openai/v1",
+    defaultModel: "deepseek-v4.1-flash",
+    models: [
+      "deepseek-v4.1-flash",
+      "deepseek-v4-pro",
+    ],
+    keyHint: "opencode.ai/console 订阅 Go 后获取 API key",
+  },
+  {
     id: "openrouter",
     name: "OpenRouter（全球模型聚合）",
     group: "聚合平台与网关",

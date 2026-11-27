@@ -47,6 +47,7 @@ import {
 import { Slider } from "@/components/ui/slider";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { DatasourceSettings } from "./datasources/DatasourceSettings";
+import { ProviderHeadersEditor } from "./ProviderHeadersEditor";
 import { McpSettings } from "./mcp/McpSettings";
 import { EngineSettings } from "./engine/EngineSettings";
 import { GovernanceSettings } from "./governance/GovernanceSettings";
@@ -59,6 +60,7 @@ import {
   type LlmProtocol,
   type ModelDefinition,
   type ModelConfig,
+  type ProviderHeader,
   type ReasoningEffort,
   isReasoningModel,
   findPreset,
@@ -792,6 +794,8 @@ export function SettingsModal({
   const [formPresetId, setFormPresetId] = useState("");
   const [formApiKey, setFormApiKey] = useState("");
   const [formBaseURL, setFormBaseURL] = useState("");
+  // Provider 级自定义请求头（如 OpenCode Go 的 x-opencode-session）
+  const [formHeaders, setFormHeaders] = useState<ProviderHeader[]>([]);
   const [formProtocol, setFormProtocol] = useState<LlmProtocol>("openai");
   const [formModels, setFormModels] = useState<ModelDefinition[]>([]);
 
@@ -805,6 +809,7 @@ export function SettingsModal({
     setFormPresetId(p.presetId || "");
     setFormApiKey(p.apiKey);
     setFormBaseURL(p.baseURL);
+    setFormHeaders(p.headers ?? []);
     setFormProtocol(p.protocol);
     setFormModels(dedupeModels(p.models || []));
   };
@@ -821,6 +826,7 @@ export function SettingsModal({
     setFormPresetId(defaultPreset.id);
     setFormApiKey("");
     setFormBaseURL(defaultPreset.baseURL);
+    setFormHeaders([]);
     setFormProtocol(defaultPreset.protocol);
     setFormModels(defaultPreset.models);
   };
@@ -853,6 +859,8 @@ export function SettingsModal({
       protocol: formProtocol,
       baseURL: formBaseURL.trim(),
       apiKey: formApiKey.trim(),
+      // 过滤空行后再存（服务端另有敏感头护栏）
+      headers: formHeaders.filter((h) => h.name.trim() && h.value.trim()),
       models: finalModels,
       defaultModel: getModelId(finalModels[0]),
       enabled: true,
@@ -1097,6 +1105,12 @@ export function SettingsModal({
                         </span>
                       </div>
                     </div>
+
+                    <ProviderHeadersEditor
+                      headers={formHeaders}
+                      onChange={setFormHeaders}
+                      baseURL={formBaseURL}
+                    />
 
                     {/* 折叠区 / 基础 API 与模型配置 */}
                     <Collapsible defaultOpen={isAddingNew && addMode === "custom"}>

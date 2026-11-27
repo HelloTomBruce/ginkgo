@@ -46,6 +46,12 @@ export interface LlmProviderPreset {
   keyHint: string;
 }
 
+/** 自定义请求头条目（Provider 级别） */
+export interface ProviderHeader {
+  name: string;
+  value: string;
+}
+
 /** 已配置的多 Provider 实体（支持多模型、自定义端点） */
 export interface ConfiguredProvider {
   /** 唯一标识，如 deepseek, openai, custom-1 */
@@ -62,6 +68,13 @@ export interface ConfiguredProvider {
   baseURL: string;
   /** API 凭据 */
   apiKey: string;
+  /**
+   * 自定义请求头（Provider 级别）：透传到该 Provider 的所有请求。
+   * 用于网关要求额外头的场景，例如 OpenCode Go 需要
+   * `x-opencode-session`（每会话稳定的 ID）与自有 `User-Agent`。
+   * 敏感头（Authorization/Content-Type/Cookie 等）由服务端拒绝，见 handler 的护栏。
+   */
+  headers?: ProviderHeader[];
   /** 当前 Provider 下配置的模型列表（支持字符串或带独立窗口/Tokens的结构体） */
   models: ModelDefinition[];
   /** 默认选中的模型 */

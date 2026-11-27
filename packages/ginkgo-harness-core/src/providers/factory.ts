@@ -12,6 +12,11 @@ import {
   type ResolvedModelSpec,
 } from "./resilience";
 import { createReasoningFetch } from "../reasoning/reasoningStream";
+import {
+  buildIdentityHeaders,
+  mergeIdentityHeaders,
+  resolveProviderTarget,
+} from "@ginkgolab/models";
 
 export interface ResilienceTelemetryHooks {
   onRetry?: (info: {
@@ -70,17 +75,28 @@ export function buildLanguageModel(
       : reasoningFetch;
   }
 
+  /**
+   * 身份头（默认，按目标端点自动决定）+ 用户自定义头（优先）。
+   * 例：指向 opencode.ai 时自动带 User-Agent 与 x-opencode-session，
+   * 用户无需手填；若用户在设置页显式配了同名头，则以用户为准。
+   */
+  const target = resolveProviderTarget(normalizedBase);
+  const identityHeaders = buildIdentityHeaders(target, { sessionId: spec.sessionId });
+  const requestHeaders = mergeIdentityHeaders(identityHeaders, spec.headers);
+
   const baseModel =
     spec.protocol === "anthropic"
       ? createAnthropic({
           apiKey: spec.apiKey,
           baseURL: anthropicBase,
           fetch: guardedFetch,
+          ...(requestHeaders ? { headers: requestHeaders } : {}),
         })(spec.model)
       : createOpenAI({
           apiKey: spec.apiKey,
           baseURL: normalizedBase,
           fetch: guardedFetch,
+          ...(requestHeaders ? { headers: requestHeaders } : {}),
         })(spec.model);
 
   return baseModel && typeof baseModel === "object"

@@ -145,6 +145,13 @@ export interface ResolvedModelSpec {
   apiKey: string;
   baseURL: string;
   protocol: "openai" | "anthropic";
+  /**
+   * Provider 级自定义请求头（已由上层做过敏感头护栏）。
+   * 仅主请求使用；fallback 不带自定义头，避免把某 Provider 的头带到另一个端点。
+   */
+  headers?: Record<string, string>;
+  /** 每会话稳定 ID：用于身份层注入（如 opencode 的 x-opencode-session） */
+  sessionId?: string;
 }
 
 /** 已解析（钳制 + 校验）的韧性策略：fetch 层与 handler 层消费同一形态 */

@@ -10,6 +10,7 @@ import {
   getModelId,
   dedupeModels,
   ensureModelInList,
+  normalizeHeaderEntries,
   createDefaultConfiguredProviders,
   PROVIDERS_STORAGE_KEY,
   ACTIVE_PROVIDER_STORAGE_KEY,
@@ -417,12 +418,16 @@ export function useLlmSettings() {
       maxSteps: maxSteps.trim() || undefined,
       contextWindow: (activeModelConfig?.contextWindow || contextWindow).trim() || undefined,
       protocol: activeProvider?.protocol || protocol,
+      // Provider 级自定义请求头（如 OpenCode Go 的 x-opencode-session）；
+      // 服务端会剔除敏感头后再透传
+      headers: normalizeHeaderEntries(activeProvider?.headers),
       resilience: fallbackList.length > 0 ? { fallbacks: fallbackList } : undefined,
     };
   }, [
     activeProvider?.apiKey,
     activeProvider?.baseURL,
     activeProvider?.protocol,
+    activeProvider?.headers,
     activeModelConfig?.maxTokens,
     activeModelConfig?.contextWindow,
     activeModelConfig?.supportsReasoning,

@@ -7,3 +7,4 @@ export * from "./types";
 export * from "./presets";
 export * from "./utils";
 export * from "./catalog";
+export * from "./providerTargets";

@@ -37,6 +37,8 @@ import {
   type ResolvedModelSpec,
   buildLanguageModel as createConfiguredModel,
   type TelemetrySink,
+  normalizeHeaderEntries,
+  resolveSessionHeaderPlaceholders,
   computeCostUsd,
   DEFAULT_QUOTA_WINDOW_MS,
   InMemoryCostLedger,
@@ -504,6 +506,15 @@ export interface AnalyzeRequestBody {
   /** 接口协议：anthropic（如 Kimi Coding 的 /v1/messages）或缺省 openai 兼容（/chat/completions） */
   protocol?: "openai" | "anthropic";
   /**
+   * Provider 级自定义请求头（键值对）。
+   *
+   * 用途：网关要求额外头才能路由的场景，例如 OpenCode Go 要求
+   * `x-opencode-session`（每会话稳定 ID，用于路由与 prompt caching）与自有
+   * `User-Agent`。服务端经 normalizeCustomHeaders 做敏感头护栏后才透传，
+   * 禁止覆盖 Authorization/Content-Type/Cookie 等传输与鉴权相关头。
+   */
+  headers?: unknown;
+  /**
    * 交互阶段（两阶段编排，语义由应用定义）：
    * - direct（缺省）：直接回复/产出
    * - plan：规划阶段——先探查与澄清，产出供用户确认的规划
@@ -550,6 +561,63 @@ export interface AnalyzeHandler {
   streamHub: SessionStreamHub;
   /** 成本台账（未启用时为 undefined，GET /api/usage 经此读取） */
   costLedger?: CostLedger;
+}
+
+/**
+ * 禁止客户端自定义的请求头（大小写不敏感）。
+ *
+ * 这些头决定「请求发到哪、以谁的身份、用什么编码」——由 SDK/运行时掌控。
+ * 允许客户端覆盖会造成：
+ *   - Authorization：绕过 apiKey 凭证护栏，把环境凭证改投到别处；
+ *   - Content-Type/Content-Length/Transfer-Encoding：破坏请求体编码；
+ *   - Host/Connection/Upgrade：请求走私与连接劫持面；
+ *   - Cookie/Set-Cookie：把平台会话凭证带给第三方端点。
+ * `user-agent` 刻意不在列表内——OpenCode Go 等网关要求客户端自报身份。
+ */
+const FORBIDDEN_CUSTOM_HEADERS = new Set([
+  "authorization",
+  "proxy-authorization",
+  "content-type",
+  "content-length",
+  "transfer-encoding",
+  "connection",
+  "keep-alive",
+  "upgrade",
+  "host",
+  "cookie",
+  "set-cookie",
+]);
+
+/** RFC 7230 token 形式：1*tchar */
+const HEADER_NAME_RE = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
+
+const MAX_CUSTOM_HEADERS = 20;
+const MAX_HEADER_VALUE_LEN = 4096;
+
+/**
+ * 归一化并校验客户端自定义请求头。
+ *
+ * 接受两种形态：`Record<string, string>` 或 `{ name, value }[]`（设置页用数组编辑）。
+ * 非法条目静默丢弃（不因个别坏行让整次对话失败），但敏感头一律拒绝。
+ */
+export function normalizeCustomHeaders(raw: unknown): Record<string, string> | undefined {
+  // 基础形态归一化复用 models 包（与客户端同一份实现，避免两套规则漂移）；
+  // 安全判定**只能在这里**做——客户端代码可被绕过
+  const base = normalizeHeaderEntries(raw);
+  if (!base) return undefined;
+
+  const out: Record<string, string> = {};
+  let count = 0;
+  for (const [name, value] of Object.entries(base)) {
+    if (count >= MAX_CUSTOM_HEADERS) break;
+    if (!HEADER_NAME_RE.test(name)) continue;
+    if (FORBIDDEN_CUSTOM_HEADERS.has(name.toLowerCase())) continue;
+    // 头值不得含换行（防 header 注入）
+    if (/[\r\n]/.test(value) || value.length > MAX_HEADER_VALUE_LEN) continue;
+    out[name] = value;
+    count++;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
 }
 
 /**
@@ -662,6 +730,7 @@ export function createAnalyzeHandler(
         maxTokens: clientMaxTokens,
         sources: clientSources,
         protocol: clientProtocol,
+        headers: rawClientHeaders,
         mode: clientMode,
         sessionId: clientSessionId,
         contextWindow: clientContextWindow,
@@ -891,8 +960,23 @@ export function createAnalyzeHandler(
       // WS-9 模型链：主模型在前，fallback ModelSpec 按序随后
       // （缺省无 fallback 时单元素链，语义与现状一致）
       const primaryProtocol = clientProtocol === "anthropic" ? "anthropic" : "openai";
+      // Provider 级自定义头只作用于主请求：fallback 可能指向另一个端点，
+      // 把 A 的头带过去既无意义也可能泄露会话标识
+      const customHeaders = normalizeCustomHeaders(rawClientHeaders);
+      // {{sessionId}} 占位符替换（真实实现在 @ginkgolab/models，测试直接测它）
+      const resolvedCustomHeaders = customHeaders
+        ? resolveSessionHeaderPlaceholders(customHeaders, sessionIdForEvents)
+        : undefined;
       const modelChain: ResolvedModelSpec[] = [
-        { model, apiKey, baseURL, protocol: primaryProtocol },
+        {
+          model,
+          apiKey,
+          baseURL,
+          protocol: primaryProtocol,
+          // 会话 id 供身份层注入（如 opencode 的 x-opencode-session）
+          ...(sessionIdForEvents ? { sessionId: sessionIdForEvents } : {}),
+          ...(resolvedCustomHeaders ? { headers: resolvedCustomHeaders } : {}),
+        },
         ...resiliencePolicy.fallbacks.map((fb) => ({
           model: fb.model,
           apiKey: fb.apiKey ?? apiKey,

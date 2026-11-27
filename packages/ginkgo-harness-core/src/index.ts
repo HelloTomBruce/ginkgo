@@ -254,3 +254,15 @@ export {
   type TerminationToolOptions,
   type TaskLifecycleMachineOptions,
 } from "./lifecycle";
+
+/**
+ * Provider 请求头工具（实现在 `@ginkgolab/models`，客户端设置页与服务端
+ * 共用同一份规则，避免漂移）。此处 re-export 仅供 `@ginkgolab/llm` 消费——
+ * llm 只依赖 harness-core，不直接依赖 models，保持现有依赖方向。
+ * 收窄原则：只 re-export llm 实际 import 的符号，其余（身份头构造、UI 提示
+ * 等客户端用途）由 UI 侧经 `@ginkgolab/models` 直接消费，不进本包公共 API 面。
+ */
+export {
+  normalizeHeaderEntries,
+  resolveSessionHeaderPlaceholders,
+} from "@ginkgolab/models";
