@@ -172,9 +172,13 @@ pnpm dev        # http://localhost:3006
 | 并发准入 | running 达上限返回 429；重连不占名额 |
 | 工具结果截断 | 超长结果以 `<tool_output untrusted>` 信封头尾保留 |
 | 重复循环熔断 | 推理退化（同形重复 ≥15 次）自动截断并注入说明 |
+| 参数死锁熔断 | 同参（toolName+签名）连续失败 2 次后，第 3 次同参调用拦截不执行，回传修正/换工具/如实收尾指引 |
+| 工具 Actionable Error | 数据源工具错误翻译为 `{errorCode, remediation}` 结构化反馈（只读拦截/表列不存在/超预算/超时等 8 类），给模型「下一步怎么做」 |
 
-- **结构化遥测**：`HarnessEvent` 事件流（run_start / step_finish / tool_result / task_finish / abort / reconnect…）NDJSON 输出，可注入 `TelemetrySink` 接 OTel
+- **结构化遥测**：`HarnessEvent` 事件流（run_start / step_finish / tool_result / task_finish / abort / reconnect…）NDJSON 输出，可注入 `TelemetrySink` 接 OTel；`step_finish` 携带 `cachedPromptTokens`（缓存命中观测）
 - **finish_task 服务端不变量**：无实质产出时 `completed` 被拒绝（提示改用 `insufficient_data`），防模型空口宣告完成
+- **Anthropic Prompt Caching**：任务循环自动打滑动 `cache_control` 断点（provider 中间件，每步落在轮次末尾 block），多步任务输入成本约 -80%；缓存命中 token 进 `context_usage` 数据块与成本台账（`computeCostUsd` 按 cacheRead 折价）
+- **Anthropic Extended Thinking**：前端思考档位（低/中/高）自动映射 `thinking.budget_tokens`（1024/4096/16384），`max_tokens` 自动抬升保证 > budget；claude 3.7+/4 系自动识别为思考模型（档位开关 + 温度锁定）
 
 ## 评测体系（Evals）
 

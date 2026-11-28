@@ -53,6 +53,25 @@ enabledSources / activeSources（MCP 源摘要）/ sessions（会话上下文通
   独立 abort，只取消 provider 不破坏流）。
 - **上下文投影治理**：两阶段压缩（tool-result pruning → LLM 摘要缓存复用）；
   摘要提示词可注入（`summaryPromptBuilder`，缺省 harness-core 通用版）。
+- **参数死锁熔断**：同参（toolName + 稳定序列化参数 sha256 签名）连续失败 2 次
+  后，第 3 次同参调用在 execute 层拦截不真实执行，回传结构化熔断指引（修正参数 /
+  换工具 / `finish_task(insufficient_data)` 如实收尾）——全局 maxSteps 之前的
+  防烧 token 防线；成功清零计数、AbortError 透传、跨模型链 fallback 存活，
+  熔断发 `TOOL_DEADLOCK_FUSED` 遥测（finish_task/兜底反馈工具不包）。
+- **Anthropic Prompt Caching 滑动断点**：provider 中间件（`transformParams` 每次
+  调用前改写最终 prompt）给最后一条消息打 `cacheControl: ephemeral` 标记——多步
+  循环中 SDK 流内追加的 responseMessages 只有此处能覆盖（投影层不可见）；标记
+  落在轮次末尾 block（4 断点铁律），前缀缓存步步增量命中。仅 anthropic 协议
+  包装，openai 走服务端自动前缀缓存。
+- **Anthropic Extended Thinking 透传**：`reasoningEffort` 三档映射
+  `thinking.budgetTokens`（1024/4096/16384），providerOptions 在模型链循环内按
+  `spec.protocol` 选用（fallback 跨协议不丢参数）；anthropic 分支 `maxTokens`
+  自动抬升保证 > budget。claude 3.7+/4 系经 `isReasoningModel` 自动识别为思考
+  模型（温度锁定 + 档位开关露出）。
+- **缓存用量观测**：`onStepFinish` 从 `providerMetadata` 提取缓存命中 token
+  （anthropic `cacheReadInputTokens` / openai `cachedPromptTokens`），进
+  `context_usage` 数据块、`step_finish` 遥测与 `costLedger.cachedPromptTokens`
+  （`computeCostUsd` 按 cacheRead 折价；缺 model-pricing.json 时只记量不记钱）。
 - **finish_task 空跑防护**：证据标记命中（deliverable.evidenceMarkers，缺省
   ```` ```ginkgo ```` ）或实质文本产出才允许 `completed`。
 - **上下文治理锚点**：`sessions` 通道读写 `lastPromptTokens` 实测锚点与摘要缓存。

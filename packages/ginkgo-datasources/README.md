@@ -94,7 +94,11 @@ Ginkgo 结构化数据源连接、工具装配、安全查询网关与语义层�
   - `CertifiedStore`：认证口径存储与检索；
   - `SemanticRouter`：基于分词与中英文加权算法的口径精确命中。
 - **AI 适配器（Adapters）**：
-  - `toAiTools`：将 `DatasourceToolBinding` 映射为 Vercel AI SDK 的 `CoreTool` 规范，内置超长输出信封化截断（`envelopeOversizeResult`）。
+  - `toAiTools`：将 `DatasourceToolBinding` 映射为 Vercel AI SDK 的 `CoreTool` 规范，内置超长输出信封化截断（`envelopeOversizeResult`）；
+  - **Actionable Error 协议**（`toActionableError`）：工具异常在适配器收口点分类为
+    `{ errorCode, remediation }` 结构化反馈（只读拦截 / 表列不存在 / 语法 / 超预算 /
+    超时 / 连接失败等 8 类，含 explainGuard 外壳的根因穿透识别），给模型「下一步
+    怎么做」的行动指引而非裸 message。
 
 ---
 

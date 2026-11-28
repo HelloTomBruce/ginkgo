@@ -31,7 +31,7 @@ Ginkgo 智能体应用平台**统一模型与 Provider 规范契约、预设与�
 - **本地与开源部署**：Ollama、vLLM、LM Studio 等。
 
 ### 3. 模型智能推断与去重 (`utils.ts`)
-- `isReasoningModel(model, config?)`：支持显式配置指定与 ID 模式（o1/o3/r1/qwq/reasoner/thinking）自动智能嗅探。
+- `isReasoningModel(model, config?)`：支持显式配置指定与 ID 模式（o1/o3/r1/qwq/reasoner/thinking/claude-3-7+/claude 4 系）自动智能嗅探。
 - `dedupeModels(list)`：按模型 ID 去重，混合存在对象与字符串配置时优先保留对象结构体，杜绝重复渲染。
 - `ensureModelInList(list, targetModel)`：安全追加或置顶模型。
 - `getRecentModels()` / `recordRecentModel(providerId, model)`：基于 LRU 队列记录最近使用的模型。
