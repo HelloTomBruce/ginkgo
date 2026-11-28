@@ -1,6 +1,6 @@
 {
   "name": "@ginkgolab/app-design",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Experience Design Studio app for Ginkgo platform",
   "type": "module",
   "exports": {
