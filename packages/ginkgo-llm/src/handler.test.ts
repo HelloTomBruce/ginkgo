@@ -1233,6 +1233,68 @@ describe("Plan→execute 结构化交接（WS-4）", () => {
     expect(result.error).toContain("boom");
   });
 
+  it("同参连续失败的工具调用第 3 次被死锁守卫熔断，不再触发真实 execute", async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let capturedTool: any;
+    const executeSpy = vi.fn(async () => ({
+      success: false as const,
+      error: "[flaky] boom",
+      isError: true as const,
+    }));
+
+    const POST = createAnalyzeHandler({
+      resolveAppTools: async () => ({
+        flaky_tool: {
+          description: "恒败工具",
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          parameters: {} as any,
+          execute: executeSpy,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        } as any,
+      }),
+    });
+
+    const { streamText } = await import("ai");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    vi.mocked(streamText).mockImplementationOnce((async (opts: any) => {
+      capturedTool = opts.tools.flaky_tool;
+      return {
+        toDataStreamResponse: () => new Response("data: ok\n\n"),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    }) as any);
+
+    await POST(
+      makeRequest({
+        messages: [{ role: "user", content: "跑一下" }],
+        apiKey: "k",
+        sessionId: "sess_deadlock",
+      })
+    );
+
+    expect(capturedTool).toBeDefined();
+    const args = { sql: "SELECT * FROM orders" };
+    const opts = { toolCallId: "call_1" };
+
+    // 前两次真实执行
+    await capturedTool.execute(args, opts);
+    await capturedTool.execute(args, opts);
+    expect(executeSpy).toHaveBeenCalledTimes(2);
+
+    // 第三次同参调用被熔断：返回指引结果且不再触发真实 execute
+    const fused = await capturedTool.execute(args, opts);
+    expect(executeSpy).toHaveBeenCalledTimes(2);
+    expect(fused.isError).toBe(true);
+    expect(fused.error).toContain("死锁熔断");
+    expect(fused.error).toContain("flaky_tool");
+    expect(fused.error).toContain("finish_task");
+
+    // 换参数不受影响（独立签名，真实执行）
+    await capturedTool.execute({ sql: "SELECT 1" }, opts);
+    expect(executeSpy).toHaveBeenCalledTimes(3);
+  });
+
   it("工具抛出 AbortError 时透传取消语义，不吞为失败结果", async () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let capturedTool: any;

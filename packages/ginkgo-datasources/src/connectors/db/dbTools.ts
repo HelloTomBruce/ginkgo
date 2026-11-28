@@ -28,7 +28,7 @@ export function createDbToolsConnection(
   const tools: DbToolDefinition[] = [
     {
       name: "list_tables",
-      description: `列出 ${sourceName} 中可查询的数据表`,
+      description: `列出 ${sourceName} 中可查询的数据表。仅用于表名发现，不返回任何数据内容；查某张表的列结构请用 describe_table，取数请用 execute_sql。`,
       inputSchema: {
         type: "object",
         properties: {},
@@ -36,7 +36,7 @@ export function createDbToolsConnection(
     },
     {
       name: "describe_table",
-      description: `查看 ${sourceName} 中某张表的列名与类型`,
+      description: `查看 ${sourceName} 中某张表的列名与类型。仅用于写 SQL 前的结构确认，不返回数据；取数请用 execute_sql。`,
       inputSchema: {
         type: "object",
         properties: {
@@ -50,7 +50,7 @@ export function createDbToolsConnection(
     },
     {
       name: "execute_sql",
-      description: `在 ${sourceName} 中安全执行只读 SELECT 查询，用于指标聚合与明细钻取。强制只读事务、5s 超时与行数封顶保护。`,
+      description: `在 ${sourceName} 中安全执行只读 SELECT 查询，用于指标聚合与明细钻取。强制只读事务、5s 超时与行数封顶保护。严禁非 SELECT/WITH 语句（DDL/DML 会被只读安全拦截）；表名或列名未经确认时请先 list_tables / describe_table，避免盲目试错消耗步数。`,
       inputSchema: {
         type: "object",
         properties: {

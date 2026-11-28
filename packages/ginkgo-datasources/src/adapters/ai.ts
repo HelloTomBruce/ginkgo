@@ -1,5 +1,6 @@
 import { tool, jsonSchema, type CoreTool } from "ai";
 import type { DatasourceToolBinding } from "../manager";
+import { toActionableError } from "../actionableError";
 
 /**
  * WS-5 工具输出截断上限:结果序列化字节数超限时以信封形式头尾保留,
@@ -80,7 +81,9 @@ export function toAiTools(
           );
         } catch (err: unknown) {
           const message = err instanceof Error ? err.message : String(err);
-          return { error: message, isError: true };
+          // Actionable Error 协议：错误附 errorCode + remediation 行动指引，
+          // 让模型拿到「下一步怎么做」而非裸 message（防同参反复试错）
+          return { error: message, isError: true, ...toActionableError(message) };
         }
       },
     });

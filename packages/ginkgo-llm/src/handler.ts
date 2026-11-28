@@ -18,6 +18,10 @@ import {
   buildGenericSummaryPrompt,
   SUMMARY_MAX_TOKENS,
 } from "./context";
+import {
+  withDeadlockGuard,
+  createToolDeadlockState,
+} from "./deadlockGuard";
 import type { AppDeliverableContract } from "@ginkgolab/app-sdk";
 import { toolFailure } from "@ginkgolab/app-sdk";
 import { withPlatformGuardrails, getPlatformBasePrompt } from "./platformPrompt";
@@ -1335,6 +1339,8 @@ export function createAnalyzeHandler(
       // 未配置预算(缺省)只计量不熔断
       let totalTokens = 0;
       let budgetExceeded = false;
+      // 参数死锁熔断的签名失败计数（per-task 生命周期，跨模型链 fallback 重试存活）
+      const deadlockState = createToolDeadlockState();
 
       const rawResponse = createDataStreamResponse({
         execute: async (dataStream) => {
@@ -1429,7 +1435,19 @@ export function createAnalyzeHandler(
                   budgetAbortController.signal,
                 ]),
                 tools: {
-                  ...loadedTools,
+                  // 参数死锁熔断守卫：同参连续失败的工具调用第 3 次起不再真实执行
+                  // （finish_task/兜底反馈工具不包——终态工具有自己的拒绝语义）
+                  ...withDeadlockGuard(loadedTools, deadlockState, {
+                    onFuse: ({ toolName, failureCount }) => {
+                      telemetry.emit({
+                        type: "warn",
+                        runId,
+                        sessionId: sessionIdForEvents,
+                        code: "TOOL_DEADLOCK_FUSED",
+                        detail: `工具 ${toolName} 同参失败 ${failureCount} 次，已熔断拦截重复调用`,
+                      });
+                    },
+                  }),
                   finish_task: finishTaskTool,
                   // 坏工具调用兜底：experimental_repairToolCall 的重定向目标
                   [TOOL_CALL_FEEDBACK_NAME]: toolCallFeedbackTool,

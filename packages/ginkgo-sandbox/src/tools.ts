@@ -111,7 +111,7 @@ interface SandboxToolDeps {
 function buildReadFileTool({ workspaceDir }: SandboxToolDeps) {
   return zodTool({
     description:
-      "读取工作区内文件的文本内容。支持通过 startLine 和 endLine 参数进行分页/行切片读取，防止大文件超出 Token 限制。",
+      "读取工作区内文件的文本内容。支持通过 startLine 和 endLine 参数进行分页/行切片读取，防止大文件超出 Token 限制。仅需目录结构时请用 list_dir，不要用本工具逐个试探文件名。",
     parameters: z.object({
       path: z.string().describe("相对于工作区根目录的文件相对路径"),
       startLine: z.number().int().positive().optional().describe("起始行号（从 1 开始，包含）"),
@@ -155,7 +155,8 @@ function buildReadFileTool({ workspaceDir }: SandboxToolDeps) {
 
 function buildWriteFileTool({ workspaceDir }: SandboxToolDeps) {
   return zodTool({
-    description: "在工作区内创建或全量覆写文件。父级目录不存在时会自动递归创建。",
+    description:
+      "在工作区内创建或全量覆写文件。父级目录不存在时会自动递归创建。修改现有文件的小片段请优先用 edit_file（更省 Token 且避免误覆写）；Plan 只读模式下本工具不可用，需先经 request_build_permission 申请切换。",
     parameters: z.object({
       path: z.string().describe("相对于工作区根目录的文件相对路径"),
       content: z.string().describe("要写入文件的完整文本内容"),
@@ -182,7 +183,7 @@ function buildWriteFileTool({ workspaceDir }: SandboxToolDeps) {
 function buildEditFileTool({ workspaceDir }: SandboxToolDeps) {
   return zodTool({
     description:
-      "在工作区内的现有文件中查找特定文本块并做精准替换（比全量覆写更节省 Token 且更安全）。",
+      "在工作区内的现有文件中查找特定文本块并做精准替换（比全量覆写更节省 Token 且更安全）。target 需唯一匹配且大段重写时改用 write_file 全量覆写；新建文件请用 write_file（本工具只能改已有文件）。",
     parameters: z.object({
       path: z.string().describe("相对于工作区根目录的文件相对路径"),
       target: z.string().describe("需要被替换的目标文本片段（需严格与原文件匹配）"),
@@ -218,7 +219,7 @@ function buildEditFileTool({ workspaceDir }: SandboxToolDeps) {
 function buildRunCommandTool({ workspaceDir, extraEnv }: SandboxToolDeps) {
   return zodTool({
     description:
-      "在当前工作区目录下执行终端 Shell 命令（如构建、安装、代码检查、运行脚本等）。具有命令安全拦截与 30s 超时防护。",
+      "在当前工作区目录下执行终端 Shell 命令（如构建、安装、代码检查、运行脚本等）。具有命令安全拦截与 30s 超时防护。读写文件内容请优先用 read_file/write_file/edit_file 工具，不要借 shell 命令绕行；高危破坏性命令会被安全策略拦截。",
     parameters: z.object({
       command: z.string().describe("要执行的 Shell 命令行"),
       timeoutMs: z.number().int().positive().optional().describe("超时毫秒数，默认 30,000ms"),
@@ -275,7 +276,8 @@ function buildRunCommandTool({ workspaceDir, extraEnv }: SandboxToolDeps) {
 
 function buildListDirTool({ workspaceDir }: SandboxToolDeps) {
   return zodTool({
-    description: "列出工作区内指定目录的文件和子目录树结构，自动过滤 node_modules、.git 等无关目录。",
+    description:
+      "列出工作区内指定目录的文件和子目录树结构，自动过滤 node_modules、.git 等无关目录。已知确切文件路径时直接 read_file，不要用本工具层层探查。",
     parameters: z.object({
       path: z.string().optional().describe("相对工作区的目录路径，缺省为根目录"),
       depth: z.number().int().positive().optional().describe("最大遍历深度，缺省为 2"),

@@ -238,7 +238,7 @@ export function createAnalyticsServer(deps: AnalyticsServerDeps) {
       return {
         ...tools,
         cross_source_link: tool({
-          description: `查询项目管理侧项目与代码仓库侧仓库的关联映射（当前配对：${pairDesc}），用于跨源联合分析（迭代进度 × 代码活跃度）。映射缺失时返回 confidence=none，此时应提示用户在 config/cross-source-map.json 补充映射，不得编造关联结果。`,
+          description: `查询项目管理侧项目与代码仓库侧仓库的关联映射（当前配对：${pairDesc}），用于跨源联合分析（迭代进度 × 代码活跃度）。仅用于查映射关系本身；项目/仓库自身的业务数据请用各源自己的工具查询。映射缺失时返回 confidence=none，此时应提示用户在 config/cross-source-map.json 补充映射，不得编造关联结果。`,
           parameters: jsonSchema<{ project_id: string }>({
             type: "object",
             properties: {

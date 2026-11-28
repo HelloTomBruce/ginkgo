@@ -23,7 +23,7 @@ describe("toAiTools", () => {
     expect(binding.call).toHaveBeenCalledWith({ sql: "SELECT 1" });
   });
 
-  it("binding.call 抛出异常时捕获并返回 { error, isError: true } 供模型自愈", async () => {
+  it("binding.call 抛出异常时捕获并返回 { error, isError, errorCode, remediation } 供模型自愈", async () => {
     const binding: McpToolBinding = {
       name: "ds_execute_sql",
       originalName: "execute_sql",
@@ -40,12 +40,16 @@ describe("toAiTools", () => {
     const result = (await tools.ds_execute_sql.execute!({}, {} as never)) as {
       error: string;
       isError: boolean;
+      errorCode: string;
+      remediation: string;
     };
 
-    expect(result).toEqual({
-      error: 'SQL 执行失败: Binder Error: Referenced column "专业" not found',
-      isError: true,
-    });
+    expect(result.error).toBe(
+      'SQL 执行失败: Binder Error: Referenced column "专业" not found'
+    );
+    expect(result.isError).toBe(true);
+    expect(result.errorCode).toBe("COLUMN_NOT_FOUND");
+    expect(result.remediation).toContain("describe_table");
   });
 
   it("WS-5 超限结果信封化:头尾保留 + 来源标注 + truncated 标记,常规结果原样透传", async () => {
