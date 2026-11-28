@@ -22,6 +22,7 @@ import {
   withDeadlockGuard,
   createToolDeadlockState,
 } from "./deadlockGuard";
+import { withCacheBreakpointWrapper } from "./cacheBreakpoints";
 import type { AppDeliverableContract } from "@ginkgolab/app-sdk";
 import { toolFailure } from "@ginkgolab/app-sdk";
 import { withPlatformGuardrails, getPlatformBasePrompt } from "./platformPrompt";
@@ -161,6 +162,28 @@ async function resolveRequestTokenizer(
   );
   const encoding = resolveEncodingForModel(model, configPath);
   return createTiktokenEstimator(encoding);
+}
+
+/**
+ * 从 step 结果的 providerMetadata 提取缓存命中的 prompt token 数。
+ * - anthropic：cacheReadInputTokens（流式 message_start 即携带，可能为 null）
+ * - openai：cachedPromptTokens（prompt_tokens_details.cached_tokens）
+ * 两形态互斥按序取值，非 number 一律视为未暴露（返回 undefined）。
+ */
+function extractCachedPromptTokens(
+  providerMetadata: unknown
+): number | undefined {
+  if (!providerMetadata || typeof providerMetadata !== "object") return undefined;
+  const meta = providerMetadata as Record<string, Record<string, unknown> | undefined>;
+  const anthropicCacheRead = meta.anthropic?.cacheReadInputTokens;
+  if (typeof anthropicCacheRead === "number" && Number.isFinite(anthropicCacheRead)) {
+    return anthropicCacheRead;
+  }
+  const openaiCached = meta.openai?.cachedPromptTokens;
+  if (typeof openaiCached === "number" && Number.isFinite(openaiCached)) {
+    return openaiCached;
+  }
+  return undefined;
 }
 
 /** 提取对话历史中最后一条用户提问文本（语义召回/口径匹配提示） */
@@ -1036,10 +1059,11 @@ export function createAnalyzeHandler(
       });
 
       /**
-       * 按模型链上的某个 ModelSpec 装配 languageModel（委托 providers/factory 装配）
+       * 按模型链上的某个 ModelSpec 装配 languageModel（委托 providers/factory 装配）。
+       * anthropic 协议叠加 Prompt Caching 滑动断点中间件（openai 走自动前缀缓存不包装）
        */
       const buildLanguageModel = (spec: ResolvedModelSpec): LanguageModel => {
-        return createConfiguredModel(spec, {
+        const base = createConfiguredModel(spec, {
           resiliencePolicy,
           telemetryHooks: {
             onRetry: (info) => {
@@ -1062,6 +1086,9 @@ export function createAnalyzeHandler(
             },
           },
         });
+        // anthropic 协议叠加缓存断点中间件（transformParams 每次调用前改写
+        // 最终 prompt——覆盖多步循环中 SDK 流内追加的 responseMessages）
+        return withCacheBreakpointWrapper(spec, base);
       };
 
       const languageModel = buildLanguageModel(modelChain[0]);
@@ -1341,6 +1368,8 @@ export function createAnalyzeHandler(
       let budgetExceeded = false;
       // 参数死锁熔断的签名失败计数（per-task 生命周期，跨模型链 fallback 重试存活）
       const deadlockState = createToolDeadlockState();
+      // 缓存命中 token 累计（anthropic cacheRead / openai cached，per-task 生命周期）
+      let totalCachedPromptTokens = 0;
 
       const rawResponse = createDataStreamResponse({
         execute: async (dataStream) => {
@@ -1505,7 +1534,7 @@ export function createAnalyzeHandler(
                     emittedContent = true;
                   }
                 },
-                onStepFinish({ text, toolCalls, finishReason, usage }) {
+                onStepFinish({ text, toolCalls, finishReason, usage, providerMetadata }) {
                   stepIndex++;
                   if (typeof text === "string" && text.length > 0) {
                     lastStepText = text;
@@ -1518,6 +1547,12 @@ export function createAnalyzeHandler(
                   lastStepFinishReason = finishReason;
                   const stepDurationMs = Date.now() - prevStepTs;
                   prevStepTs = Date.now();
+                  // 缓存用量提取（anthropic: cacheReadInputTokens / openai: cachedPromptTokens，
+                  // 均经 providerMetadata 透传；字段可能为 null，按 number 防御）
+                  const stepCachedPromptTokens = extractCachedPromptTokens(providerMetadata);
+                  if (stepCachedPromptTokens !== undefined) {
+                    totalCachedPromptTokens += stepCachedPromptTokens;
+                  }
                   telemetry.emit({
                     type: "step_finish",
                     runId,
@@ -1527,6 +1562,7 @@ export function createAnalyzeHandler(
                     toolCalls: (toolCalls ?? []).map((c) => c.toolName),
                     promptTokens:
                       typeof usage?.promptTokens === "number" ? usage.promptTokens : undefined,
+                    cachedPromptTokens: stepCachedPromptTokens,
                     durationMs: stepDurationMs,
                   });
                   if (usage && typeof usage.promptTokens === "number" && Number.isFinite(usage.promptTokens)) {
@@ -1535,6 +1571,9 @@ export function createAnalyzeHandler(
                     dataStream.writeData({
                       type: "context_usage",
                       promptTokens: usage.promptTokens,
+                      ...(stepCachedPromptTokens !== undefined
+                        ? { cachedPromptTokens: stepCachedPromptTokens }
+                        : {}),
                     });
                   }
                   // 累计预算熔断(仅在显式配置预算时启用):超限写终态并中止 provider
@@ -1577,6 +1616,9 @@ export function createAnalyzeHandler(
                     dataStream.writeData({
                       type: "context_usage",
                       promptTokens: actualPromptTokens,
+                      ...(totalCachedPromptTokens > 0
+                        ? { cachedPromptTokens: totalCachedPromptTokens }
+                        : {}),
                     });
                   }
 
@@ -1644,7 +1686,11 @@ export function createAnalyzeHandler(
                   const totalRecordedTokens = recordedPrompt + recordedCompletion;
                   const pricing = pricingTable?.priceFor(model);
                   const costUsd = pricing
-                    ? computeCostUsd(pricing, recordedPrompt, recordedCompletion)
+                    ? computeCostUsd(pricing, recordedPrompt, recordedCompletion, {
+                        // 缓存命中按 cacheRead 折价计费（缺 pricing 表时仍只记量）
+                        cachedPromptTokens:
+                          totalCachedPromptTokens > 0 ? totalCachedPromptTokens : undefined,
+                      })
                     : undefined;
 
                   const finopsPayload = {
@@ -1669,6 +1715,9 @@ export function createAnalyzeHandler(
                         model,
                         promptTokens: recordedPrompt,
                         completionTokens: recordedCompletion,
+                        ...(totalCachedPromptTokens > 0
+                          ? { cachedPromptTokens: totalCachedPromptTokens }
+                          : {}),
                         ...(costUsd !== undefined ? { costUsd } : {}),
                         finishedAt: Date.now(),
                       })

@@ -2207,3 +2207,117 @@ describe("WS-11 成本入账", () => {
     });
   });
 });
+
+describe("Prompt Caching 断点编排与缓存观测", () => {
+  beforeEach(() => {
+    mockStreamOk();
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  // 断点标记的单元断言在 cacheBreakpoints.test.ts（prompt 级 + 中间件 + 协议门控）；
+  // 端到端 cache_control 落 wire 由 dev 实弹回归（anthropic mock 收包）实证。
+
+  it("onStepFinish 的 providerMetadata 缓存 token 进 context_usage 数据块", async () => {
+    vi.mocked(streamText).mockImplementationOnce((opts) =>
+      streamResult({
+        onStart: () => {
+          opts.onStepFinish?.({
+            toolCalls: [],
+            finishReason: "stop",
+            text: "ok",
+            usage: { promptTokens: 10000, completionTokens: 50 },
+            providerMetadata: {
+              anthropic: { cacheReadInputTokens: 8000, cacheCreationInputTokens: 2000 },
+            },
+          } as never);
+        },
+      }) as never
+    );
+
+    const POST = createAnalyzeHandler({ resolveAppTools: async () => ({}) });
+    const res = await POST(
+      makeRequest({ messages: [], apiKey: "k", protocol: "anthropic" })
+    );
+    const text = await res.text();
+    expect(text).toContain('"cachedPromptTokens":8000');
+  });
+
+  it("openai 形态的 cachedPromptTokens 同样被采集", async () => {
+    vi.mocked(streamText).mockImplementationOnce((opts) =>
+      streamResult({
+        onStart: () => {
+          opts.onStepFinish?.({
+            toolCalls: [],
+            finishReason: "stop",
+            text: "ok",
+            usage: { promptTokens: 10000, completionTokens: 50 },
+            providerMetadata: { openai: { cachedPromptTokens: 6400 } },
+          } as never);
+        },
+      }) as never
+    );
+
+    const POST = createAnalyzeHandler({ resolveAppTools: async () => ({}) });
+    const res = await POST(makeRequest({ messages: [], apiKey: "k" }));
+    const text = await res.text();
+    expect(text).toContain('"cachedPromptTokens":6400');
+  });
+
+  it("costLedger record 携带累计 cachedPromptTokens（计价折价通路）", async () => {
+    const record = vi.fn(async () => {});
+    const fakeLedger = {
+      record,
+      sumUsage: vi.fn(async () => ({ tokens: 0, costUsd: 0 })),
+    };
+
+    const POST = createAnalyzeHandler({
+      resolveAppTools: async () => ({}),
+      costLedger: fakeLedger as never,
+    });
+    await POST(makeRequest({ messages: [], apiKey: "k" }));
+
+    const callArgs = vi.mocked(streamText).mock.calls[0][0];
+    (callArgs.onStepFinish as (arg: unknown) => void)({
+      usage: { promptTokens: 10000, completionTokens: 50 },
+      providerMetadata: {
+        anthropic: { cacheReadInputTokens: 8000, cacheCreationInputTokens: 2000 },
+      },
+    });
+    (callArgs.onFinish as (arg: unknown) => void)({
+      usage: { promptTokens: 10000, completionTokens: 50 },
+    });
+
+    expect(record).toHaveBeenCalledWith(
+      expect.objectContaining({ cachedPromptTokens: 8000 })
+    );
+  });
+
+  it("无 providerMetadata 时缓存字段缺省，不报错（回归保护）", async () => {
+    const record = vi.fn(async () => {});
+    const fakeLedger = {
+      record,
+      sumUsage: vi.fn(async () => ({ tokens: 0, costUsd: 0 })),
+    };
+
+    const POST = createAnalyzeHandler({
+      resolveAppTools: async () => ({}),
+      costLedger: fakeLedger as never,
+    });
+    await POST(makeRequest({ messages: [], apiKey: "k" }));
+
+    const callArgs = vi.mocked(streamText).mock.calls[0][0];
+    (callArgs.onStepFinish as (arg: unknown) => void)({
+      usage: { promptTokens: 100, completionTokens: 10 },
+    });
+    (callArgs.onFinish as (arg: unknown) => void)({
+      usage: { promptTokens: 100, completionTokens: 10 },
+    });
+
+    expect(record).toHaveBeenCalledWith(
+      expect.not.objectContaining({ cachedPromptTokens: expect.anything() })
+    );
+  });
+});

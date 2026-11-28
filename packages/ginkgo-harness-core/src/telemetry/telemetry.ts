@@ -34,6 +34,8 @@ export type HarnessEvent =
       finishReason: string;
       toolCalls: string[];
       promptTokens?: number;
+      /** 本步缓存命中的 prompt token（anthropic cacheRead / openai cached） */
+      cachedPromptTokens?: number;
       /** 距上一个 step_finish(或流起点)的间隔,近似单步耗时 */
       durationMs: number;
     }
